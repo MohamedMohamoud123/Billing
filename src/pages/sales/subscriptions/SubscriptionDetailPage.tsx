@@ -13,6 +13,7 @@ import {
   User,
 } from "lucide-react";
 import { salespersonsAPI } from "../../../services/api";
+import { getCustomerById } from "../salesModel";
 
 const parseShortDate = (value?: string) => {
   if (!value) return "";
@@ -58,6 +59,9 @@ export default function SubscriptionDetailPage() {
   const [isAddCouponOpen, setIsAddCouponOpen] = useState(false);
   const [isAddChargeOpen, setIsAddChargeOpen] = useState(false);
   const [isUpdateSalespersonOpen, setIsUpdateSalespersonOpen] = useState(false);
+  const [isManageContactsOpen, setIsManageContactsOpen] = useState(false);
+  const [selectedContactEmails, setSelectedContactEmails] = useState<string[]>([]);
+  const [customerProfile, setCustomerProfile] = useState<any | null>(null);
   const [salespersons, setSalespersons] = useState<any[]>([]);
   const [selectedSalespersonId, setSelectedSalespersonId] = useState("");
   const [coupons, setCoupons] = useState<Array<{ id: string; couponName: string; couponCode: string }>>([]);
@@ -114,7 +118,68 @@ export default function SubscriptionDetailPage() {
   const billingAddress = normalizeAddress(selected?.billingAddress);
   const shippingAddress = normalizeAddress(selected?.shippingAddress);
   const customerEmail =
-    String(selected?.customerEmail || selected?.contactPersons?.[0]?.email || "").trim();
+    String(
+      customerProfile?.email ||
+        customerProfile?.contactPersons?.find((p: any) => p?.isPrimary)?.email ||
+        selected?.customerEmail ||
+        selected?.contactPersons?.[0]?.email ||
+        ""
+    ).trim();
+  const amountValue = Number(String(selected?.amount || "").replace(/[^\d.]/g, "")) || 0;
+  const currencyCode = String(selected?.amount || "").match(/^[A-Za-z]+/)?.[0] || "AMD";
+  const formatMoney = (value: number) => `${currencyCode}${Number(value || 0).toFixed(2)}`;
+  const lineItems = useMemo(() => {
+    if (!selected) return [];
+    const rows: Array<{ label: string; quantity: number; rate: number; tax: string; amount: number; description?: string }> = [];
+    if (selected.planName) {
+      rows.push({
+        label: selected.planName,
+        quantity: Number(selected.quantity || 1) || 1,
+        rate: Number(selected.price || 0) || 0,
+        tax: String(selected.tax || "-"),
+        amount: (Number(selected.quantity || 1) || 1) * (Number(selected.price || 0) || 0),
+        description: String(selected.planDescription || ""),
+      });
+    }
+    const addons = Array.isArray(selected.addonLines) ? selected.addonLines : [];
+    addons.forEach((addon: any) => {
+      if (!addon?.addonName) return;
+      rows.push({
+        label: String(addon.addonName),
+        quantity: Number(addon.quantity || 0) || 0,
+        rate: Number(addon.rate || 0) || 0,
+        tax: String(addon.tax || "-"),
+        amount: (Number(addon.quantity || 0) || 0) * (Number(addon.rate || 0) || 0),
+        description: String(addon.description || ""),
+      });
+    });
+    return rows;
+  }, [selected]);
+  const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const taxAmount = lineItems.reduce((sum, item) => {
+    const rate = Number(String(item.tax || "").replace(/[^\d.]/g, "")) || 0;
+    if (!rate) return sum;
+    return sum + (item.amount * rate) / 100;
+  }, 0);
+  const couponDiscount = Number(String(selected?.couponValue || "").replace(/[^\d.]/g, "")) || 0;
+  const total = Math.max(subtotal + taxAmount - couponDiscount, 0);
+  const customerId = String(selected?.customerId || customerProfile?._id || customerProfile?.id || "").trim();
+  const contactPersons = useMemo(() => {
+    const list = Array.isArray(customerProfile?.contactPersons)
+      ? customerProfile.contactPersons
+      : Array.isArray(selected?.contactPersons)
+      ? selected.contactPersons
+      : [];
+    const cleaned = list
+      .map((row: any, idx: number) => ({
+        id: String(row?.id || row?._id || row?.email || `cp-${idx}`),
+        name: String(row?.name || row?.fullName || row?.displayName || "").trim(),
+        email: String(row?.email || "").trim(),
+      }))
+      .filter((row: any) => row.email);
+    if (cleaned.length) return cleaned;
+    return customerEmail ? [{ id: "primary", name: selected?.customerName || "", email: customerEmail }] : [];
+  }, [customerProfile?.contactPersons, selected?.contactPersons, selected?.customerName, customerEmail]);
   const salespersonName = useMemo(() => {
     const id = String(selected?.salesperson || selected?.salespersonId || "");
     if (!id) return "";
@@ -148,6 +213,17 @@ export default function SubscriptionDetailPage() {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
   }, []);
 
   useEffect(() => {
@@ -236,9 +312,62 @@ export default function SubscriptionDetailPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const loadCustomer = async () => {
+      const customerId = String(selected?.customerId || "").trim();
+      const customerName = String(selected?.customerName || "").trim().toLowerCase();
+      const cachedKeys = ["taban_books_customers", "taban_customers", "customers"];
+      let cached: any[] = [];
+      for (const key of cachedKeys) {
+        try {
+          const raw = localStorage.getItem(key);
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) cached = cached.concat(parsed);
+        } catch {
+          // ignore cache parse errors
+        }
+      }
+      const normalizedId = customerId.toLowerCase();
+      const match =
+        cached.find((row: any) => String(row?._id || row?.id || "").toLowerCase() === normalizedId) ||
+        cached.find((row: any) => String(row?.customerId || "").toLowerCase() === normalizedId) ||
+        cached.find((row: any) => String(row?.displayName || row?.name || "").trim().toLowerCase() === customerName) ||
+        null;
+      if (match) {
+        setCustomerProfile(match);
+        return;
+      }
+      if (!customerId) {
+        setCustomerProfile(null);
+        return;
+      }
+      try {
+        const apiCustomer = await getCustomerById(customerId);
+        if (apiCustomer) {
+          setCustomerProfile(apiCustomer);
+        }
+      } catch {
+        // ignore API errors
+      }
+    };
+    loadCustomer();
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || ["taban_books_customers", "taban_customers", "customers"].includes(event.key)) {
+        loadCustomer();
+      }
+    };
+    const onFocus = () => loadCustomer();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [selected?.customerId, selected?.customerName]);
+
   return (
-    <div className="flex h-full bg-white font-sans text-gray-800 antialiased">
-      <div className="w-[320px] border-r border-gray-200 flex flex-col">
+    <div className="flex h-[calc(100vh-0px)] overflow-hidden bg-white font-sans text-gray-800 antialiased">
+      <div className="w-[320px] border-r border-gray-200 flex flex-col h-full">
         {selectedCount === 0 && (
           <div className="flex items-center justify-between px-6 border-b border-gray-100 bg-white h-[60px] shrink-0">
           <div className="relative" ref={filterDropdownRef}>
@@ -300,7 +429,7 @@ export default function SubscriptionDetailPage() {
         </div>
         )}
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-y-auto">
           {selectedCount > 0 && (
             <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center gap-3">
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
@@ -377,8 +506,9 @@ export default function SubscriptionDetailPage() {
       </div>
 
       {hasSelection ? (
-      <div className="flex-1 overflow-auto">
-        <div className="flex items-start justify-between px-8 py-4 border-b border-gray-200">
+      <div className="flex-1 overflow-y-auto h-full">
+        <div className="sticky top-0 z-[30] bg-white">
+          <div className="flex items-start justify-between px-8 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-[18px] font-semibold text-slate-900">
               {selected.customerName} - {selected.planName} (DD)
@@ -421,6 +551,8 @@ export default function SubscriptionDetailPage() {
                   contentType: String(selected?.contentType || "product"),
                   items: Array.isArray(selected?.items) ? selected.items : [],
                   customerNotes: String(selected?.customerNotes || ""),
+                  expiresAfter: String(selected?.expiresAfter || ""),
+                  neverExpires: Boolean(selected?.neverExpires ?? false),
                   tag: String(selected?.tag || ""),
                   reportingTags: Array.isArray(selected?.reportingTags) ? selected.reportingTags : [],
                   startDate: parseShortDate(selected?.activatedOn || ""),
@@ -434,6 +566,7 @@ export default function SubscriptionDetailPage() {
                   subscriptionNumber: String(selected?.subscriptionNumber || ""),
                   referenceNumber: String(selected?.referenceNumber || ""),
                   salesperson: String(selected?.salesperson || selected?.salespersonId || ""),
+                  salespersonName: String(selected?.salespersonName || ""),
                   meteredBilling: Boolean(selected?.meteredBilling ?? false),
                   paymentMode: String(selected?.paymentMode || "offline"),
                   paymentTerms: String(selected?.paymentTerms || "Due on Receipt"),
@@ -526,25 +659,25 @@ export default function SubscriptionDetailPage() {
               <X size={18} />
             </button>
           </div>
-        </div>
-
-        <div className="px-8 border-b border-gray-200">
-          <div className="flex gap-6 text-sm">
-            {[
-              { key: "overview", label: "Overview" },
-              { key: "invoice", label: "Invoice History" },
-              { key: "activity", label: "Recent Activities" },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                className={`py-3 border-b-2 ${
-                  activeTab === tab.key ? "border-blue-600 text-blue-600 font-semibold" : "border-transparent text-gray-500 hover:text-gray-700"
-                }`}
-                onClick={() => setActiveTab(tab.key as "overview" | "invoice" | "activity")}
-              >
-                {tab.label}
-              </button>
-            ))}
+          </div>
+          <div className="px-8 border-b border-gray-200 bg-white">
+            <div className="flex gap-6 text-sm">
+              {[
+                { key: "overview", label: "Overview" },
+                { key: "invoice", label: "Invoice History" },
+                { key: "activity", label: "Recent Activities" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  className={`py-3 border-b-2 ${
+                    activeTab === tab.key ? "border-blue-600 text-blue-600 font-semibold" : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                  onClick={() => setActiveTab(tab.key as "overview" | "invoice" | "activity")}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -559,7 +692,17 @@ export default function SubscriptionDetailPage() {
                       <User size={20} />
                     </div>
                     <div>
-                    <div className="text-sm font-semibold text-blue-600">{selected.customerName}</div>
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-blue-600 hover:underline"
+                        onClick={() => {
+                          if (customerId) {
+                            navigate(`/sales/customers/${customerId}`);
+                          }
+                        }}
+                      >
+                        {selected.customerName}
+                      </button>
                     <div className="text-xs text-gray-500">{customerEmail}</div>
                   </div>
                 </div>
@@ -644,17 +787,20 @@ export default function SubscriptionDetailPage() {
                     <div className="flex justify-between"><span>Subscription Number</span><span className="text-gray-900">{selected.subscriptionNumber}</span></div>
                   <div className="flex justify-between"><span>Autocharge</span><span className="text-gray-900">Disabled</span></div>
                   <div className="flex justify-between"><span>Reference Number</span><span className="text-gray-900">{selected.referenceNumber || "sc"}</span></div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-start">
                     <span>Salesperson</span>
-                    <button
-                      className="text-blue-600"
-                      onClick={() => {
-                        setSelectedSalespersonId(String(selected?.salesperson || selected?.salespersonId || ""));
-                        setIsUpdateSalespersonOpen(true);
-                      }}
-                    >
-                      {salespersonName || "Update"}
-                    </button>
+                    <div className="text-right">
+                      <div className="text-gray-900">{salespersonName || "Not set"}</div>
+                      <button
+                        className="text-blue-600 text-xs"
+                        onClick={() => {
+                          setSelectedSalespersonId(String(selected?.salesperson || selected?.salespersonId || ""));
+                          setIsUpdateSalespersonOpen(true);
+                        }}
+                      >
+                        Update
+                      </button>
+                    </div>
                   </div>
                   </div>
                 </div>
@@ -663,7 +809,21 @@ export default function SubscriptionDetailPage() {
                 <h3 className="text-xs font-semibold text-slate-500 uppercase">Associated Contacts</h3>
                 <div className="mt-3 text-sm text-gray-700">
                   {customerEmail || "No contact email"}
-                  <div><button className="text-blue-600 text-xs mt-1">Manage Contact Persons</button></div>
+                  <div>
+                    <button
+                      className="text-blue-600 text-xs mt-1"
+                      onClick={() => {
+                        const existingSelection = Array.isArray(selected?.contactPersons)
+                          ? selected.contactPersons.map((c: any) => String(c?.email || "").trim()).filter(Boolean)
+                          : [];
+                        const fallback = contactPersons.map((c) => c.email);
+                        setSelectedContactEmails(existingSelection.length ? existingSelection : fallback);
+                        setIsManageContactsOpen(true);
+                      }}
+                    >
+                      Manage Contact Persons
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -723,22 +883,43 @@ export default function SubscriptionDetailPage() {
                     <span className="text-right">Tax</span>
                     <span className="text-right">Amount</span>
                   </div>
-                  <div className="grid grid-cols-6 px-3 py-3 text-sm text-gray-700">
-                    <span className="col-span-2 uppercase">{selected.planName}</span>
-                    <span className="text-right">1</span>
-                    <span className="text-right">{selected.amount}</span>
-                    <span className="text-right">-</span>
-                    <span className="text-right">{selected.amount}</span>
-                  </div>
+                  {lineItems.map((item, idx) => (
+                    <div key={`${item.label}-${idx}`} className="grid grid-cols-6 px-3 py-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">
+                      <div className="col-span-2">
+                        <div className="uppercase">{item.label}</div>
+                        {item.description && <div className="text-xs text-gray-400">{item.description}</div>}
+                      </div>
+                      <span className="text-right">{item.quantity}</span>
+                      <span className="text-right">{formatMoney(item.rate)}</span>
+                      <span className="text-right">{item.tax || "-"}</span>
+                      <span className="text-right">{formatMoney(item.amount)}</span>
+                    </div>
+                  ))}
                   <div className="border-t border-gray-200 px-3 py-3 text-sm text-gray-700 flex justify-end">
-                    <div className="w-48 space-y-1">
+                    <div className="w-56 space-y-1">
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>Sub Total</span>
+                        <span>{formatMoney(subtotal)}</span>
+                      </div>
+                      {taxAmount > 0 && (
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>Tax</span>
+                          <span>{formatMoney(taxAmount)}</span>
+                        </div>
+                      )}
+                      {couponDiscount > 0 && (
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>Coupon ({selected?.couponCode || selected?.coupon || "Discount"})</span>
+                          <span>-{formatMoney(couponDiscount)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xs text-gray-500">
                         <span>Round Off</span>
-                        <span>AMD0.00</span>
+                        <span>{formatMoney(0)}</span>
                       </div>
                       <div className="flex justify-between font-semibold text-gray-900">
                         <span>Total</span>
-                        <span>{selected.amount}</span>
+                        <span>{formatMoney(total || amountValue)}</span>
                       </div>
                     </div>
                   </div>
@@ -935,9 +1116,20 @@ export default function SubscriptionDetailPage() {
                   className="px-4 py-2 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold"
                   onClick={() => {
                     const nextId = String(selectedSalespersonId || "");
+                    const salespersonName =
+                      String(
+                        salespersons.find((sp) =>
+                          String(sp?._id || sp?.id || sp?.name) === nextId
+                        )?.name || ""
+                      ).trim();
                     const updated = subscriptions.map((row: any) =>
                       row.id === selected?.id
-                        ? { ...row, salesperson: nextId, salespersonId: nextId }
+                        ? {
+                            ...row,
+                            salesperson: nextId,
+                            salespersonId: nextId,
+                            salespersonName: salespersonName || row.salespersonName,
+                          }
                         : row
                     );
                     setSubscriptions(updated);
@@ -950,6 +1142,94 @@ export default function SubscriptionDetailPage() {
                   }}
                 >
                   Update
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isManageContactsOpen && (
+          <div className="fixed inset-0 z-[230] flex items-start justify-center bg-black/40">
+            <div className="mt-20 w-full max-w-[720px] bg-white rounded-lg shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <h3 className="text-[16px] font-semibold text-gray-900">Manage Contact Persons</h3>
+                <button
+                  className="h-7 w-7 rounded border border-blue-500 text-blue-500 flex items-center justify-center hover:bg-blue-50"
+                  onClick={() => setIsManageContactsOpen(false)}
+                >
+                  {"\u00D7"}
+                </button>
+              </div>
+
+              <div className="px-5 py-4 text-[13px] text-gray-600 border-b border-gray-100">
+                The following contacts will be notified via email about important subscription-related events.
+              </div>
+
+              <div className="px-5 py-3">
+                <div className="grid grid-cols-[24px_1fr_1.2fr] text-[11px] uppercase text-gray-400 font-semibold border-b border-gray-100 pb-2">
+                  <span />
+                  <span>Name</span>
+                  <span>Email Address</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {contactPersons.map((person) => {
+                    const checked = selectedContactEmails.includes(person.email);
+                    return (
+                      <label
+                        key={person.id}
+                        className="grid grid-cols-[24px_1fr_1.2fr] items-center gap-2 py-3 text-sm text-gray-700"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...selectedContactEmails, person.email]
+                              : selectedContactEmails.filter((email) => email !== person.email);
+                            setSelectedContactEmails(next);
+                          }}
+                        />
+                        <span>{person.name || "-"}</span>
+                        <span className="text-gray-600">{person.email}</span>
+                      </label>
+                    );
+                  })}
+                  {contactPersons.length === 0 && (
+                    <div className="py-6 text-center text-sm text-gray-500">No contact persons found.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-200 flex items-center gap-2">
+                <button
+                  className="px-4 py-2 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold"
+                  onClick={() => {
+                    const updated = subscriptions.map((row: any) => {
+                      if (row.id !== selected?.id) return row;
+                      const nextContacts = contactPersons.filter((c) => selectedContactEmails.includes(c.email));
+                      return {
+                        ...row,
+                        contactPersons: nextContacts,
+                        customerEmail: nextContacts[0]?.email || row.customerEmail || "",
+                      };
+                    });
+                    setSubscriptions(updated);
+                    try {
+                      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+                    } catch {
+                      // ignore storage errors
+                    }
+                    setIsManageContactsOpen(false);
+                  }}
+                >
+                  Update
+                </button>
+                <button
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm"
+                  onClick={() => setIsManageContactsOpen(false)}
+                >
+                  Cancel
                 </button>
               </div>
             </div>

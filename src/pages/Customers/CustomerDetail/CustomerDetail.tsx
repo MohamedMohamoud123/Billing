@@ -436,7 +436,7 @@ export default function CustomerDetail() {
 
     // Profile Image and Invite Card state
 
-    const [profileImage, setProfileImage] = useState<string | ArrayBuffer | null>(null);
+    const [profileImage, setProfileImage] = useState<string | null>(null);
     const [isAvatarHovered, setIsAvatarHovered] = useState(false);
     const [showInviteCard, setShowInviteCard] = useState(false);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -456,10 +456,15 @@ export default function CustomerDetail() {
     // Owner email data
     const [ownerEmail, setOwnerEmail] = useState<any>(null);
 
+    const normalizeImageSrc = (value: string | ArrayBuffer | null | undefined): string | null => {
+        if (!value) return null;
+        return typeof value === "string" ? value : null;
+    };
+
     useEffect(() => {
         // Set profile image when customer is loaded or updated
         if (customer?.profileImage) {
-            setProfileImage(customer.profileImage);
+            setProfileImage(normalizeImageSrc(customer.profileImage));
         } else {
             // Reset to null if customer doesn't have a profile image
             setProfileImage(null);
@@ -486,15 +491,20 @@ export default function CustomerDetail() {
         const reader = new FileReader();
         reader.onloadend = async () => {
             const base64String = reader.result;
+            const normalized = typeof base64String === "string" ? base64String : null;
+            if (!normalized) {
+                toast.error('Error reading image file');
+                return;
+            }
 
             // Optimistically update UI
-            setProfileImage(base64String);
+            setProfileImage(normalized);
 
             if (customer && id) {
                 try {
                     // Only send profileImage field to avoid sending entire customer object
                     const updateData = {
-                        profileImage: base64String
+                        profileImage: normalized
                     };
 
                     const response = await customersAPI.update(id, updateData);
@@ -507,13 +517,13 @@ export default function CustomerDetail() {
                         // Fallback: update local state
                         setCustomer({
                             ...customer,
-                            profileImage: base64String
+                            profileImage: normalized
                         });
                         toast.success('Profile image updated successfully');
                     }
                 } catch (error) {
                     // Revert UI change on error
-                    setProfileImage(customer.profileImage || null);
+                    setProfileImage(normalizeImageSrc(customer.profileImage));
                     toast.error('Failed to update profile image: ' + ((error as any).message || 'Unknown error'));
                 }
             }
@@ -5845,7 +5855,7 @@ export default function CustomerDetail() {
                                     <div className="border-t border-b border-gray-200 divide-y divide-gray-100">
                                         <div className="flex justify-between py-2 text-[13px]">
                                             <span className="text-gray-600">Opening Balance</span>
-                                            <span className="font-medium text-gray-900">{organizationProfile?.baseCurrency || "KES"} {parseFloat(customer?.openingBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            <span className="font-medium text-gray-900">{organizationProfile?.baseCurrency || "KES"} {parseFloat(String(customer?.openingBalance ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="flex justify-between py-2 text-[13px]">
                                             <span className="text-gray-600">Invoiced Amount</span>
@@ -5913,7 +5923,7 @@ export default function CustomerDetail() {
                                 <div className="flex justify-end gap-16 py-4 px-4 border-t-2 border-gray-300 mt-2">
                                     <div className="text-[14px] font-bold text-gray-900">Balance Due</div>
                                     <div className="text-[14px] font-bold text-gray-900">
-                                        $ {statementTransactions.length > 0 ? statementTransactions[statementTransactions.length - 1].balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : parseFloat(customer?.openingBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        $ {statementTransactions.length > 0 ? statementTransactions[statementTransactions.length - 1].balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : parseFloat(String(customer?.openingBalance ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                 </div>
                             </div>
@@ -6255,7 +6265,7 @@ export default function CustomerDetail() {
                             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
                                 <button
                                     className={`px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium cursor-pointer hover:bg-blue-700 flex items-center gap-2 ${isCloning ? "opacity-70 cursor-not-allowed" : ""}`}
-                                    onClick={handleCloneSubmit}
+                                    onClick={() => handleCloneSubmit()}
                                     disabled={isCloning}
                                 >
                                     {isCloning && <Loader2 size={14} className="animate-spin" />}
@@ -7777,7 +7787,7 @@ export default function CustomerDetail() {
                                                         setInviteEmail('');
                                                         setShowInviteCard(true);
                                                     } else {
-                                                        throw new Error(response?.message || response?.error || 'Failed to send invitation');
+                                                        throw new Error(response?.message || 'Failed to send invitation');
                                                     }
                                                 } catch (error) {
                                                     const errorMessage = error.data?.message || error.data?.error || error.message || 'Unknown error';
