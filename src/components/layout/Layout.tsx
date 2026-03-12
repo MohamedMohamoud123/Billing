@@ -38,7 +38,7 @@ export default function Layout({ children }) {
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
           />
-          <div className={`flex-1 min-w-0 min-h-screen bg-white ${sidebarCollapsed ? "lg:ml-[88px]" : "lg:ml-[236px]"}`}>
+          <div className={`flex-1 min-w-0 min-h-screen bg-white ${sidebarCollapsed ? "lg:ml-[112px]" : "lg:ml-[236px]"}`}>
             <Header onToggleSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)} />
 
             {/* Mobile Action Bar - "Under the header" */}

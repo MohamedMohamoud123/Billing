@@ -1,5 +1,6 @@
 // src/components/layout/sidebar/Sidebar.jsx
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   BarChart3,
@@ -18,6 +19,7 @@ import { useUser } from "../../lib/auth/UserContext";
 import { useSettings } from "../../lib/settings/SettingsContext";
 import { getNavConfigForRole } from "../../config/roleBasedNav";
 import tabnLogo from "../../assets/tabnlog.png";
+import packageJson from "../../../package.json";
 
 function renderIcon(name) {
   const common = {
@@ -328,10 +330,30 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
   const { user, hasPermission } = useUser();
   const { settings } = useSettings();
   const isCollapsed = collapsed && !mobileOpen;
+  const sidebarContainerRef = useRef(null);
+  const flyoutCloseTimeoutRef = useRef(null);
   const [hoveredParent, setHoveredParent] = useState(null);
+  const [hoveredParentLabel, setHoveredParentLabel] = useState("");
+  const [flyoutPosition, setFlyoutPosition] = useState({ top: 0, left: 0 });
+
+  const cancelFlyoutClose = () => {
+    if (!flyoutCloseTimeoutRef.current) return;
+    clearTimeout(flyoutCloseTimeoutRef.current);
+    flyoutCloseTimeoutRef.current = null;
+  };
+
+  const scheduleFlyoutClose = () => {
+    cancelFlyoutClose();
+    flyoutCloseTimeoutRef.current = setTimeout(() => {
+      setHoveredParent(null);
+    }, 250);
+  };
 
   // Get company name from settings
-  const companyName = settings?.general?.companyDisplayName || "Billing";
+  const companyName = (settings?.general?.companyDisplayName || "Billing").trim();
+  const [companyPrimaryRaw, ...companySecondaryParts] = companyName.split(/\s+/).filter(Boolean);
+  const companyPrimary = companyPrimaryRaw || "Billing";
+  const companySecondary = companySecondaryParts.join(" ");
 
   // === ROLE-BASED NAVIGATION ===
   // Get user role and load appropriate navigation config
@@ -360,10 +382,10 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
   };
 
   const sidebarClasses = [
-    "z-40 -translate-x-full transform transition duration-200 ease-out h-full",
+    "z-50 -translate-x-full transform transition duration-200 ease-out",
     "fixed inset-y-0 left-0",
-    "lg:fixed lg:inset-y-2 lg:left-2 lg:translate-x-0",
-    isCollapsed ? "w-[220px] lg:w-[72px]" : "w-[220px] lg:w-[220px]",
+    "lg:fixed lg:inset-y-4 lg:left-2 lg:translate-x-0",
+    isCollapsed ? "w-[220px] lg:w-[96px]" : "w-[220px] lg:w-[220px]",
     mobileOpen ? "translate-x-0" : "",
   ]
     .filter(Boolean)
@@ -373,8 +395,8 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
 
   const linkClasses = (isActive, isSpecial = false, isDropdownOpen = false, hasSubMenu = false) =>
     [
-      "group flex items-center rounded-lg py-3 text-[15px] transition-colors no-underline",
-      isCollapsed ? "justify-center px-2" : "gap-2.5 px-3",
+      "group relative flex items-center rounded-xl transition-colors no-underline",
+      isCollapsed ? "flex-col justify-center gap-1 px-2 py-2.5" : "gap-2.5 px-4 py-2 text-[15px]",
       isSpecial
         ? "border border-[#4f5d83] bg-[#303a5d] text-white hover:bg-[#36406a]"
         : hasSubMenu && isActive
@@ -386,7 +408,7 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
 
   const submenuClasses = (isActive) =>
     [
-      "block rounded-md px-3 py-2 text-[14px] font-medium transition-colors no-underline",
+      "block rounded-lg px-3 py-2 text-[14px] font-medium transition-colors no-underline",
       isActive
         ? "bg-white/10 text-white"
         : "text-white/90 hover:bg-white/10 hover:text-white",
@@ -431,19 +453,49 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
     <aside className={sidebarClasses} aria-label="Primary sidebar navigation">
       <div className="flex h-full w-full flex-col">
         <div
-          className="flex h-full max-h-screen flex-col border-r border-[#30395f] text-white transition-colors duration-300"
+          ref={sidebarContainerRef}
+          className="relative flex h-full max-h-screen flex-col border-r border-[#30395f] text-white transition-colors duration-300 lg:rounded-3xl"
           style={{ backgroundColor: sidebarColor }}
         >
-          <div className={`flex items-center gap-2 border-b border-white/10 px-4 py-4 ${isCollapsed ? "justify-center" : ""}`}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 text-white">
-              <img src={tabnLogo} alt="Taban logo" className="h-[18px] w-[18px] object-contain" />
+          <div
+            className={`flex items-center border-b border-white/10 px-4 py-4 ${isCollapsed ? "justify-center" : "justify-between"}`}
+          >
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 text-white">
+                <img src={tabnLogo} alt="Taban logo" className="h-[18px] w-[18px] object-contain" />
+              </div>
+              {!isCollapsed && (
+                <div className="min-w-0">
+                  <div className="truncate text-lg font-semibold leading-tight tracking-tight">{companyPrimary}</div>
+                  {companySecondary ? (
+                    <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                      {companySecondary}
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
+
             {!isCollapsed && (
-              <div className="truncate text-lg font-semibold tracking-tight">{companyName}</div>
+              <button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-transparent text-white transition-colors hover:bg-white/10"
+                aria-label="Collapse sidebar"
+                onClick={() => onToggleCollapse?.()}
+              >
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+                  />
+                </svg>
+              </button>
             )}
           </div>
 
-          <nav className="flex-1 overflow-y-auto px-2.5 py-3.5 scrollbar-hide">
+          <nav className="flex-1 overflow-y-auto overflow-x-visible px-2.5 py-3.5 scrollbar-hide">
             <div className="space-y-1.5">
               {visibleSections.map((section, index) => (
                 <div key={index} className="mb-4 last:mb-0 space-y-1.5">
@@ -465,11 +517,19 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
                         <li
                           key={item.to}
                           className="relative"
-                          onMouseEnter={() => {
-                            if (isCollapsed && hasSubMenu) setHoveredParent(item.to);
+                          onMouseEnter={(event) => {
+                            if (!isCollapsed || !hasSubMenu) return;
+                            cancelFlyoutClose();
+                            setHoveredParent(item.to);
+                            setHoveredParentLabel(item.label);
+                            const itemRect = event.currentTarget.getBoundingClientRect();
+                            const sidebarRect = sidebarContainerRef.current?.getBoundingClientRect?.();
+                            const left = (sidebarRect?.right ?? itemRect.right) + 12;
+                            setFlyoutPosition({ top: itemRect.top, left });
                           }}
                           onMouseLeave={() => {
-                            if (isCollapsed && hasSubMenu) setHoveredParent(null);
+                            if (!isCollapsed || !hasSubMenu) return;
+                            scheduleFlyoutClose();
                           }}
                         >
                           <NavLink
@@ -491,7 +551,7 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
                             }
                             style={{ textDecoration: "none" }}
                           >
-                            {!isSpecial && (
+                            {!isSpecial && !isCollapsed && (
                               <span
                                 className={`flex h-4 w-4 items-center justify-center transition-transform ${arrowColorClass} ${hasSubMenu && openParent === item.to ? "rotate-90" : ""}`}
                                 aria-hidden="true"
@@ -505,6 +565,14 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
                             <span className="flex h-6 w-6 items-center justify-center">
                               {renderIcon(item.icon)}
                             </span>
+                            {isCollapsed && hasSubMenu && (
+                              <div className="absolute bottom-1 right-1 opacity-40 text-white" aria-hidden="true">
+                                <svg width="6" height="6" viewBox="0 0 6 6" fill="currentColor">
+                                  <path d="M6 6L0 6L6 0V6Z" />
+                                </svg>
+                              </div>
+                            )}
+
                             {!isCollapsed && (
                               <div className="min-w-0 flex-1">
                                 <span className={`block truncate ${isSpecial || isActive || isParentActive ? "font-semibold" : "font-medium"}`}>
@@ -518,6 +586,12 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
                               </div>
                             )}
 
+                            {isCollapsed && (
+                              <span className="w-full px-1 text-center text-[11px] font-semibold leading-tight opacity-90 break-words max-h-[2.4rem] overflow-hidden">
+                                {item.label}
+                              </span>
+                            )}
+
                             {isSpecial && !isCollapsed && (
                               <svg className="h-4 w-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -525,17 +599,16 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
                             )}
                           </NavLink>
 
-                          {isCollapsed && hasSubMenu && hoveredParent === item.to && (
-                            <div
-                              className="absolute left-full top-0 ml-3 w-60 rounded-xl shadow-2xl border border-white/10 z-[200]"
-                              style={{ backgroundColor: sidebarColor }}
-                            >
-                              <div className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-white/70">
-                                {item.label}
-                              </div>
-                              <div className="pb-3">
+                          {!isCollapsed && hasSubMenu && openParent === item.to && (
+                            <div className="relative mt-2 ml-12">
+                              <span
+                                aria-hidden="true"
+                                className="absolute -left-4 -top-3 bottom-0 w-px bg-white/10"
+                              />
+                              <ul className="space-y-2.5">
                                 {subMenus[item.to]
                                   .filter(sub => {
+                                    // Filter submenu items based on permissions too
                                     const subModuleKey = getModuleKeyForPath(sub.to);
                                     if (!subModuleKey) return true;
                                     return hasPermission(subModuleKey, 'view');
@@ -543,70 +616,33 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
                                   .map((sub) => {
                                     const Icon = getSubmenuIcon(sub.to);
                                     return (
-                                    <NavLink
-                                      key={sub.to}
-                                      to={sub.to}
-                                      end={sub.to === item.to}
-                                      onClick={handleLinkClick}
-                                      className={({ isActive }) =>
-                                        `group mx-3 mt-1 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors no-underline ${isActive ? "bg-white/10 text-white" : "text-white/90 hover:bg-white/10 hover:text-white"}`
-                                      }
-                                      style={{ textDecoration: 'none' }}
-                                    >
-                                      <span className="flex items-center gap-2 min-w-0">
-                                        <Icon size={14} className="text-white/70 group-hover:text-white" />
-                                        <span className="truncate">{sub.label}</span>
-                                      </span>
-                                      {sub.showAddBadge && (
-                                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/10 text-white text-[14px] leading-none">
-                                          +
-                                        </span>
-                                      )}
-                                    </NavLink>
-                                  );
-                                  })}
-                              </div>
-                            </div>
-                          )}
-
-                          {!isCollapsed && hasSubMenu && openParent === item.to && (
-                            <ul className="mt-2 ml-12 space-y-2.5">
-                              {subMenus[item.to]
-                                .filter(sub => {
-                                  // Filter submenu items based on permissions too
-                                  const subModuleKey = getModuleKeyForPath(sub.to);
-                                  if (!subModuleKey) return true;
-                                  return hasPermission(subModuleKey, 'view');
-                                })
-                                .map((sub) => {
-                                  const Icon = getSubmenuIcon(sub.to);
-                                  return (
-                                  <li key={sub.to}>
-                                    <NavLink
-                                      to={sub.to}
-                                      end={sub.to === item.to}
-                                      onClick={handleLinkClick}
-                                      className={({ isActive }) =>
-                                        submenuClasses(isActive)
-                                      }
-                                      style={{ textDecoration: 'none' }}
-                                    >
-                                      <span className="flex items-center justify-between gap-2">
-                                        <span className="flex items-center gap-2 min-w-0">
-                                          <Icon size={14} className="text-white/70" />
-                                          <span className="truncate">{sub.label}</span>
-                                        </span>
-                                        {sub.showAddBadge && (
-                                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/10 text-white text-[14px] leading-none">
-                                            +
+                                      <li key={sub.to}>
+                                        <NavLink
+                                          to={sub.to}
+                                          end={sub.to === item.to}
+                                          onClick={handleLinkClick}
+                                          className={({ isActive }) =>
+                                            submenuClasses(isActive)
+                                          }
+                                          style={{ textDecoration: 'none' }}
+                                        >
+                                          <span className="flex items-center justify-between gap-2">
+                                            <span className="flex items-center gap-2 min-w-0">
+                                              <Icon size={14} className="text-white/70" />
+                                              <span className="truncate">{sub.label}</span>
+                                            </span>
+                                            {sub.showAddBadge && (
+                                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/10 text-white text-[14px] leading-none">
+                                                +
+                                              </span>
+                                            )}
                                           </span>
-                                        )}
-                                      </span>
-                                    </NavLink>
-                                  </li>
-                                  );
-                                })}
-                            </ul>
+                                        </NavLink>
+                                      </li>
+                                    );
+                                  })}
+                              </ul>
+                            </div>
                           )}
                         </li>
                       );
@@ -617,25 +653,89 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
             </div>
           </nav>
 
-          <div className="px-2.5 pb-3 pt-1">
-            <div className={`flex ${isCollapsed ? "justify-center" : "justify-end"}`}>
-              <button
-                type="button"
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2f385c] text-white/70 transition-colors hover:bg-[#39446d] hover:text-white"
-                aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                onClick={() => onToggleCollapse?.()}
+          {isCollapsed && hoveredParent && subMenus[hoveredParent] && typeof document !== "undefined"
+            ? createPortal(
+              <div
+                className="fixed z-[9999]"
+                style={{ top: flyoutPosition.top, left: flyoutPosition.left }}
+                onMouseEnter={cancelFlyoutClose}
+                onMouseLeave={scheduleFlyoutClose}
               >
-                <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d={isCollapsed ? "M13 19l7-7-7-7M5 19l7-7-7-7" : "M11 19l-7-7 7-7m8 14l-7-7 7-7"}
-                  />
-                </svg>
-              </button>
+                <div
+                  className="w-72 rounded-2xl shadow-2xl border border-white/10 overflow-hidden"
+                  style={{ backgroundColor: sidebarColor }}
+                >
+                  <div className="border-b border-white/10 px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
+                    {hoveredParentLabel}
+                  </div>
+                  <div className="pb-4 px-3 max-h-[70vh] overflow-y-auto">
+                    {subMenus[hoveredParent]
+                      .filter((sub) => {
+                        const subModuleKey = getModuleKeyForPath(sub.to);
+                        if (!subModuleKey) return true;
+                        return hasPermission(subModuleKey, "view");
+                      })
+                      .map((sub) => (
+                        <NavLink
+                          key={sub.to}
+                          to={sub.to}
+                          end
+                          onClick={handleLinkClick}
+                          className={({ isActive }) =>
+                            `group flex items-center justify-between gap-2 rounded-xl px-4 py-2.5 text-[14px] font-medium transition-colors no-underline mb-1 border ${isActive ? "bg-white/10 text-white border-blue-500" : "text-white/90 hover:bg-white/10 border-transparent"}`
+                          }
+                          style={{ textDecoration: "none" }}
+                        >
+                          <span className="min-w-0 truncate">{sub.label}</span>
+                          {sub.showAddBadge && (
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/10 text-white text-[14px] leading-none">
+                              +
+                            </span>
+                          )}
+                        </NavLink>
+                      ))}
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+            : null}
+
+          {!isCollapsed && (
+            <div className="px-4 pb-6 pt-3">
+              <div className="border-t border-white/10 pt-3">
+                <div className="text-xs font-medium text-white/80">Version {packageJson.version}</div>
+                <div className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-white/70">
+                  <span aria-hidden="true">{"\u00A9"}</span>
+                  <span className="truncate">{companyName}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {isCollapsed && (
+            <div className="px-4 pb-6 pt-3">
+              <div className="border-t border-white/10 pt-3">
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    className="flex h-10 w-10 items-center justify-center rounded-2xl bg-transparent text-white transition-colors hover:bg-white/10"
+                    aria-label="Expand sidebar"
+                    onClick={() => onToggleCollapse?.()}
+                  >
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 19l7-7-7-7M5 19l7-7-7-7"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </aside>
@@ -643,32 +743,32 @@ function Sidebar({ mobileOpen = false, onCloseMobile, collapsed = false, onToggl
 }
 
 export default Sidebar;
-  const getSubmenuIcon = (path) => {
-    const map = {
-      "/products/items": ShoppingBag,
-      "/products/plans": Sparkles,
-      "/products/addons": ShoppingCart,
-      "/products/coupons": FileText,
-      "/products/pricing-widgets": BarChart3,
-      "/products/price-lists": FileText,
-      "/sales/quotes": FileText,
-      "/sales/retainer-invoices": File,
-      "/sales/invoices": FileText,
-      "/sales/sales-receipts": ShoppingCart,
-      "/sales/subscriptions": Calendar,
-      "/sales/credit-notes": CreditCard,
-      "/payments/payments-received": CreditCard,
-      "/payments/payment-links": FileText,
-      "/payments/gateways": BarChart3,
-      "/expenses": FileText,
-      "/expenses/recurring-expenses": Clock3,
-      "/time-tracking/projects": BarChart3,
-      "/time-tracking/timesheet": Clock3,
-      "/time-tracking/approvals": FileText,
-      "/time-tracking/customer-approvals": Users,
-      "/settings/all-settings": FileText,
-      "/settings/organization-settings/users-roles/users": Users,
-      "/settings/organization-settings/users-roles/roles": Users,
-    };
-    return map[path] || FileText;
+const getSubmenuIcon = (path) => {
+  const map = {
+    "/products/items": ShoppingBag,
+    "/products/plans": Sparkles,
+    "/products/addons": ShoppingCart,
+    "/products/coupons": FileText,
+    "/products/pricing-widgets": BarChart3,
+    "/products/price-lists": FileText,
+    "/sales/quotes": FileText,
+    "/sales/retainer-invoices": File,
+    "/sales/invoices": FileText,
+    "/sales/sales-receipts": ShoppingCart,
+    "/sales/subscriptions": Calendar,
+    "/sales/credit-notes": CreditCard,
+    "/payments/payments-received": CreditCard,
+    "/payments/payment-links": FileText,
+    "/payments/gateways": BarChart3,
+    "/expenses": FileText,
+    "/expenses/recurring-expenses": Clock3,
+    "/time-tracking/projects": BarChart3,
+    "/time-tracking/timesheet": Clock3,
+    "/time-tracking/approvals": FileText,
+    "/time-tracking/customer-approvals": Users,
+    "/settings/all-settings": FileText,
+    "/settings/organization-settings/users-roles/users": Users,
+    "/settings/organization-settings/users-roles/roles": Users,
   };
+  return map[path] || FileText;
+};

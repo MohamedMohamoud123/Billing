@@ -27,7 +27,6 @@ const baseSections: NavSection[] = [
       { label: "Events", to: "/events", icon: "events" },
       { label: "Reports", to: "/reports", icon: "reports" },
       { label: "Documents", to: "/documents", icon: "documents" },
-      { label: "Settings", to: "/settings", icon: "settings" },
     ],
   },
 ];
