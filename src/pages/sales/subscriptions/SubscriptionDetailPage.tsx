@@ -11,9 +11,13 @@ import {
   Edit,
   Info,
   User,
+  FileText,
+  Trash2,
 } from "lucide-react";
 import { salespersonsAPI } from "../../../services/api";
 import { getCustomerById } from "../salesModel";
+import { useUser } from "../../../lib/auth/UserContext";
+import { runSubscriptionBillingSimulation } from "./subscriptionBilling";
 
 const parseShortDate = (value?: string) => {
   if (!value) return "";
@@ -42,6 +46,7 @@ const parseShortDate = (value?: string) => {
 export default function SubscriptionDetailPage() {
   const navigate = useNavigate();
   const { subscriptionId } = useParams();
+  const { user } = useUser();
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [moreDropdownOpen, setMoreDropdownOpen] = useState(false);
   const [detailMoreOpen, setDetailMoreOpen] = useState(false);
@@ -60,6 +65,12 @@ export default function SubscriptionDetailPage() {
   const [isAddChargeOpen, setIsAddChargeOpen] = useState(false);
   const [isUpdateSalespersonOpen, setIsUpdateSalespersonOpen] = useState(false);
   const [isManageContactsOpen, setIsManageContactsOpen] = useState(false);
+  const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [isChangeBillingOpen, setIsChangeBillingOpen] = useState(false);
+  const [billingDateDraft, setBillingDateDraft] = useState("");
+  const [billingReasonDraft, setBillingReasonDraft] = useState("");
+  const [billingFormError, setBillingFormError] = useState("");
   const [selectedContactEmails, setSelectedContactEmails] = useState<string[]>([]);
   const [customerProfile, setCustomerProfile] = useState<any | null>(null);
   const [salespersons, setSalespersons] = useState<any[]>([]);
@@ -68,6 +79,8 @@ export default function SubscriptionDetailPage() {
   const [selectedCouponId, setSelectedCouponId] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "invoice" | "activity">("overview");
+  const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
   const filterDropdownRef = useRef<HTMLDivElement>(null);
   const moreDropdownRef = useRef<HTMLDivElement>(null);
   const detailMoreRef = useRef<HTMLDivElement>(null);
@@ -81,7 +94,8 @@ export default function SubscriptionDetailPage() {
   }, [subscriptionId, subscriptions]);
   const selectedCount = selectedIds.length;
   const isAllSelected = selectedCount > 0 && selectedIds.length === subscriptions.length;
-  const statusText = String(selected?.status || "LIVE").toUpperCase();
+  const rawStatus = String(selected?.status || "LIVE").toUpperCase();
+  const statusText = rawStatus === "UNPAID" ? "LIVE" : rawStatus;
   const statusClass =
     statusText === "UNPAID"
       ? "bg-red-100 text-red-600"
@@ -128,29 +142,46 @@ export default function SubscriptionDetailPage() {
   const amountValue = Number(String(selected?.amount || "").replace(/[^\d.]/g, "")) || 0;
   const currencyCode = String(selected?.amount || "").match(/^[A-Za-z]+/)?.[0] || "AMD";
   const formatMoney = (value: number) => `${currencyCode}${Number(value || 0).toFixed(2)}`;
-  const lineItems = useMemo(() => {
+  type LineItem = {
+    key: string;
+    label: string;
+    quantity: number;
+    rate: number;
+    tax: string;
+    amount: number;
+    description?: string;
+    kind: "plan" | "addon";
+    addonIndex?: number;
+  };
+
+  const lineItems: LineItem[] = useMemo(() => {
     if (!selected) return [];
-    const rows: Array<{ label: string; quantity: number; rate: number; tax: string; amount: number; description?: string }> = [];
+    const rows: LineItem[] = [];
     if (selected.planName) {
       rows.push({
+        key: "plan",
         label: selected.planName,
         quantity: Number(selected.quantity || 1) || 1,
         rate: Number(selected.price || 0) || 0,
         tax: String(selected.tax || "-"),
         amount: (Number(selected.quantity || 1) || 1) * (Number(selected.price || 0) || 0),
         description: String(selected.planDescription || ""),
+        kind: "plan",
       });
     }
     const addons = Array.isArray(selected.addonLines) ? selected.addonLines : [];
-    addons.forEach((addon: any) => {
+    addons.forEach((addon: any, idx: number) => {
       if (!addon?.addonName) return;
       rows.push({
+        key: `addon-${idx}`,
         label: String(addon.addonName),
         quantity: Number(addon.quantity || 0) || 0,
         rate: Number(addon.rate || 0) || 0,
         tax: String(addon.tax || "-"),
         amount: (Number(addon.quantity || 0) || 0) * (Number(addon.rate || 0) || 0),
         description: String(addon.description || ""),
+        kind: "addon",
+        addonIndex: idx,
       });
     });
     return rows;
@@ -189,6 +220,137 @@ export default function SubscriptionDetailPage() {
     return String(match?.name || match?.displayName || id).trim();
   }, [selected?.salesperson, selected?.salespersonId, salespersons]);
 
+  const clearCouponForSelected = () => {
+    if (!selected) return;
+    const updated = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      return {
+        ...sub,
+        coupon: "",
+        couponCode: "",
+        couponValue: "0.00",
+      };
+    });
+    setSubscriptions(updated);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const notes = Array.isArray(selected?.notes) ? selected.notes : [];
+  const formatNoteDate = (value: string) =>
+    new Date(value).toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  const formatDisplayDate = (value?: string) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const saveNoteForSelected = () => {
+    if (!selected) return;
+    const text = noteDraft.trim();
+    if (!text) {
+      setIsAddNoteOpen(false);
+      return;
+    }
+    const authorName = String(user?.name || user?.email || "You");
+    const newNote = {
+      id: `note-${Date.now()}`,
+      text,
+      author: authorName,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      const existingNotes = Array.isArray(sub.notes) ? sub.notes : [];
+      return { ...sub, notes: [newNote, ...existingNotes] };
+    });
+    setSubscriptions(updated);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+    setIsAddNoteOpen(false);
+  };
+
+  const deleteNoteForSelected = (noteId: string) => {
+    if (!selected) return;
+    const updated = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      const existingNotes = Array.isArray(sub.notes) ? sub.notes : [];
+      return { ...sub, notes: existingNotes.filter((note: any) => String(note.id) !== String(noteId)) };
+    });
+    setSubscriptions(updated);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const saveBillingDateChange = () => {
+    if (!selected) return;
+    if (!billingDateDraft) {
+      setBillingFormError("Please select a new billing date.");
+      return;
+    }
+    if (!billingReasonDraft.trim()) {
+      setBillingFormError("Please enter a reason.");
+      return;
+    }
+    const formattedDate = formatDisplayDate(billingDateDraft);
+    const updated = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      return {
+        ...sub,
+        nextBillingOn: formattedDate,
+        nextBillingReason: billingReasonDraft.trim(),
+      };
+    });
+    setSubscriptions(updated);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+    setIsChangeBillingOpen(false);
+  };
+
+  const updateLineItemDescription = (item: LineItem, value: string) => {
+    if (!selected) return;
+    const updated = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      if (item.kind === "plan") {
+        return { ...sub, planDescription: value };
+      }
+      const addonLines = Array.isArray(sub.addonLines) ? [...sub.addonLines] : [];
+      if (item.addonIndex !== undefined && addonLines[item.addonIndex]) {
+        addonLines[item.addonIndex] = { ...addonLines[item.addonIndex], description: value };
+      }
+      return { ...sub, addonLines };
+    });
+    setSubscriptions(updated);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   const readRows = (key: string) => {
     try {
       const raw = localStorage.getItem(key);
@@ -198,6 +360,10 @@ export default function SubscriptionDetailPage() {
       return [];
     }
   };
+
+  useEffect(() => {
+    runSubscriptionBillingSimulation();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -853,7 +1019,19 @@ export default function SubscriptionDetailPage() {
                 <div>
                   <div className="text-xs text-slate-500 uppercase">Next Billing Date</div>
                   <div className="text-lg font-semibold text-slate-900">{selected.nextBillingOn}</div>
-                  <button className="text-blue-600 text-xs">Change</button>
+                  <button
+                    type="button"
+                    className="text-blue-600 text-xs"
+                    onClick={() => {
+                      const pref = parseShortDate(selected?.nextBillingOn);
+                      setBillingDateDraft(pref);
+                      setBillingReasonDraft("");
+                      setBillingFormError("");
+                      setIsChangeBillingOpen(true);
+                    }}
+                  >
+                    Change
+                  </button>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 uppercase">Last Billing Date</div>
@@ -883,11 +1061,68 @@ export default function SubscriptionDetailPage() {
                     <span className="text-right">Tax</span>
                     <span className="text-right">Amount</span>
                   </div>
-                  {lineItems.map((item, idx) => (
-                    <div key={`${item.label}-${idx}`} className="grid grid-cols-6 px-3 py-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">
+                  {lineItems.map((item) => (
+                    <div key={item.key} className="group grid grid-cols-6 px-3 py-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">
                       <div className="col-span-2">
                         <div className="uppercase">{item.label}</div>
                         {item.description && <div className="text-xs text-gray-400">{item.description}</div>}
+                        <button
+                          type="button"
+                          className="mt-1 text-xs text-blue-600 no-underline hover:no-underline opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto"
+                          onClick={() => {
+                            setEditingItemKey(item.key);
+                            setDescriptionDraft(item.description || "");
+                          }}
+                        >
+                          {item.description ? "edit description" : "+ add description"}
+                        </button>
+                        {editingItemKey === item.key && (
+                          <div className="mt-2 rounded border border-gray-200 bg-white p-2">
+                            <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+                              <span>Item Description</span>
+                              <button
+                                type="button"
+                                className="h-5 w-5 flex items-center justify-center text-gray-400 hover:text-gray-600"
+                                onClick={() => {
+                                  setEditingItemKey(null);
+                                  setDescriptionDraft("");
+                                }}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                            <textarea
+                              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+                              rows={3}
+                              value={descriptionDraft}
+                              onChange={(e) => setDescriptionDraft(e.target.value)}
+                              placeholder="Add a description for your item"
+                            />
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="px-3 py-1 text-xs font-semibold text-white rounded bg-[#10a37f] hover:bg-[#0e8a6b]"
+                                onClick={() => {
+                                  updateLineItemDescription(item, descriptionDraft.trim());
+                                  setEditingItemKey(null);
+                                  setDescriptionDraft("");
+                                }}
+                              >
+                                Update
+                              </button>
+                              <button
+                                type="button"
+                                className="px-3 py-1 text-xs border border-gray-300 rounded text-gray-600 hover:bg-gray-50"
+                                onClick={() => {
+                                  setEditingItemKey(null);
+                                  setDescriptionDraft("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <span className="text-right">{item.quantity}</span>
                       <span className="text-right">{formatMoney(item.rate)}</span>
@@ -917,10 +1152,26 @@ export default function SubscriptionDetailPage() {
                         <span>Round Off</span>
                         <span>{formatMoney(0)}</span>
                       </div>
-                      <div className="flex justify-between font-semibold text-gray-900">
-                        <span>Total</span>
-                        <span>{formatMoney(total || amountValue)}</span>
-                      </div>
+                    </div>
+                  </div>
+                  <div className="border-t border-gray-200 px-3 py-3 text-sm text-gray-700 flex items-center justify-between">
+                    <div className="min-w-0">
+                      {(couponDiscount > 0 || selected?.couponCode || selected?.coupon) && (
+                        <div className="flex flex-col text-xs text-gray-500">
+                          <span>Inclusive of SC</span>
+                          <button
+                            type="button"
+                            className="text-blue-600 hover:underline"
+                            onClick={clearCouponForSelected}
+                          >
+                            Remove Coupon
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-semibold text-gray-900 uppercase">Total</div>
+                      <div className="font-semibold text-gray-900">{formatMoney(total || amountValue)}</div>
                     </div>
                   </div>
                 </div>
@@ -929,11 +1180,154 @@ export default function SubscriptionDetailPage() {
               <div>
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase">
                   Notes <Info size={12} className="text-gray-400" />
+                  <button
+                    type="button"
+                    className="text-blue-600 font-normal uppercase"
+                    onClick={() => {
+                      setNoteDraft("");
+                      setIsAddNoteOpen(true);
+                    }}
+                  >
+                    + Add
+                  </button>
                 </div>
-                <div className="mt-2 text-sm text-gray-600">
-                  There are no notes added for this subscription. <button className="text-blue-600">+ Add Note</button>
-                </div>
+                {notes.length === 0 ? (
+                  <div className="mt-2 text-sm text-gray-600">
+                    There are no notes added for this subscription.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {notes.map((note: any) => (
+                      <div key={note.id} className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <FileText size={16} className="text-gray-400 mt-0.5" />
+                          <div className="text-sm text-gray-800">
+                            <div>{note.text}</div>
+                            <div className="text-xs text-gray-500">- {note.author || "You"}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <span>{note.createdAt ? formatNoteDate(note.createdAt) : ""}</span>
+                          <button
+                            type="button"
+                            className="text-gray-400 hover:text-gray-600"
+                            onClick={() => deleteNoteForSelected(String(note.id))}
+                            title="Delete note"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isAddNoteOpen && (
+          <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40">
+            <div className="mt-20 w-full max-w-[640px] bg-white rounded-lg shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+                <h3 className="text-[15px] font-semibold text-gray-900">Note</h3>
+                <button
+                  type="button"
+                  className="h-7 w-7 rounded border border-red-400 text-red-500 flex items-center justify-center hover:bg-red-50"
+                  onClick={() => setIsAddNoteOpen(false)}
+                >
+                  {"\u00D7"}
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                <textarea
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  rows={4}
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                />
+              </div>
+              <div className="px-5 py-4 border-t border-gray-200 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold"
+                  onClick={saveNoteForSelected}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-semibold"
+                  onClick={() => setIsAddNoteOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isChangeBillingOpen && (
+          <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40">
+            <div className="mt-16 w-full max-w-[720px] bg-white rounded-lg shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+                <h3 className="text-[15px] font-semibold text-gray-900">Change Next Billing Date</h3>
+                <button
+                  type="button"
+                  className="h-7 w-7 rounded border border-red-400 text-red-500 flex items-center justify-center hover:bg-red-50"
+                  onClick={() => setIsChangeBillingOpen(false)}
+                >
+                  {"\u00D7"}
+                </button>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <div className="text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+                  The next billing date is currently{" "}
+                  <span className="font-semibold text-gray-800">{selected?.nextBillingOn || "-"}</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">New Billing Date</label>
+                  <input
+                    type="date"
+                    value={billingDateDraft}
+                    onChange={(e) => setBillingDateDraft(e.target.value)}
+                    className="w-full max-w-xs border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Reason<span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                    rows={3}
+                    value={billingReasonDraft}
+                    onChange={(e) => setBillingReasonDraft(e.target.value)}
+                    placeholder="Enter a reason for making this change. It will be displayed in the Recent Activities section."
+                  />
+                  <div className="mt-1 text-[11px] text-gray-400">Max. 500 characters</div>
+                </div>
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+                  Note: Your customer will not be charged or credited for any changes that you make to the next billing date.
+                </div>
+                {billingFormError && <div className="text-xs text-red-600">{billingFormError}</div>}
+              </div>
+              <div className="px-5 py-4 border-t border-gray-200 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold"
+                  onClick={saveBillingDateChange}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-semibold"
+                  onClick={() => setIsChangeBillingOpen(false)}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

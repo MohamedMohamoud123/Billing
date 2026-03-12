@@ -457,6 +457,7 @@ const [formData, setFormData] = useState<InvoiceFormState>({
   attachedFiles: [],
   status: "draft"
 });
+const [loadedInvoice, setLoadedInvoice] = useState<any>(null);
 const isCustomPaymentTerm = selectedPaymentTerm === "custom" || String(formData.receipt || "").toLowerCase() === "custom";
 const selectedPriceListOption = catalogPriceLists.find(
   (option) => option.name === ((formData as any).selectedPriceList || "")
@@ -518,6 +519,156 @@ const setIsRefreshingCustomersQuickAction = noop;
 const setIsReloadingCustomerFrame = noop;
 
 const setIsTaxExclusiveDropdownOpen = noop;
+
+useEffect(() => {
+  if (!isEditMode || !id) return;
+  let active = true;
+  (async () => {
+    try {
+      const invoiceData = await getInvoiceById(id);
+      if (!active || !invoiceData) return;
+      setLoadedInvoice(invoiceData);
+
+      const rawItems = Array.isArray((invoiceData as any)?.items) ? (invoiceData as any).items : [];
+      const mappedItems =
+        rawItems.length > 0
+          ? rawItems.map((item: any, idx: number) => {
+              const quantity = Number(item?.quantity || 1) || 1;
+              const rate = Number(item?.rate || item?.unitPrice || 0) || 0;
+              const amount = Number(item?.amount ?? quantity * rate) || 0;
+              return {
+                id: item?.id || item?._id || `item-${idx + 1}`,
+                itemId: item?.itemId || item?.productId,
+                itemDetails: String(item?.itemDetails || item?.name || item?.description || ""),
+                quantity,
+                rate,
+                tax: String(item?.tax || item?.taxId || item?.taxName || ""),
+                amount,
+                name: item?.name,
+                sku: item?.sku,
+                unit: item?.unit,
+                discount: item?.discount,
+                discountType: item?.discountType,
+                stockOnHand: item?.stockOnHand,
+                account: item?.account,
+                projectId: item?.projectId,
+                project: item?.project,
+                projectName: item?.projectName,
+                reportingTags: item?.reportingTags || [],
+              };
+            })
+          : [{ id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "", amount: 0 }];
+
+      setFormData((prev) => ({
+        ...prev,
+        customerName:
+          (invoiceData as any)?.customerName ||
+          (invoiceData as any)?.customer?.displayName ||
+          (invoiceData as any)?.customer?.companyName ||
+          (invoiceData as any)?.customer?.name ||
+          "",
+        mobile:
+          (invoiceData as any)?.mobile ||
+          (invoiceData as any)?.customer?.mobile ||
+          (invoiceData as any)?.customer?.workPhone ||
+          "",
+        selectedLocation:
+          (invoiceData as any)?.location ||
+          (invoiceData as any)?.selectedLocation ||
+          prev.selectedLocation,
+        reportingTags: (invoiceData as any)?.reportingTags || prev.reportingTags,
+        invoiceNumber: (invoiceData as any)?.invoiceNumber || (invoiceData as any)?.id || prev.invoiceNumber,
+        orderNumber: (invoiceData as any)?.orderNumber || "",
+        invoiceDate: formatDate((invoiceData as any)?.invoiceDate || (invoiceData as any)?.date || (invoiceData as any)?.createdAt),
+        dueDate: (invoiceData as any)?.dueDate ? formatDate((invoiceData as any)?.dueDate) : prev.dueDate,
+        receipt: (invoiceData as any)?.receipt || (invoiceData as any)?.paymentTerms || prev.receipt,
+        accountsReceivable: (invoiceData as any)?.accountsReceivable || prev.accountsReceivable,
+        salesperson: (invoiceData as any)?.salesperson || (invoiceData as any)?.salespersonName || prev.salesperson,
+        salespersonId: (invoiceData as any)?.salespersonId || (invoiceData as any)?.salesperson || prev.salespersonId,
+        subject: (invoiceData as any)?.subject || "",
+        taxExclusive: (invoiceData as any)?.taxExclusive || (invoiceData as any)?.taxPreference || prev.taxExclusive,
+        items: mappedItems as any,
+        subTotal: Number((invoiceData as any)?.subTotal ?? (invoiceData as any)?.subtotal ?? prev.subTotal) || 0,
+        discount: Number((invoiceData as any)?.discount ?? (invoiceData as any)?.discountAmount ?? prev.discount) || 0,
+        discountType: String((invoiceData as any)?.discountType || prev.discountType || "percent"),
+        discountAccount: (invoiceData as any)?.discountAccount || prev.discountAccount,
+        shippingCharges: Number((invoiceData as any)?.shippingCharges ?? (invoiceData as any)?.shipping ?? prev.shippingCharges) || 0,
+        shippingChargeTax: String((invoiceData as any)?.shippingChargeTax || ""),
+        roundOff: Number((invoiceData as any)?.roundOff ?? 0) || 0,
+        total: Number((invoiceData as any)?.total ?? (invoiceData as any)?.amount ?? prev.total) || 0,
+        adjustment: Number((invoiceData as any)?.adjustment ?? 0) || 0,
+        currency: String((invoiceData as any)?.currency || prev.currency || "USD"),
+        customerNotes: String((invoiceData as any)?.customerNotes || (invoiceData as any)?.notes || ""),
+        termsAndConditions: String((invoiceData as any)?.termsAndConditions || ""),
+        attachedFiles: Array.isArray((invoiceData as any)?.attachedFiles) ? (invoiceData as any).attachedFiles : prev.attachedFiles,
+        status: String((invoiceData as any)?.status || prev.status || "draft"),
+      }));
+
+      const fallbackCustomer = (invoiceData as any)?.customer || null;
+      if (fallbackCustomer) {
+        setSelectedCustomer({
+          ...fallbackCustomer,
+          id: fallbackCustomer?._id || fallbackCustomer?.id,
+          name:
+            fallbackCustomer?.displayName ||
+            fallbackCustomer?.companyName ||
+            fallbackCustomer?.name ||
+            (invoiceData as any)?.customerName ||
+            "",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load invoice for edit:", error);
+      toast.error("Failed to load invoice data.");
+    }
+  })();
+  return () => {
+    active = false;
+  };
+}, [isEditMode, id]);
+
+useEffect(() => {
+  if (!loadedInvoice || customers.length === 0) return;
+  const loadedCustomerId =
+    (loadedInvoice as any)?.customerId ||
+    (loadedInvoice as any)?.customer?._id ||
+    (loadedInvoice as any)?.customer?.id ||
+    "";
+  const match =
+    customers.find((c: any) => String(c?.id || c?._id) === String(loadedCustomerId)) ||
+    customers.find((c: any) => String(c?.name || c?.displayName || "").trim() === String((loadedInvoice as any)?.customerName || "").trim());
+  if (match) {
+    setSelectedCustomer(match);
+    setFormData((prev) => ({
+      ...prev,
+      customerName: prev.customerName || match?.displayName || match?.name || match?.companyName || "",
+    }));
+    return;
+  }
+  const fallbackCustomer = (loadedInvoice as any)?.customer;
+  if (fallbackCustomer) {
+    setSelectedCustomer({
+      ...fallbackCustomer,
+      id: fallbackCustomer?._id || fallbackCustomer?.id,
+      name:
+        fallbackCustomer?.displayName ||
+        fallbackCustomer?.companyName ||
+        fallbackCustomer?.name ||
+        (loadedInvoice as any)?.customerName ||
+        "",
+    });
+    setFormData((prev) => ({
+      ...prev,
+      customerName:
+        prev.customerName ||
+        fallbackCustomer?.displayName ||
+        fallbackCustomer?.companyName ||
+        fallbackCustomer?.name ||
+        (loadedInvoice as any)?.customerName ||
+        "",
+    }));
+  }
+}, [loadedInvoice, customers]);
 const setIsUploadDropdownOpen = noop;
 const setModalSelectedCustomerId = noop;
 const setNewHeaderText = noop;

@@ -347,7 +347,7 @@ const NewSubscriptionPage = () => {
     const { subscriptionId } = useParams();
     const { accentColor } = useOrganizationBranding();
     const editDraft = (location.state as any)?.draft || null;
-    const isEditMode = Boolean(editDraft || subscriptionId);
+     const isEditMode = Boolean(editDraft || subscriptionId);
 
     // Data State
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -484,6 +484,10 @@ const NewSubscriptionPage = () => {
             { id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "" }
         ],
         reportingTags: [] as any[]
+        ,
+        applyChanges: "immediately",
+        applyChangesDate: "",
+        backdatedGenerateInvoice: true
     };
 
     const [formData, setFormData] = useState(initialFormData);
@@ -3011,6 +3015,25 @@ const NewSubscriptionPage = () => {
                                             onChange={(e) => handleChange("startDate", e.target.value)}
                                         />
                                     </div>
+                                    {(() => {
+                                        const today = new Date().toISOString().split("T")[0];
+                                        const isBackdated = Boolean(formData.startDate && formData.startDate < today);
+                                        if (!isBackdated) return null;
+                                        return (
+                                            <div className="flex items-center">
+                                                <label className="text-[13px] text-gray-600 w-44 shrink-0">Backdated Invoice</label>
+                                                <label className="flex items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-0"
+                                                        checked={Boolean(formData.backdatedGenerateInvoice)}
+                                                        onChange={(e) => handleChange("backdatedGenerateInvoice", e.target.checked)}
+                                                    />
+                                                    <span className="text-[13px] text-gray-600">Create invoice for current billing cycle</span>
+                                                </label>
+                                            </div>
+                                        );
+                                    })()}
                                     <div className="flex items-center">
                                         <label className="text-[13px] text-gray-600 w-44 shrink-0">Expires After</label>
                                         <div className="flex items-center gap-4 w-full">
@@ -3260,10 +3283,53 @@ const NewSubscriptionPage = () => {
                                         </div>
                                     </div>
                                 )}
+                                        </div>
+                                    </div>
+                                    {isEditMode && (
+                                        <div className="pt-4 border-t border-gray-100 space-y-3">
+                                            <div className="text-[12px] font-semibold text-gray-600 uppercase">When to apply changes</div>
+                                            <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                <input
+                                                    type="radio"
+                                                    name="applyChanges"
+                                                    checked={formData.applyChanges === "immediately"}
+                                                    onChange={() => handleChange("applyChanges", "immediately")}
+                                                />
+                                                Immediately
+                                            </label>
+                                            <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                <input
+                                                    type="radio"
+                                                    name="applyChanges"
+                                                    checked={formData.applyChanges === "end_of_term"}
+                                                    onChange={() => handleChange("applyChanges", "end_of_term")}
+                                                />
+                                                End of term
+                                            </label>
+                                            <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                <input
+                                                    type="radio"
+                                                    name="applyChanges"
+                                                    checked={formData.applyChanges === "scheduled"}
+                                                    onChange={() => handleChange("applyChanges", "scheduled")}
+                                                />
+                                                Scheduled date
+                                            </label>
+                                            {formData.applyChanges === "scheduled" && (
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-[12px] text-gray-500">Apply on</span>
+                                                    <input
+                                                        type="date"
+                                                        className="px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none"
+                                                        value={formData.applyChangesDate}
+                                                        onChange={(e) => handleChange("applyChangesDate", e.target.value)}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -3593,6 +3659,9 @@ const NewSubscriptionPage = () => {
                                 coupon: formData.coupon,
                                 couponCode: formData.couponCode,
                                 couponValue: formData.couponValue,
+                                applyChanges: formData.applyChanges,
+                                applyChangesDate: formData.applyChangesDate,
+                                backdatedGenerateInvoice: formData.backdatedGenerateInvoice,
                                 addons: addonLines
                                     .filter((line) => String(line.addonName || "").trim())
                                     .map((line) => ({

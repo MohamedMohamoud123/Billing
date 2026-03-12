@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { creditNotesAPI } from "../../../../services/api";
+import { creditNotesAPI, invoicesAPI, paymentsReceivedAPI } from "../../../../services/api";
 
 type PreviewState = {
   currency?: string;
@@ -16,6 +16,9 @@ type PreviewState = {
   coupon?: string;
   couponCode?: string;
   couponValue?: string;
+  applyChanges?: "immediately" | "end_of_term" | "scheduled";
+  applyChangesDate?: string;
+  backdatedGenerateInvoice?: boolean;
   addons?: Array<{
     name: string;
     quantity: number;
@@ -39,6 +42,30 @@ const addMonths = (value?: string, months: number = 1) => {
   return next.toISOString().split("T")[0];
 };
 
+const formatShortDate = (value?: string) => {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(d);
+};
+
+const alignNextBillingDate = (startDate?: string) => {
+  if (!startDate) return "";
+  let next = addMonths(startDate, 1);
+  if (!next) return "";
+  const today = new Date();
+  let nextDate = new Date(next);
+  while (!Number.isNaN(nextDate.getTime()) && nextDate.getTime() <= today.getTime()) {
+    next = addMonths(next, 1);
+    nextDate = new Date(next);
+  }
+  return next;
+};
+
 const parseCouponDiscount = (rawValue: string | undefined, baseAmount: number) => {
   const raw = String(rawValue || "").trim();
   if (!raw) return 0;
@@ -52,17 +79,6 @@ const parseCouponDiscount = (rawValue: string | undefined, baseAmount: number) =
 };
 
 const formatDateLabel = (value?: string) => {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(d);
-};
-
-const formatShortDate = (value?: string) => {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
@@ -328,6 +344,7 @@ const SubscriptionPreviewPage = () => {
   const [depositTo, setDepositTo] = useState("Petty Cash");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
+
 
   const paymentModes: SelectOption[] = [
     { value: "Cash" },
@@ -596,14 +613,16 @@ const SubscriptionPreviewPage = () => {
 
       <div className="fixed bottom-0 left-[220px] right-0 bg-white border-t border-gray-100 py-4 px-8 flex items-center gap-4 z-[100] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button
-          onClick={() => {
+          onClick={async () => {
             const draft = readDraftFromSession();
 
             const currencyCode = String(draft?.currency || state.currency || "USD");
             const createdOn = formatShortDate(new Date().toISOString());
-            const activatedOn = formatShortDate(draft?.startDate || state.startDate);
+            const startDateRaw = draft?.startDate || state.startDate;
+            const activatedOn = formatShortDate(startDateRaw);
             const lastBilledOn = activatedOn || createdOn;
-            const nextBillingOn = formatShortDate(addMonthsDate(draft?.startDate || state.startDate, 1));
+            const nextBillingAligned = alignNextBillingDate(startDateRaw);
+            const nextBillingOn = formatShortDate(nextBillingAligned || addMonthsDate(startDateRaw, 1));
             const amountValue = totalImmediate;
             const amountLabel = `${currencyCode}${amountValue.toFixed(2)}`;
 
@@ -627,8 +646,12 @@ const SubscriptionPreviewPage = () => {
             const existingRow = existingIndex >= 0 ? existing[existingIndex] : null;
             const createdOnValue = String(draft?.createdOn || existingRow?.createdOn || createdOn);
             const activatedOnValue = activatedOn || String(existingRow?.activatedOn || createdOnValue);
-            const lastBilledOnValue = activatedOnValue || String(existingRow?.lastBilledOn || createdOnValue);
+            const isBackdated = Boolean(startDateRaw && startDateRaw < new Date().toISOString().split("T")[0]);
+            const lastBilledOnValue = isBackdated
+              ? formatShortDate(new Date().toISOString())
+              : activatedOnValue || String(existingRow?.lastBilledOn || createdOnValue);
             const nextBillingOnValue = nextBillingOn || String(existingRow?.nextBillingOn || "");
+            const amountReceivedValue = receivedPayment ? totalImmediate : 0;
             const subscription = {
               id: String(draft?.id || existingRow?.id || `sub-${Date.now()}`),
               createdOn: createdOnValue,
@@ -649,7 +672,7 @@ const SubscriptionPreviewPage = () => {
               productName: String(draft?.productName || existingRow?.productName || ""),
               planName: String(draft?.planName || state.planName || existingRow?.planName || ""),
               planDescription: String(draft?.planDescription || existingRow?.planDescription || ""),
-              status: totalImmediate > 0 && !receivedPayment ? "UNPAID" : "LIVE",
+              status: "LIVE",
               amount: amountLabel,
               quantity: Number(draft?.quantity || existingRow?.quantity || 1) || 1,
               price: Number(draft?.price || existingRow?.price || 0) || 0,
@@ -673,7 +696,7 @@ const SubscriptionPreviewPage = () => {
               nextBillingOn: nextBillingOnValue,
               referenceNumber: String(draft?.referenceNumber || existingRow?.referenceNumber || ""),
               immediateCharges: totalImmediate,
-              paymentReceived: receivedPayment,
+              paymentReceived: amountReceivedValue > 0,
               priceListId: draft?.priceListId || existingRow?.priceListId || "",
               priceListName: draft?.priceListName || existingRow?.priceListName || "",
               addonLines: Array.isArray(draft?.addonLines) ? draft.addonLines : existingRow?.addonLines || [],
@@ -685,11 +708,26 @@ const SubscriptionPreviewPage = () => {
               generateInvoices: Boolean(draft?.generateInvoices ?? existingRow?.generateInvoices ?? true),
               invoiceTemplate: String(draft?.invoiceTemplate || existingRow?.invoiceTemplate || "Standard Template"),
               roundOffPreference: String(draft?.roundOffPreference || existingRow?.roundOffPreference || "No Rounding"),
+              scheduledUpdate: existingRow?.scheduledUpdate || null,
+              scheduledUpdateDate: existingRow?.scheduledUpdateDate || "",
             };
 
             let updated = [...existing];
             if (isEditMode && existingIndex >= 0) {
-              updated[existingIndex] = subscription;
+              const applyMode = String(draft?.applyChanges || state.applyChanges || "immediately");
+              if (applyMode === "immediately") {
+                updated[existingIndex] = subscription;
+              } else {
+                const applyOn =
+                  applyMode === "end_of_term"
+                    ? existingRow?.nextBillingOn || subscription.nextBillingOn
+                    : formatShortDate(draft?.applyChangesDate || state.applyChangesDate || "");
+                updated[existingIndex] = {
+                  ...existingRow,
+                  scheduledUpdate: { applyOn, mode: applyMode, payload: subscription },
+                  scheduledUpdateDate: applyOn,
+                };
+              }
             } else {
               updated = [subscription, ...existing];
             }
@@ -697,6 +735,92 @@ const SubscriptionPreviewPage = () => {
               localStorage.setItem(listKey, JSON.stringify(updated));
             } catch {
               // ignore storage errors
+            }
+
+            // Auto-generate invoice for new subscriptions when enabled
+            if (!isEditMode && subscription.generateInvoices) {
+              try {
+                const nextNumberResponse = await invoicesAPI.getNextNumber("INV-");
+                const nextNumber =
+                  nextNumberResponse?.data?.nextNumber ||
+                  nextNumberResponse?.data?.invoiceNumber ||
+                  `INV-${String(Date.now()).slice(-5)}`;
+                const backdatedGenerate = Boolean(
+                  (draft?.backdatedGenerateInvoice ?? state.backdatedGenerateInvoice) ?? true
+                );
+                const todayLabel = formatShortDate(new Date().toISOString());
+                const isBackdatedCycle = Boolean(startDateRaw && startDateRaw < new Date().toISOString().split("T")[0]);
+                if (isBackdatedCycle && !backdatedGenerate) {
+                  // Skip generating invoice for backdated subscriptions when disabled
+                  return;
+                }
+                const invoiceDate = isBackdatedCycle ? todayLabel : createdOnValue;
+                const dueDate = invoiceDate;
+                const invoiceStatus =
+                  totalImmediate <= 0
+                    ? "paid"
+                    : amountReceivedValue >= totalImmediate
+                    ? "paid"
+                    : amountReceivedValue > 0
+                    ? "partially paid"
+                    : "sent";
+                const balanceDue = Math.max(totalImmediate - amountReceivedValue, 0);
+                const items = lineItems.map((item) => ({
+                  itemDetails: item.label,
+                  description: "",
+                  quantity: item.quantity,
+                  rate: item.rate,
+                  tax: item.taxRate ? `${item.taxRate}%` : "",
+                  taxRate: item.taxRate,
+                  amount: item.quantity * item.rate,
+                }));
+
+                const invoiceResponse = await invoicesAPI.create({
+                  invoiceNumber: nextNumber,
+                  invoiceDate,
+                  date: invoiceDate,
+                  dueDate,
+                  status: invoiceStatus,
+                  customerId: subscription.customerId,
+                  customerName: subscription.customerName,
+                  customerEmail: subscription.customerEmail,
+                  billingAddress: subscription.billingAddress,
+                  shippingAddress: subscription.shippingAddress,
+                  salesperson: subscription.salesperson,
+                  currency: currencyCode,
+                  items,
+                  subTotal: subtotal,
+                  taxAmount,
+                  discountAmount,
+                  total: totalImmediate,
+                  balanceDue,
+                  balance: balanceDue,
+                  amountPaid: amountReceivedValue,
+                  isRecurringInvoice: true,
+                  recurringProfileId: subscription.id,
+                  referenceNumber: subscription.referenceNumber || "",
+                  createdAt: new Date().toISOString(),
+                });
+
+                const createdInvoice = invoiceResponse?.data;
+                if (amountReceivedValue > 0 && createdInvoice?.id) {
+                  await paymentsReceivedAPI.create({
+                    invoiceId: createdInvoice.id,
+                    invoiceNumber: createdInvoice.invoiceNumber || nextNumber,
+                    customerId: subscription.customerId,
+                    customerName: subscription.customerName,
+                    amountReceived: amountReceivedValue,
+                    paymentMode,
+                    depositTo,
+                    referenceNumber,
+                    notes: paymentNotes,
+                    paymentDate: paymentDate || createdOnValue,
+                    status: amountReceivedValue >= totalImmediate ? "paid" : "partially paid",
+                  });
+                }
+              } catch {
+                // ignore invoice create errors for now
+              }
             }
 
             try {
