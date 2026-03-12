@@ -523,13 +523,15 @@ export default function OpeningBalancesPage() {
                           </div>
                         ) : (
                           <div>
-                            <table className="w-full">
-                              <thead>
-                                <tr className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                                  <th className="py-3 font-semibold text-left w-[40%] pl-2">ACCOUNTS</th>
-                                  <th className="py-3 font-semibold text-center w-[20%]">AVAILABLE BALANCE <Info size={12} className="inline ml-1 mb-0.5" /></th>
-                                  <th className="py-3 font-semibold text-right w-[20%]">DEBIT ({baseCurrency?.code || "USD"})</th>
-                                  <th className="py-3 font-semibold text-right w-[20%]">CREDIT ({baseCurrency?.code || "USD"})</th>
+                            <table className="w-full text-left border-collapse">
+                              <thead className="bg-[#f6f7fb] border-b border-[#e6e9f2]">
+                                <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+                                  <th className="px-4 py-3 w-[40%]">ACCOUNTS</th>
+                                  <th className="px-4 py-3 text-center w-[20%]">
+                                    AVAILABLE BALANCE <Info size={12} className="inline ml-1 mb-0.5" />
+                                  </th>
+                                  <th className="px-4 py-3 text-right w-[20%]">DEBIT ({baseCurrency?.code || "USD"})</th>
+                                  <th className="px-4 py-3 text-right w-[20%]">CREDIT ({baseCurrency?.code || "USD"})</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-50/0">

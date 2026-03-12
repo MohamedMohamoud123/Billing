@@ -349,27 +349,29 @@ export default function PriceListPage() {
         return <span className="text-[13px] text-slate-600">{(row as any)[key] || '-'}</span>;
     };
 
-    return (
-        <div className="min-h-screen bg-white font-sans text-[#404040]">
-            <main className="h-full">
-                {view === 'list' ? (
-                    <div className="flex h-full flex-col">
-                        <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
-                            <div className="flex items-center gap-2 py-4 pl-4 cursor-pointer">
-                                <h1 className="text-[18px] font-bold text-[#1f2937]">Price Lists</h1>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={openNewPriceList}
-                                    className="flex items-center gap-1.5 rounded-md text-white transition-all hover:brightness-110 active:scale-95 shadow-sm px-4 py-1.5 text-[14px] font-semibold border-b-[4px] border-[#0D4A52]"
-                                    style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
-                                >
-                                    <Plus size={18} /> New
-                                </button>
-                                <div className="relative" ref={moreRef}>
-                                    <button
-                                        onClick={() =>
-                                            setMoreOpen((prev) => {
+	    return (
+	        <div className="min-h-screen bg-white font-sans text-[#404040]">
+	            <main className="h-full">
+	                {view === 'list' ? (
+	                    <div className="flex h-full flex-col">
+	                        <div className="flex items-center justify-between px-6 border-b border-gray-100 bg-white relative overflow-visible mt-1">
+	                            <div className="flex items-center gap-8 pl-4">
+	                                <div className="flex items-center gap-1.5 py-3 border-b-2 border-slate-900 -mb-[px]">
+	                                    <h1 className="text-[15px] font-bold text-slate-900 transition-colors">Price Lists</h1>
+	                                </div>
+	                            </div>
+	                            <div className="flex items-center gap-3 mr-4 py-3">
+	                                <button
+	                                    onClick={openNewPriceList}
+	                                    className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] text-sm font-semibold shadow-sm flex items-center gap-1"
+	                                    style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
+	                                >
+	                                    <Plus size={16} /> <span>New</span>
+	                                </button>
+	                                <div className="relative" ref={moreRef}>
+	                                    <button
+	                                        onClick={() =>
+	                                            setMoreOpen((prev) => {
                                                 return !prev;
                                             })
                                         }
@@ -407,40 +409,45 @@ export default function PriceListPage() {
                                     )}
                                 </div>
                             </div>
-                        </div>
+	                        </div>
 
-                        <div className="flex-1 overflow-x-auto bg-white min-h-0">
-                            <table className="w-full min-w-[980px] table-fixed text-left border-collapse">
-                                <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-                                    <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                        {visibleColumns.map((col) => (
-                                            <th key={col.key} className="px-4 py-3 relative group/header" style={{ width: col.width }}>
-                                                <span className="truncate block">{col.label}</span>
-                                                <div
-                                                    className="absolute right-0 top-0 bottom-0 w-[2px] cursor-col-resize hover:bg-teal-400/50 group-hover/header:border-r border-gray-100"
-                                                    onMouseDown={(e) => startResizing(col.key, e)}
-                                                />
-                                            </th>
-                                        ))}
+	                        <div className="flex-1 overflow-x-auto bg-white min-h-0">
+	                            <table className="w-full text-left border-collapse min-w-[1200px]">
+	                                <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+	                                    <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+	                                        {visibleColumns.map((col) => (
+	                                            <th key={col.key} className="px-4 py-3 relative group/header bg-[#f6f7fb]" style={{ width: col.width }}>
+	                                                <span className="truncate block">{col.label}</span>
+	                                                <div
+	                                                    className="absolute right-0 top-0 bottom-0 w-[2px] cursor-col-resize hover:bg-teal-400/50 group-hover/header:border-r border-gray-100"
+	                                                    onMouseDown={(e) => startResizing(col.key, e)}
+	                                                />
+	                                            </th>
+	                                        ))}
 
-                                        <th className="px-4 py-3 text-right w-[240px]">
-                                            <Search size={14} className="inline text-gray-300 mr-2" />
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {sortedPriceLists.map((row) => (
-                                        <tr key={row.id} className="group transition-all hover:bg-slate-50/50">
-                                            {visibleColumns.map((col) => (
-                                                <td key={col.key} className="px-4 py-3 truncate whitespace-nowrap overflow-hidden text-ellipsis" style={{ width: col.width, maxWidth: col.width }}>
-                                                    {getCell(row, col.key)}
-                                                </td>
-                                            ))}
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="invisible group-hover:visible flex items-center justify-end gap-2 text-[12px] whitespace-nowrap">
-                                                    <button onClick={() => handleEdit(row)} className="text-blue-500 hover:text-blue-600 font-medium transition-colors">Edit</button>
-                                                    <span className="text-slate-300">|</span>
-                                                    <button
+	                                        <th className="px-4 py-3 text-right w-[240px] sticky right-0 bg-[#f6f7fb] z-20">
+	                                            <div className="flex items-center justify-end gap-2">
+	                                                <Search size={14} className="text-gray-300" />
+	                                            </div>
+	                                        </th>
+	                                    </tr>
+	                                </thead>
+	                                <tbody className="divide-y divide-gray-100">
+	                                    {sortedPriceLists.map((row) => (
+	                                        <tr
+	                                            key={row.id}
+	                                            className="text-[13px] group transition-all hover:bg-[#f8fafc] h-[50px] border-b border-[#eef1f6]"
+	                                        >
+	                                            {visibleColumns.map((col) => (
+	                                                <td key={col.key} className="px-4 py-3 truncate whitespace-nowrap overflow-hidden text-ellipsis" style={{ width: col.width, maxWidth: col.width }}>
+	                                                    {getCell(row, col.key)}
+	                                                </td>
+	                                            ))}
+	                                            <td className="px-4 py-3 text-right sticky right-0 bg-white/95 backdrop-blur-sm group-hover:bg-[#f8fafc] transition-colors">
+	                                                <div className="invisible group-hover:visible flex items-center justify-end gap-2 text-[12px] whitespace-nowrap">
+	                                                    <button onClick={() => handleEdit(row)} className="text-blue-500 hover:text-blue-600 font-medium transition-colors">Edit</button>
+	                                                    <span className="text-slate-300">|</span>
+	                                                    <button
                                                         onClick={() => handleToggleStatus(row)}
                                                         className="text-blue-500 hover:text-blue-600 font-medium transition-colors"
                                                     >

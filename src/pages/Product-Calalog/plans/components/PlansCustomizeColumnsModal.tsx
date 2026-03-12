@@ -66,7 +66,7 @@ export default function PlansCustomizeColumnsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-[#444b58]/78 p-4">
+    <div className="fixed inset-0 z-[2200] flex items-start justify-center bg-[#444b58]/78 p-4 pt-8">
       <div className="w-full max-w-[500px] overflow-hidden rounded-[8px] border border-[#d8dde7] bg-white shadow-[0_22px_54px_rgba(15,23,42,0.34)]">
         <div className="flex items-center justify-between border-b border-[#e6eaf1] px-5 py-4">
           <div className="flex items-center gap-2.5">
@@ -122,8 +122,8 @@ export default function PlansCustomizeColumnsModal({
                   }}
                   disabled={col.locked}
                   className={`inline-flex h-5 w-5 items-center justify-center rounded transition-opacity ${col.pinned
-                      ? "opacity-100 bg-[#eff6ff]"
-                      : "opacity-0 text-slate-400 group-hover:opacity-100 hover:bg-slate-100"
+                    ? "opacity-100 bg-[#eff6ff]"
+                    : "opacity-0 text-slate-400 group-hover:opacity-100 hover:bg-slate-100"
                     }`}
                   style={col.pinned ? { color: accentColor } : {}}
                   title={col.pinned ? "Unpin column" : "Pin column"}

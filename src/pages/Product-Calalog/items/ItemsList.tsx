@@ -34,7 +34,7 @@ import { useOrganizationBranding } from "../../../hooks/useOrganizationBranding"
 const TableRowSkeleton = ({ columns }: { columns: any[] }) => (
   <>
     {[...Array(8)].map((_, i) => (
-      <tr key={i} className="animate-pulse border-b border-gray-50">
+      <tr key={i} className="animate-pulse border-b border-[#eef1f6] h-[50px]">
         <td className="px-4 py-3 w-16">
           <div className="h-4 w-4 bg-gray-100 rounded mx-auto" />
         </td>
@@ -47,7 +47,7 @@ const TableRowSkeleton = ({ columns }: { columns: any[] }) => (
             <div className={`h-4 bg-gray-100 rounded ${idx === 0 ? 'w-3/4' : 'w-1/2'}`} />
           </td>
         ))}
-        <td className="px-4 py-3 w-12 sticky right-0 bg-white" />
+        <td className="px-4 py-3 w-12 sticky right-0 bg-white/95 backdrop-blur-sm" />
       </tr>
     ))}
   </>
@@ -307,59 +307,75 @@ const ItemsList = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      {/* Header - Matching Screenshot */}
+    <div className="flex flex-col h-full bg-white relative overflow-visible">
+      {/* Header - Match Subscriptions list page */}
       {selectedIds.length > 0 ? (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50 gap-2 sm:h-[57px]">
-          <div className="flex flex-wrap items-center gap-2">
-            {canEdit && (
-              <button
-                className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors"
-                onClick={() => onBulkUpdate(selectedIds)}
-                title="Bulk Update"
-              >
-                <span className="hidden sm:inline">Bulk</span> Update
-              </button>
-            )}
-
-            {canCreate && (
-              <div className="relative" ref={dropdownRef}>
+        <div className="flex items-center justify-between px-5 border-b border-gray-100 bg-white relative overflow-visible mt-1">
+          <div className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-2 pr-2 overflow-visible">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3 overflow-x-auto whitespace-nowrap">
+              {canEdit && (
                 <button
-                  onClick={() => setNewTransactionOpen(!newTransactionOpen)}
-                  className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-gray-100 bg-white shadow-sm transition-colors flex items-center gap-1"
+                  type="button"
+                  onClick={() => onBulkUpdate(selectedIds)}
+                  className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                  title="Bulk Update"
                 >
-                  <span className="hidden sm:inline">New Transaction</span>
-                  <span className="sm:hidden">New</span>
-                  <ChevronDown size={12} />
+                  Bulk Update
                 </button>
-                {newTransactionOpen && (
-                  <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-1 overflow-hidden">
-                    <button
-                      onClick={() => navigate('/sales/quotes/new')}
-                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                    >
-                      Quote
-                    </button>
-                    <button
-                      onClick={() => navigate('/sales/invoices/new')}
-                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                    >
-                      Invoice
-                    </button>
-                    <button
-                      onClick={() => navigate('/sales/sales-receipts/new')}
-                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                    >
-                      Sales Receipt
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
 
-            {canEdit && (
-              <>
+              {canCreate && (
+                <div className="relative flex-shrink-0" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setNewTransactionOpen(!newTransactionOpen)}
+                    className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-2"
+                  >
+                    <span className="hidden sm:inline">New Transaction</span>
+                    <span className="sm:hidden">New</span>
+                    <ChevronDown size={14} className="text-gray-500" />
+                  </button>
+
+                  {newTransactionOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-2xl z-50 py-1 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigate("/sales/quotes/new");
+                          setNewTransactionOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Quote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigate("/sales/invoices/new");
+                          setNewTransactionOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Invoice
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigate("/sales/sales-receipts/new");
+                          setNewTransactionOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Sales Receipt
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {canEdit && (
                 <button
+                  type="button"
                   onClick={async () => {
                     setIsBulkActiveLoading(true);
                     try {
@@ -369,13 +385,17 @@ const ItemsList = ({
                     }
                   }}
                   disabled={isBulkActiveLoading}
-                  className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors whitespace-nowrap flex items-center gap-1.5"
+                  className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-60"
                   title="Mark as Active"
                 >
-                  {isBulkActiveLoading && <RefreshCw size={12} className="animate-spin" />}
-                  Mark<span className="hidden sm:inline"> as Active</span>
+                  {isBulkActiveLoading && <RefreshCw size={14} className="animate-spin" />}
+                  Mark as Active
                 </button>
+              )}
+
+              {canEdit && (
                 <button
+                  type="button"
                   onClick={async () => {
                     setIsBulkInactiveLoading(true);
                     try {
@@ -385,56 +405,66 @@ const ItemsList = ({
                     }
                   }}
                   disabled={isBulkInactiveLoading}
-                  className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors whitespace-nowrap flex items-center gap-1.5"
+                  className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-60"
                   title="Mark as Inactive"
                 >
-                  {isBulkInactiveLoading && <RefreshCw size={12} className="animate-spin" />}
-                  Mark<span className="hidden sm:inline"> as Inactive</span>
+                  {isBulkInactiveLoading && <RefreshCw size={14} className="animate-spin" />}
+                  Mark as Inactive
                 </button>
-              </>
-            )}
-            {canDelete && (
-              <button
-                onClick={async () => {
-                  setIsBulkDeleteLoading(true);
-                  try {
-                    await onBulkDelete(selectedIds);
-                    setSelectedIds([]);
-                  } finally {
-                    setIsBulkDeleteLoading(false);
-                  }
-                }}
-                disabled={isBulkDeleteLoading}
-                className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-red-600 hover:text-white bg-white shadow-sm transition-colors flex items-center gap-1.5"
-              >
-                {isBulkDeleteLoading && <RefreshCw size={12} className="animate-spin" />}
-                Delete
-              </button>
-            )}
+              )}
 
-            <div className="hidden sm:block w-px h-6 bg-gray-300 mx-2" />
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsBulkDeleteLoading(true);
+                    try {
+                      await onBulkDelete(selectedIds);
+                      setSelectedIds([]);
+                    } finally {
+                      setIsBulkDeleteLoading(false);
+                    }
+                  }}
+                  disabled={isBulkDeleteLoading}
+                  className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-60"
+                >
+                  {isBulkDeleteLoading && <RefreshCw size={14} className="animate-spin" />}
+                  Delete
+                </button>
+              )}
+            </div>
 
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-medium text-slate-600 bg-slate-200 px-2 py-0.5 rounded-full">{selectedIds.length}</span>
-              <span className="text-sm text-slate-600 hidden sm:inline">Selected</span>
+            <div className="h-6 w-px bg-gray-200 mx-1 flex-shrink-0" />
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="flex items-center justify-center min-w-[28px] h-7 px-2 bg-[#156372] rounded-full text-[13px] font-semibold text-white">
+                {selectedIds.length}
+              </span>
+              <span className="text-sm text-gray-700">Selected</span>
             </div>
           </div>
 
-          <button onClick={() => setSelectedIds([])} className="flex items-center gap-1 text-slate-500 hover:text-slate-700 text-sm font-medium transition-colors">
-            Esc <X size={16} />
+          <button
+            type="button"
+            onClick={() => setSelectedIds([])}
+            className="flex items-center gap-1 px-3 py-2 text-sm text-gray-700 hover:text-gray-900"
+            aria-label="Clear selection"
+          >
+            <span className="text-gray-500">Esc</span>
+            <X size={16} className="text-red-500" />
           </button>
         </div>
-      ) : (
-        <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
-          <div className="flex items-center gap-8 pl-4">
-            <div className="relative" ref={filterDropdownRef}>
-              <div
-                className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900 -mb-[px]"
-                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
-              >
-                <h1 className="text-[15px] font-bold text-slate-900 transition-colors">
-                  {filterType === "All" ? "All Items" : filterType === "Active Items" ? "Active Items" : filterType}
-                </h1>
+	      ) : (
+	        <div className="flex items-center justify-between px-6 border-b border-gray-100 bg-white relative overflow-visible mt-1">
+	          <div className="flex items-center gap-8 pl-4">
+	            <div className="relative" ref={filterDropdownRef}>
+	              <div
+	                className="flex items-center gap-1.5 py-3 cursor-pointer group border-b-2 border-slate-900 -mb-[px]"
+	                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+	              >
+	                <h1 className="text-[15px] font-bold text-slate-900 transition-colors">
+	                  {filterType === "All" ? "All Items" : filterType === "Active Items" ? "Active Items" : filterType}
+	                </h1>
                 <ChevronDown size={14} className={`transition-transform duration-200 ${filterDropdownOpen ? 'rotate-180' : ''}`} style={{ color: accentColor }} />
               </div>
 
@@ -467,14 +497,14 @@ const ItemsList = ({
                   </div>
                 </div>
               )}
-            </div>
-          </div>
+	            </div>
+	          </div>
 
-          <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
-            {canCreate && (
-              <button
-                onClick={onNew}
-                className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-1 text-sm font-semibold"
+	          <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4 py-3">
+	            {canCreate && (
+	              <button
+	                onClick={onNew}
+	                className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-1 text-sm font-semibold"
                 style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
               >
                 <Plus size={16} strokeWidth={3} /> <span className="hidden sm:inline">New</span>
@@ -608,10 +638,10 @@ const ItemsList = ({
 
       {/* Table Content */}
       <div className="flex-1 overflow-x-auto bg-white min-h-0">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              <th className="px-4 py-3 w-16 min-w-[64px]">
+        <table className="w-full text-left border-collapse min-w-[1200px]">
+          <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+            <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+              <th className="px-4 py-3 w-16 min-w-[64px] bg-[#f6f7fb]">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -644,7 +674,7 @@ const ItemsList = ({
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
-                      <span className={`truncate font-bold ${/tax/i.test(col.key) ? 'text-black' : 'text-slate-900'}`}>{col.label}</span>
+                      <span className={`truncate font-semibold ${/tax/i.test(col.key) ? 'text-black' : 'text-[#7b8494]'}`}>{col.label}</span>
                       {isSortableColumn(col.key) && getActiveSortColumn() === col.key && (
                         <ArrowUpDown
                           size={10}
@@ -661,7 +691,7 @@ const ItemsList = ({
                   />
                 </th>
               ))}
-              <th className="px-4 py-3 w-12 sticky right-0 bg-white border-l border-gray-100 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
+              <th className="px-4 py-3 w-12 sticky right-0 bg-[#f6f7fb] z-20">
                 <div className="flex items-center justify-center">
                   <Search
                     size={14}
@@ -683,7 +713,7 @@ const ItemsList = ({
                 return (
                   <tr
                     key={id}
-                    className="group transition-all hover:bg-slate-50/50 cursor-pointer"
+                    className="text-[13px] group transition-all hover:bg-[#f8fafc] cursor-pointer h-[50px] border-b border-[#eef1f6]"
                     style={isSelected ? { backgroundColor: `#1b5e6a1A` } : {}}
                     onClick={() => onSelect(id)}
                   >
@@ -741,7 +771,7 @@ const ItemsList = ({
                         )}
                       </td>
                     ))}
-                    <td className="px-4 py-3 w-12 sticky right-0 bg-white/95 backdrop-blur-sm border-l border-gray-50 group-hover:bg-slate-50/95 transition-colors shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]" />
+                    <td className="px-4 py-3 w-12 sticky right-0 bg-white/95 backdrop-blur-sm group-hover:bg-[#f8fafc] transition-colors" />
                   </tr>
                 );
               })
@@ -752,7 +782,7 @@ const ItemsList = ({
 
       {
         isCustomizeModalOpen && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 z-[10000] flex items-start justify-center pt-4 px-6 pb-6 overflow-y-auto">
             <div className="bg-white rounded-xl shadow-2xl w-[500px] max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-2">

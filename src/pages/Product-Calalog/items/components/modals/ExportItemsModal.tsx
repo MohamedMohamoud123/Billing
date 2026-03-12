@@ -151,7 +151,7 @@ const ExportItemsModal = ({ isOpen, onClose, data, accounts = [] }: ExportItemsM
     };
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/60 pt-4 px-6 pb-6 overflow-y-auto animate-in fade-in duration-200">
             <div className="bg-white rounded-lg shadow-2xl w-[600px] max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
 
                 {/* Header */}

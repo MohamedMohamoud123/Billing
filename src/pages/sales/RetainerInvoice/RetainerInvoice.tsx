@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Columns3,
   Download,
+  FileDown,
   FileText,
   GripVertical,
   Mail,
@@ -227,17 +228,17 @@ const mapInvoiceToRetainer = (invoice: Invoice): RetainerRow => {
   );
   const isEmailed = Boolean(
     (invoice as any).emailSent ||
-      (invoice as any).emailSentAt ||
-      (invoice as any).lastEmailSentAt ||
-      (invoice as any).emailedAt ||
-      hasEmailedComment
+    (invoice as any).emailSentAt ||
+    (invoice as any).lastEmailSentAt ||
+    (invoice as any).emailedAt ||
+    hasEmailedComment
   );
   const balanceCandidate =
     invoice.balance !== undefined
       ? Number(invoice.balance)
       : invoice.balanceDue !== undefined
-      ? Number(invoice.balanceDue)
-      : amount;
+        ? Number(invoice.balanceDue)
+        : amount;
 
   return {
     id: String(invoice.id || invoice._id || `ret-${Date.now()}`),
@@ -539,14 +540,14 @@ export default function RetainerInvoice() {
       const itemsSource = Array.isArray(invoice.items) ? invoice.items : [];
       const items = itemsSource.length
         ? itemsSource.map((item: any, index: number) => {
-            const amountValue =
-              Number(item?.amount ?? item?.total ?? item?.unitPrice ?? item?.rate ?? 0) || 0;
-            return {
-              id: index + 1,
-              description: String(item?.description || item?.name || row.reference || "-"),
-              amount: amountValue,
-            };
-          })
+          const amountValue =
+            Number(item?.amount ?? item?.total ?? item?.unitPrice ?? item?.rate ?? 0) || 0;
+          return {
+            id: index + 1,
+            description: String(item?.description || item?.name || row.reference || "-"),
+            amount: amountValue,
+          };
+        })
         : [{ id: 1, description: String(row.reference || row.invoiceNumber || "-"), amount: Number(row.amount || 0) }];
 
       const itemSubtotal = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -787,7 +788,7 @@ export default function RetainerInvoice() {
     return { width, minWidth: width };
   };
 
-  const startColumnResize = (columnKey: RetainerColumnKey, event: React.MouseEvent<HTMLButtonElement>) => {
+  const startColumnResize = (columnKey: RetainerColumnKey, event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -872,333 +873,326 @@ export default function RetainerInvoice() {
 
   return (
     <div className="flex flex-col h-full min-h-screen bg-white">
-      <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
-        <div className="flex items-center gap-8 pl-4">
-          <div className="relative" ref={viewDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setViewDropdownOpen((prev) => !prev)}
-              className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900 -mb-[1px]"
-            >
-              <h1 className="text-[15px] font-bold text-slate-900">{selectedViewLabel}</h1>
-              <ChevronDown
-                size={14}
-                className={`transition-transform duration-200 ${viewDropdownOpen ? "rotate-180" : ""}`}
-                style={{ color: accentColor }}
-              />
-            </button>
-
-            {viewDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-2xl z-[100] py-2">
-                <div className="px-3 pb-2 border-b border-gray-100">
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-md border border-gray-200">
-                    <Search size={14} className="text-gray-400" />
-                    <input
-                      placeholder="Search Views"
-                      className="bg-transparent border-none outline-none text-sm w-full"
-                      value={viewSearchTerm}
-                      onChange={(e) => setViewSearchTerm(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="max-h-80 overflow-y-auto py-1">
-                  {VIEW_OPTIONS.filter((v) => v.label.toLowerCase().includes(viewSearchTerm.toLowerCase())).map((view) => (
-                    <button
-                      key={view.key}
-                      type="button"
-                      onClick={() => {
-                        setSelectedView(view.key);
-                        setViewDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between px-4 py-2 text-sm hover:bg-teal-50 transition-colors"
-                    >
-                      <span className={selectedView === view.key ? "font-semibold text-teal-700" : "text-slate-700"}>
-                        {view.label}
-                      </span>
-                      <Star
-                        size={14}
-                        className="text-gray-300 hover:text-yellow-400 transition-colors"
-                        fill={favoriteViews.has(view.key) ? "#facc15" : "none"}
-                        color={favoriteViews.has(view.key) ? "#facc15" : undefined}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleFavoriteView(view.key);
-                        }}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-          <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
-            <button
-              onClick={() => navigate("/sales/retainer-invoices/new")}
-              className="h-9 px-4 rounded-md text-white text-sm font-medium inline-flex items-center gap-1.5 shadow-sm"
-              style={{ backgroundColor: accentColor }}
-              type="button"
-            >
-              <Plus size={15} />
-              <span>New</span>
-            </button>
-
-            <div className="relative" ref={moreDropdownRef}>
-              <button
-                onClick={() => setMoreDropdownOpen((prev) => !prev)}
-                className="h-9 w-9 rounded-md border border-gray-200 bg-white text-slate-600 inline-flex items-center justify-center shadow-sm hover:bg-slate-50"
-                type="button"
-                aria-label="More options"
-              >
-                <MoreHorizontal size={16} />
-              </button>
-              {moreDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[110]">
-                  <div className="relative">
-                  <button
-                    onClick={() => {
-                      setSortSubMenuOpen((prev) => !prev);
-                      setExportSubMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${
-                      sortSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"
-                    }`}
-                    style={sortSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ArrowUpDown size={15} className={sortSubMenuOpen ? "text-white" : ""} />
-                      <span className="font-medium">Sort by</span>
-                    </div>
-                    <ChevronRight size={14} className={sortSubMenuOpen ? "text-white" : "text-slate-400"} />
-                  </button>
-                  {sortSubMenuOpen && (
-                    <div className="absolute top-0 right-full mr-2 w-64 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[120]">
-                      {SORT_OPTIONS.map((option) => (
-                        <button
-                          key={option.key}
-                          onClick={() => {
-                            setActiveSortKey(option.key);
-                            setSortSubMenuOpen(false);
-                            setMoreDropdownOpen(false);
-                          }}
-                          className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                            activeSortKey === option.key
-                              ? "bg-[#1b5e6a] text-white font-semibold"
-                              : "text-slate-600 hover:bg-teal-50"
-                          }`}
-                          type="button"
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => {
-                    navigate("/sales/retainer-invoices/import");
-                    setMoreDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                  type="button"
-                >
-                  <Upload size={15} />
-                  <span className="font-medium">Import Retainer Invoices</span>
-                </button>
-
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setExportSubMenuOpen((prev) => !prev);
-                      setSortSubMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${
-                      exportSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"
-                    }`}
-                    style={exportSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Download size={15} className={exportSubMenuOpen ? "text-white" : ""} />
-                      <span className="font-medium">Export</span>
-                    </div>
-                    <ChevronRight size={14} className={exportSubMenuOpen ? "text-white" : "text-slate-400"} />
-                  </button>
-                  {exportSubMenuOpen && (
-                    <div className="absolute top-0 right-full mr-2 w-56 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[120]">
-                      <button
-                        className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                        onClick={() => {
-                          downloadCsv("retainer-invoices.csv", rows);
-                          setExportSubMenuOpen(false);
-                          setMoreDropdownOpen(false);
-                        }}
-                        type="button"
-                      >
-                        Export Retainer Invoices
-                      </button>
-                      <button
-                        className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                        onClick={() => {
-                          downloadCsv("retainer-current-view.csv", filteredRows);
-                          setExportSubMenuOpen(false);
-                          setMoreDropdownOpen(false);
-                        }}
-                        type="button"
-                      >
-                        Export Current View
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="h-px bg-gray-100 my-1 mx-2" />
-
-                <button
-                  onClick={() => {
-                    navigate("/settings");
-                    setMoreDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                  type="button"
-                >
-                  <Settings size={15} />
-                  <span className="font-medium">Preferences</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    navigate("/settings");
-                    setMoreDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                  type="button"
-                >
-                  <SlidersHorizontal size={15} />
-                  <span className="font-medium">Manage Custom Fields</span>
-                </button>
-
-                <div className="h-px bg-gray-100 my-1 mx-2" />
-
-                <button
-                  onClick={() => {
-                    loadRetainers();
-                    setMoreDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                  type="button"
-                >
-                  <RefreshCw size={15} />
-                  <span className="font-medium">Refresh List</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setColumnWidths(DEFAULT_COLUMN_WIDTHS);
-                    setMoreDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
-                  type="button"
-                >
-                  <RotateCcw size={15} />
-                  <span className="font-medium">Reset Column Width</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {hasVisibleSelection && (
-        <div className="px-4 py-2 border-b border-gray-200 bg-white">
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+      <div className="border-b border-gray-100 bg-white sticky top-0 z-[100]">
+        {hasVisibleSelection ? (
+          /* Bulk Action Header */
+          <div className="flex items-center justify-between px-4 h-[60px]">
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  void downloadRetainerPdf();
-                }}
-                className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-gray-200 text-slate-600 hover:bg-slate-50"
+                onClick={() => void downloadRetainerPdf()}
+                className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
                 title="Export as PDF"
               >
-                <FileText size={14} />
+                <FileDown size={16} className="text-gray-500" />
+                <span>Export PDF</span>
               </button>
-              <div className="mx-1 h-5 w-px bg-gray-200" />
+
               <button
                 type="button"
                 onClick={() => {
                   setRows((prev) => prev.filter((row) => !selectedRowIds.has(row.id)));
                   setSelectedRowIds(new Set());
                 }}
-                className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
               >
-                <Trash2 size={14} />
+                <Trash2 size={16} className="text-gray-500" />
                 <span>Delete</span>
               </button>
-              <div className="mx-1 h-5 w-px bg-gray-200" />
-              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-blue-100 px-2 text-xs font-semibold text-blue-700">
-                {selectedVisibleRowCount}
-              </span>
-              <span className="text-sm text-slate-700">Selected</span>
+
+              <div className="mx-2 h-5 w-px bg-gray-200" />
+
+              <div className="inline-flex items-center gap-2 text-sm text-slate-500">
+                <span
+                  className="flex h-6 min-w-[24px] items-center justify-center rounded px-2 text-[13px] font-semibold text-white"
+                  style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
+                >
+                  {selectedVisibleRowCount}
+                </span>
+                <span className="text-sm text-gray-700">Selected</span>
+              </div>
             </div>
+
             <button
               type="button"
               onClick={() => setSelectedRowIds(new Set())}
-              className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+              className="inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-700"
             >
               <span>Esc</span>
-              <X size={16} />
+              <X size={18} />
             </button>
           </div>
-        </div>
-      )}
+        ) : (
+          /* Normal Header */
+          <div className="flex items-center justify-between px-4 h-[60px]">
+            <div className="flex items-center gap-8 pl-4">
+              <div className="relative" ref={viewDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setViewDropdownOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900 -mb-[1px] bg-transparent outline-none"
+                >
+                  <span className="text-[15px] font-bold text-slate-900 transition-colors">{selectedViewLabel}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform duration-200 text-[#156372] ${viewDropdownOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {viewDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-2xl z-[100] py-2">
+                    <div className="px-3 pb-2 border-b border-gray-100">
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-md border border-gray-200">
+                        <Search size={14} className="text-gray-400" />
+                        <input
+                          placeholder="Search Views"
+                          className="bg-transparent border-none outline-none text-sm w-full"
+                          value={viewSearchTerm}
+                          onChange={(e) => setViewSearchTerm(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto py-1">
+                      {VIEW_OPTIONS.filter((v) => v.label.toLowerCase().includes(viewSearchTerm.toLowerCase())).map((view) => (
+                        <button
+                          key={view.key}
+                          type="button"
+                          onClick={() => {
+                            setSelectedView(view.key);
+                            setViewDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-4 py-2 text-sm hover:bg-teal-50 transition-colors"
+                        >
+                          <span className={selectedView === view.key ? "font-semibold text-teal-700" : "text-slate-700"}>
+                            {view.label}
+                          </span>
+                          <Star
+                            size={14}
+                            className="text-gray-300 hover:text-yellow-400 transition-colors"
+                            fill={favoriteViews.has(view.key) ? "#facc15" : "none"}
+                            color={favoriteViews.has(view.key) ? "#facc15" : undefined}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleFavoriteView(view.key);
+                            }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
+              <button
+                onClick={() => navigate("/sales/retainer-invoices/new")}
+                className="h-9 px-4 rounded-md text-white text-sm font-medium inline-flex items-center gap-1.5 shadow-sm transition-all bg-gradient-to-r from-[#176a79] to-[#1b5e6a] hover:from-[#1b5e6a] hover:to-[#176a79]"
+                type="button"
+              >
+                <Plus size={18} className="stroke-[3px]" />
+                <span>New</span>
+              </button>
+
+              <div className="relative" ref={moreDropdownRef}>
+                <button
+                  onClick={() => setMoreDropdownOpen((prev) => !prev)}
+                  className="h-9 w-9 rounded-md border border-gray-200 bg-white text-slate-600 inline-flex items-center justify-center shadow-sm hover:bg-slate-50"
+                  type="button"
+                  aria-label="More options"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+                {moreDropdownOpen && (
+                  <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[110]">
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setSortSubMenuOpen((prev) => !prev);
+                          setExportSubMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${sortSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"
+                          }`}
+                        style={sortSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <ArrowUpDown size={15} className={sortSubMenuOpen ? "text-white" : ""} />
+                          <span className="font-medium">Sort by</span>
+                        </div>
+                        <ChevronRight size={14} className={sortSubMenuOpen ? "text-white" : "text-slate-400"} />
+                      </button>
+                      {sortSubMenuOpen && (
+                        <div className="absolute top-0 right-full mr-2 w-64 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[120]">
+                          {SORT_OPTIONS.map((option) => (
+                            <button
+                              key={option.key}
+                              onClick={() => {
+                                setActiveSortKey(option.key);
+                                setSortSubMenuOpen(false);
+                                setMoreDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm transition-colors ${activeSortKey === option.key
+                                ? "bg-[#1b5e6a] text-white font-semibold"
+                                : "text-slate-600 hover:bg-teal-50"
+                                }`}
+                              type="button"
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        navigate("/sales/retainer-invoices/import");
+                        setMoreDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <Upload size={15} />
+                      <span className="font-medium">Import Retainer Invoices</span>
+                    </button>
+
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setExportSubMenuOpen((prev) => !prev);
+                          setSortSubMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${exportSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"
+                          }`}
+                        style={exportSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Download size={15} className={exportSubMenuOpen ? "text-white" : ""} />
+                          <span className="font-medium">Export</span>
+                        </div>
+                        <ChevronRight size={14} className={exportSubMenuOpen ? "text-white" : "text-slate-400"} />
+                      </button>
+                      {exportSubMenuOpen && (
+                        <div className="absolute top-0 right-full mr-2 w-56 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[120]">
+                          <button
+                            className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                            onClick={() => {
+                              downloadCsv("retainer-invoices.csv", rows);
+                              setExportSubMenuOpen(false);
+                              setMoreDropdownOpen(false);
+                            }}
+                            type="button"
+                          >
+                            Export Retainer Invoices
+                          </button>
+                          <button
+                            className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                            onClick={() => {
+                              downloadCsv("retainer-current-view.csv", filteredRows);
+                              setExportSubMenuOpen(false);
+                              setMoreDropdownOpen(false);
+                            }}
+                            type="button"
+                          >
+                            Export Current View
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-gray-100 my-1 mx-2" />
+
+                    <button
+                      onClick={() => {
+                        navigate("/settings");
+                        setMoreDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <Settings size={15} />
+                      <span className="font-medium">Preferences</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        navigate("/settings");
+                        setMoreDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <SlidersHorizontal size={15} />
+                      <span className="font-medium">Manage Custom Fields</span>
+                    </button>
+
+                    <div className="h-px bg-gray-100 my-1 mx-2" />
+
+                    <button
+                      onClick={() => {
+                        loadRetainers();
+                        setMoreDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <RefreshCw size={15} />
+                      <span className="font-medium">Refresh List</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+                        setMoreDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <RotateCcw size={15} />
+                      <span className="font-medium">Reset Column Width</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
 
       <div className="flex-1 overflow-x-auto bg-white min-h-0">
         {(loading || hasRows) && (
           <table className="w-full text-left border-collapse">
-            <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-              <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+              <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
                 <th
                   ref={columnToolsRef}
-                  className="px-4 py-3 relative"
-                  style={{ width: columnWidths.select, minWidth: columnWidths.select }}
+                  className="w-16 px-4 py-3 text-left sticky left-0 z-20 bg-[#f6f7fb]"
                 >
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      className="inline-flex items-center justify-center"
-                      onClick={() => setColumnToolsOpen((prev) => !prev)}
+                      className="h-6 w-6 flex items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+                      onClick={() => {
+                        setDraftSelectedColumns(new Set(selectedColumns));
+                        setColumnSearchTerm("");
+                        setIsCustomizeColumnsOpen(true);
+                      }}
+                      title="Customize columns"
                     >
-                      <SlidersHorizontal size={13} className="text-[#3b82f6]" />
+                      <SlidersHorizontal size={13} className="text-[#156372]" />
                     </button>
+                    <div className="h-5 w-px bg-gray-200" />
                     <input
                       ref={selectAllCheckboxRef}
                       type="checkbox"
                       checked={allVisibleSelected}
                       onChange={(e) => toggleSelectAllVisible(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 accent-[#3b82f6]"
+                      className="h-4 w-4 rounded border-gray-300 text-[#156372] focus:ring-0 cursor-pointer"
                     />
                   </div>
-                  {columnToolsOpen && (
-                    <div className="absolute top-full left-0 mt-2 w-48 rounded-lg border border-gray-200 bg-white shadow-xl z-[220] py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDraftSelectedColumns(new Set(selectedColumns));
-                          setColumnSearchTerm("");
-                          setIsCustomizeColumnsOpen(true);
-                          setColumnToolsOpen(false);
-                        }}
-                        className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-blue-50 flex items-center gap-2"
-                      >
-                        <Columns3 size={15} className="text-[#3b82f6]" />
-                        <span>Customize Columns</span>
-                      </button>
-                    </div>
-                  )}
                 </th>
                 {TABLE_COLUMNS.map((columnKey) => {
                   if (!visibleTableColumnSet.has(columnKey)) return null;
@@ -1208,23 +1202,18 @@ export default function RetainerInvoice() {
                   return (
                     <th
                       key={columnKey}
-                      className={`px-4 py-3 relative ${isAmountColumn ? "text-right" : ""}`}
+                      className={`group/header relative px-4 py-3 text-left text-[11px] font-semibold text-[#7b8494] uppercase tracking-wider select-none bg-[#f6f7fb] ${isAmountColumn ? "text-right" : ""}`}
                       style={widthStyle}
                     >
                       <span className="inline-block pr-3">{label}</span>
-                      <button
-                        type="button"
+                      <div
                         onMouseDown={(event) => startColumnResize(columnKey, event)}
-                        className={`absolute right-0 top-0 h-full w-2 -mr-1 cursor-col-resize transition-colors ${
-                          resizingColumn === columnKey ? "bg-[#3b82f6]/35" : "hover:bg-[#3b82f6]/20"
-                        }`}
-                        aria-label={`Resize ${label} column`}
-                        title={`Resize ${label}`}
+                        className="absolute right-0 top-0 bottom-0 w-[2px] cursor-col-resize hover:bg-teal-400/50 group-hover/header:border-r border-gray-100"
                       />
                     </th>
                   );
                 })}
-                <th className="px-4 py-3 w-12 sticky right-0 bg-white border-l border-gray-100 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
+                <th className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-[#f6f7fb] border-l border-transparent">
                   <div className="flex items-center justify-center">
                     <Search size={14} className="text-gray-300" />
                   </div>
@@ -1232,7 +1221,7 @@ export default function RetainerInvoice() {
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[#eef1f6]">
               {loading ? (
                 <TableRowSkeleton />
               ) : (
@@ -1241,19 +1230,20 @@ export default function RetainerInvoice() {
                   return (
                     <tr
                       key={row.id}
-                      className={`group transition-all cursor-pointer ${
-                        isSelected ? "bg-slate-100" : "hover:bg-slate-50/50"
-                      }`}
+                      className={`group transition-all hover:bg-[#f8fafc] cursor-pointer ${isSelected ? "bg-[#156372]/5" : ""
+                        }`}
                       onClick={() => navigate(`/sales/retainer-invoices/${row.id}`)}
                     >
-                      <td className="px-4 py-3">
-                        <div className="pl-[21px]">
+                      <td className="px-4 py-3 sticky left-0 z-20 bg-inherit" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 shrink-0" />
+                          <div className="h-5 w-px bg-transparent shrink-0" />
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => toggleRowSelection(row.id, e.target.checked)}
-                            className="h-4 w-4 rounded border-gray-300 accent-[#3b82f6]"
+                            className="h-4 w-4 rounded border-gray-300 text-[#156372] focus:ring-0 cursor-pointer"
                           />
                         </div>
                       </td>
@@ -1269,7 +1259,7 @@ export default function RetainerInvoice() {
                       )}
                       {visibleTableColumnSet.has("retainer") && (
                         <td className="px-4 py-3">
-                          <span className={`text-[13px] font-medium text-[#1b5e6a] inline-flex items-center gap-1.5 max-w-[190px] ${clipTextClass}`}>
+                          <span className={`text-[13px] font-medium text-[#156372] inline-flex items-center gap-1.5 max-w-[190px] ${clipTextClass}`}>
                             <span className={clipTextClass}>{row.invoiceNumber}</span>
                             {row.isEmailed && <Mail size={12} className="text-slate-500 shrink-0" />}
                           </span>
@@ -1339,9 +1329,8 @@ export default function RetainerInvoice() {
                         </td>
                       )}
                       <td
-                        className={`px-4 py-3 w-12 sticky right-0 backdrop-blur-sm border-l border-gray-50 transition-colors shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${
-                          isSelected ? "bg-slate-100" : "bg-white/95 group-hover:bg-slate-50/95"
-                        }`}
+                        className={`px-4 py-3 w-12 sticky right-0 backdrop-blur-sm border-l border-transparent transition-colors ${isSelected ? "bg-[#156372]/5" : "bg-white/95 group-hover:bg-[#f8fafc]/95"
+                          }`}
                       />
                     </tr>
                   );
@@ -1377,24 +1366,24 @@ export default function RetainerInvoice() {
       </div>
 
       {isCustomizeColumnsOpen && (
-        <div className="fixed inset-0 z-[300] bg-black/25 flex items-center justify-center p-4">
-          <div className="w-full max-w-[620px] max-h-[90vh] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="fixed inset-0 z-[300] bg-black/40 backdrop-blur-[2px] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6" onClick={() => setIsCustomizeColumnsOpen(false)}>
+          <div className="w-full max-w-[500px] bg-white rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal size={16} className="text-slate-600" />
-                <h2 className="text-[32px] leading-none text-slate-800">Customize Columns</h2>
+              <div className="flex items-center gap-3">
+                <SlidersHorizontal size={18} className="text-gray-500" />
+                <h2 className="text-[15px] font-semibold text-gray-800">Customize Columns</h2>
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-[13px] text-slate-600">{selectedColumnCount} of {RETAINER_COLUMNS.length} Selected</span>
                 <button
                   type="button"
-                  className="h-8 w-8 rounded-md border border-[#3b82f6] text-red-500 flex items-center justify-center"
+                  className="w-7 h-7 flex items-center justify-center border border-blue-200 rounded shadow-sm hover:bg-gray-50 transition-colors group"
                   onClick={() => {
                     setIsCustomizeColumnsOpen(false);
                     setColumnSearchTerm("");
                   }}
                 >
-                  <X size={18} />
+                  <X size={16} className="text-red-500 group-hover:text-red-600" />
                 </button>
               </div>
             </div>

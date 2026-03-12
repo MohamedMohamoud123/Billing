@@ -35,7 +35,9 @@ import {
   Share2,
   HelpCircle,
   SlidersHorizontal,
-  GripVertical
+  GripVertical,
+  FileDown,
+  RotateCcw
 } from "lucide-react";
 import { getInvoices, getInvoicesPaginated, getInvoiceById, updateInvoice, deleteInvoice, Invoice } from "../salesModel";
 import { getInvoiceStatusDisplay } from "../../../utils/invoiceUtils";
@@ -574,7 +576,7 @@ export default function Invoices() {
             // Model says 'partially paid'. 
             // Wait, 'Pending Approval' -> 'pending_approval' usually.
             if (view === "Pending Approval") params.status = "pending_approval";
-            if (view === "Payment Initiated") params.status = "payment_initiated";
+            if ((view as string) === "Payment Initiated") params.status = "payment_initiated";
             break;
           case "Unpaid":
           case "Unpaid Invoices":
@@ -855,7 +857,7 @@ export default function Invoices() {
             >
               {invoice.invoiceNumber || invoice.id}
             </span>
-            {(invoice.isRecurringInvoice || invoice.recurringProfileId) && (
+            {((invoice as any).isRecurringInvoice || (invoice as any).recurringProfileId) && (
               <div title="Generated from Recurring Profile" className="p-0.5 bg-blue-50 text-blue-600 rounded">
                 <RefreshCw size={12} />
               </div>
@@ -876,13 +878,13 @@ export default function Invoices() {
       case "dueDate":
         return <span className="text-gray-900">{formatDate(invoice.dueDate)}</span>;
       case "amount":
-        return <span className="text-gray-900">{formatCurrency(getInvoiceDisplayTotal(invoice), invoice.currency)}</span>;
+        return <span className="text-gray-900">{formatMoney(getInvoiceDisplayTotal(invoice))}</span>;
       case "balance":
-        return <span className="text-gray-900">{formatCurrency(invoice.balance !== undefined ? invoice.balance : (invoice.balanceDue || 0), invoice.currency)}</span>;
+        return <span className="text-gray-900">{formatMoney(invoice.balance !== undefined ? invoice.balance : (invoice.balanceDue || 0))}</span>;
       case "location":
         return <span className="text-gray-900">{(invoice as any).location || (invoice as any).selectedLocation || "Head Office"}</span>;
       case "adjustment":
-        return <span className="text-gray-900">{formatCurrency((invoice as any).adjustment || 0, invoice.currency)}</span>;
+        return <span className="text-gray-900">{formatMoney((invoice as any).adjustment || 0)}</span>;
       case "billingAddress":
         return (
           <span className="text-gray-900">
@@ -1399,7 +1401,7 @@ export default function Invoices() {
           </div>
           <div class="invoice-details">
             <p><span>Invoice Date :</span> <strong>${escapeHtml(formattedDate)}</strong></p>
-            <p><span>Terms :</span> <strong>${escapeHtml(invoice.paymentTerms || "Due on Receipt")}</strong></p>
+            <p><span>Terms :</span> <strong>${escapeHtml((invoice as any).paymentTerms || "Due on Receipt")}</strong></p>
             <p><span>Due Date :</span> <strong>${escapeHtml(dueDate)}</strong></p>
             ${invoice.orderNumber ? `<p><span>P.O.# :</span> <strong>${escapeHtml(invoice.orderNumber)}</strong></p>` : ""}
           </div>
@@ -1605,8 +1607,8 @@ export default function Invoices() {
         `"${(inv.customer || "-").replace(/"/g, '""')}"`,
         inv.status ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1) : "Draft",
         formatDate(inv.dueDate),
-        formatCurrency(getInvoiceDisplayTotal(inv), inv.currency),
-        formatCurrency(inv.balanceDue || inv.balance || 0, inv.currency)
+        formatMoney(getInvoiceDisplayTotal(inv)),
+        formatMoney(inv.balanceDue || inv.balance || 0)
       ].join(','))
     ];
 
@@ -1636,8 +1638,8 @@ export default function Invoices() {
       Customer: inv.customerName || (inv as any).customer || "-",
       Status: inv.status ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1) : "Draft",
       "Due Date": formatDate(inv.dueDate),
-      Amount: formatCurrency(getInvoiceDisplayTotal(inv), inv.currency),
-      "Balance Due": formatCurrency(inv.balanceDue || inv.balance || 0, inv.currency),
+      Amount: formatMoney(getInvoiceDisplayTotal(inv)),
+      "Balance Due": formatMoney(inv.balanceDue || inv.balance || 0),
     }));
   };
 
@@ -1720,19 +1722,20 @@ export default function Invoices() {
     setIsMarkAsSentModalOpen(true);
   };
 
-  const handleShare = (invoice) => {
+  const handleShare = async (invoice) => {
     if (!invoice) return;
 
     // Get full invoice details
-    const invoiceData = getInvoiceById(invoice.id);
+    const invoiceDataResult = getInvoiceById(invoice.id);
+    const invoiceData = invoiceDataResult instanceof Promise ? await invoiceDataResult : invoiceDataResult;
     if (!invoiceData) return;
 
     setSelectedInvoiceForShare(invoiceData);
 
     // Calculate default expiration date (90 days from invoice due date or 90 days from today)
     let defaultExpiryDate;
-    if (invoiceData.dueDate) {
-      defaultExpiryDate = new Date(invoiceData.dueDate);
+    if ((invoiceData as any).dueDate) {
+      defaultExpiryDate = new Date((invoiceData as any).dueDate);
       defaultExpiryDate.setDate(defaultExpiryDate.getDate() + 90);
     } else {
       defaultExpiryDate = new Date();
@@ -1881,8 +1884,8 @@ export default function Invoices() {
 
       switch (sortConfig.key) {
         case "Created Time":
-          aValue = new Date(a.createdTime || a.createdAt || 0);
-          bValue = new Date(b.createdTime || b.createdAt || 0);
+          aValue = new Date((a as any).createdTime || a.createdAt || 0);
+          bValue = new Date((b as any).createdTime || b.createdAt || 0);
           break;
         case "Last Modified Time":
           aValue = new Date(a.lastModifiedTime || a.updatedAt || 0);
@@ -1913,8 +1916,8 @@ export default function Invoices() {
           bValue = getInvoiceDisplayTotal(b);
           break;
         case "Balance Due":
-          aValue = parseFloat(a.balanceDue || (getInvoiceDisplayTotal(a) - (a.amountPaid || 0)) || 0);
-          bValue = parseFloat(b.balanceDue || (getInvoiceDisplayTotal(b) - (b.amountPaid || 0)) || 0);
+          aValue = parseFloat(String(a.balanceDue || (getInvoiceDisplayTotal(a) - (a.amountPaid || 0)) || 0));
+          bValue = parseFloat(String(b.balanceDue || (getInvoiceDisplayTotal(b) - (b.amountPaid || 0)) || 0));
           break;
         default:
           aValue = (a.invoiceNumber || a.id || "").toLowerCase();
@@ -2001,232 +2004,178 @@ export default function Invoices() {
         </div>
       )}
 
-      {/* Header - Show Bulk Actions Bar when items are selected, otherwise show normal header */}
-      {selectedInvoices.size > 0 ? (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white">
-          <div className="flex items-center gap-2">
-            <button
-              className="flex items-center gap-1.5 py-2 px-4 bg-gradient-to-r from-[#156372] to-[#0D4A52] rounded-md text-sm font-medium text-white cursor-pointer transition-all hover:opacity-90 shadow-sm"
-              onClick={handleBulkUpdate}
-            >
-              Bulk Update
-            </button>
-            <div
-              className="relative"
-              ref={downloadDropdownRef}
-            >
+      <div className="border-b border-gray-100 bg-white sticky top-0 z-[100]">
+        {selectedInvoices.size > 0 ? (
+          /* Bulk Action Header */
+          <div className="flex items-center justify-between px-4 h-[60px]">
+            <div className="flex items-center gap-2">
               <button
-                className={`flex items-center gap-1.5 py-2 px-2.5 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:border-gray-300 ${isGeneratingPdf ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                onClick={() => {
-                  if (!isGeneratingPdf) setIsDownloadDropdownOpen(!isDownloadDropdownOpen);
-                }}
-                title="Download"
-                disabled={isGeneratingPdf}
+                type="button"
+                onClick={handleBulkUpdate}
+                className="h-9 px-4 rounded-md text-white text-sm font-medium inline-flex items-center gap-1.5 shadow-sm transition-all bg-gradient-to-r from-[#176a79] to-[#1b5e6a] hover:from-[#1b5e6a] hover:to-[#176a79]"
               >
-                {isGeneratingPdf ? (
-                  <RefreshCw size={16} className="animate-spin" />
-                ) : (
-                  <Download size={16} />
-                )}
-                <ChevronDown size={14} />
+                Bulk Update
               </button>
-              {isDownloadDropdownOpen && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
-                  <button
-                    className={`w-full text-left px-4 py-2 text-sm transition-colors ${isGeneratingPdf ? "text-gray-400 cursor-not-allowed" : "text-gray-700 cursor-pointer hover:bg-gray-50"}`}
-                    onClick={() => {
-                      if (!isGeneratingPdf) {
+
+              <div className="relative" ref={downloadDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isGeneratingPdf) setIsDownloadDropdownOpen(!isDownloadDropdownOpen);
+                  }}
+                  className={`px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2 ${isGeneratingPdf ? "opacity-60 cursor-not-allowed" : ""}`}
+                  title="Export Options"
+                  disabled={isGeneratingPdf}
+                >
+                  {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin" /> : <FileDown size={16} className="text-gray-500" />}
+                  <span>Export PDF</span>
+                  <ChevronDown size={14} className="text-gray-400" />
+                </button>
+                {isDownloadDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px] py-1">
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={() => {
                         handleDownloadPDF();
                         setIsDownloadDropdownOpen(false);
-                      }
-                    }}
-                    disabled={isGeneratingPdf}
-                  >
-                    {isGeneratingPdf ? "Generating PDF..." : "Download as PDF"}
-                  </button>
-                </div>
-              )}
-            </div>
-            <button
-              className="flex items-center gap-1.5 py-2 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-300"
-              onClick={handleMarkAsPaidAction}
-            >
-              Mark As Paid
-            </button>
-            <button
-              className="flex items-center gap-1.5 py-2 px-4 bg-white border border-red-300 rounded-md text-sm font-medium text-red-600 cursor-pointer transition-all hover:bg-red-50 hover:border-red-300"
-              onClick={handleDelete}
-            >
-              <Trash2 size={16} className="text-red-500" />
-              Delete
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="flex items-center justify-center min-w-[24px] h-6 px-2 bg-gradient-to-r from-[#156372] to-[#0D4A52] rounded text-[13px] font-semibold text-white">
-              {selectedInvoices.size}
-            </span>
-            <span className="text-sm text-gray-700">Selected</span>
-            <button
-              className="flex items-center gap-1 py-1.5 px-3 bg-transparent border-none text-sm text-red-500 cursor-pointer transition-colors hover:text-red-600"
-              onClick={() => setSelectedInvoices(new Set())}
-            >
-              Esc <X size={14} className="text-red-500" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* Normal Page Header */
-        <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
-          {/* Title with Clickable Dropdown */}
-          <div className="flex items-center gap-4">
-            <div className="relative" ref={invoiceDropdownRef}>
-              <button
-                onClick={() => setIsInvoiceDropdownOpen(!isInvoiceDropdownOpen)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#15637210] text-blue-700 rounded-md hover:bg-blue-100 cursor-pointer transition-colors"
-              >
-                <span className="text-lg font-semibold">{selectedView}</span>
-                {isInvoiceDropdownOpen ? (
-                  <ChevronUp size={18} className="text-[#156372]" />
-                ) : (
-                  <ChevronDown size={18} className="text-[#156372]" />
+                      }}
+                    >
+                      Download as PDF
+                    </button>
+                  </div>
                 )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleMarkAsPaidAction}
+                className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
+              >
+                Mark As Paid
               </button>
 
-              {isInvoiceDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-50 min-w-[300px] flex flex-col max-h-[500px] overflow-hidden">
-                  {/* Search Bar */}
-                  <div className="flex items-center gap-2 p-3 border-b border-gray-200 bg-gray-50">
-                    <Search size={16} className="text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search views..."
-                      value={viewSearchQuery}
-                      onChange={(e) => setViewSearchQuery(e.target.value)}
-                      className="flex-1 text-sm bg-transparent focus:outline-none"
-                    />
-                  </div>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-red-600 rounded-md hover:bg-red-50 transition-all shadow-sm flex items-center gap-2"
+              >
+                <Trash2 size={16} className="text-red-500" />
+                <span>Delete</span>
+              </button>
 
-                  {/* View Options Scroll Area */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar pt-2">
-                    {/* Default Views */}
-                    <div className="px-3 pb-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-white">
-                      System Views
+              <div className="mx-2 h-5 w-px bg-gray-200" />
+
+              <div className="inline-flex items-center gap-2 text-sm text-slate-500">
+                <span
+                  className="flex h-6 min-w-[24px] items-center justify-center rounded px-2 text-[13px] font-semibold text-white"
+                  style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
+                >
+                  {selectedInvoices.size}
+                </span>
+                <span className="text-sm text-gray-700">Selected</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedInvoices(new Set())}
+              className="inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-700"
+            >
+              <span>Esc</span>
+              <X size={18} />
+            </button>
+          </div>
+        ) : (
+          /* Normal Header */
+          <div className="flex items-center justify-between px-4 h-[60px]">
+            <div className="flex items-center gap-8 pl-4">
+              <div className="relative" ref={invoiceDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsInvoiceDropdownOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900 -mb-[1px] bg-transparent outline-none"
+                >
+                  <span className="text-[15px] font-bold text-slate-900 transition-colors">{selectedView}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform duration-200 text-[#156372] ${isInvoiceDropdownOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {isInvoiceDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-2xl z-[100] py-2">
+                    <div className="px-3 pb-2 border-b border-gray-100">
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-md border border-gray-200">
+                        <Search size={14} className="text-gray-400" />
+                        <input
+                          placeholder="Search Views"
+                          className="bg-transparent border-none outline-none text-sm w-full"
+                          value={viewSearchQuery}
+                          onChange={(e) => setViewSearchQuery(e.target.value)}
+                        />
+                      </div>
                     </div>
-                    {filteredDefaultViews.map((view) => (
-                      <div
-                        key={view}
-                        onClick={() => handleViewSelect(view)}
-                        className={`group flex items-center justify-between px-4 py-2.5 text-sm cursor-pointer transition-all ${isViewSelected(view) ? "bg-[#15637210] text-[#156372]" : "text-gray-900 hover:bg-gray-50"
+                    <div className="max-h-80 overflow-y-auto py-1">
+                      {filteredDefaultViews.map((view) => (
+                        <button
+                          key={view}
+                          type="button"
+                          onClick={() => handleViewSelect(view)}
+                          className="w-full flex items-center justify-between px-4 py-2 text-sm hover:bg-teal-50 transition-colors"
+                        >
+                          <span className={isViewSelected(view) ? "font-semibold text-teal-700" : "text-slate-700"}>
+                            {view}
+                          </span>
+                          {isViewSelected(view) && <CheckCircle size={14} className="text-[#156372]" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
+              <button
+                onClick={handleCreateNewInvoice}
+                className="h-9 px-4 rounded-md text-white text-sm font-medium inline-flex items-center gap-1.5 shadow-sm transition-all bg-gradient-to-r from-[#176a79] to-[#1b5e6a] hover:from-[#1b5e6a] hover:to-[#176a79]"
+                type="button"
+              >
+                <Plus size={18} className="stroke-[3px]" />
+                <span>New</span>
+              </button>
+
+              <div className="relative" ref={moreMenuRef}>
+                <button
+                  onClick={() => setIsMoreMenuOpen((prev) => !prev)}
+                  className="h-9 w-9 rounded-md border border-gray-200 bg-white text-slate-600 inline-flex items-center justify-center shadow-sm hover:bg-slate-50"
+                  type="button"
+                  aria-label="More options"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+                {isMoreMenuOpen && (
+                  <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[110]">
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setSortSubMenuOpen((prev) => !prev);
+                          setExportSubMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${sortSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"
                           }`}
+                        style={sortSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
+                        type="button"
                       >
                         <div className="flex items-center gap-3">
-                          <Eye size={16} className={isViewSelected(view) ? "text-blue-500" : "text-gray-400 opacity-40"} />
-                          <span>{view}</span>
+                          <ArrowUpDown size={15} className={sortSubMenuOpen ? "text-white" : ""} />
+                          <span className="font-medium">Sort by</span>
                         </div>
-                        {isViewSelected(view) && <CheckCircle size={14} className="text-[#156372]" />}
-                      </div>
-                    ))}
-
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Center - Empty Space */}
-          <div className="flex-1"></div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-0">
-            <button
-              className="cursor-pointer transition-all bg-gradient-to-r from-[#156372] to-[#0D4A52] text-white h-9 px-6 rounded-l-lg hover:opacity-90 active:scale-95 flex items-center gap-2 text-sm font-bold shadow-sm"
-              onClick={handleCreateNewInvoice}
-            >
-              <Plus size={16} strokeWidth={3} />
-              New
-            </button>
-            <div className="relative" ref={newDropdownRef}>
-              <button
-                className="cursor-pointer transition-all bg-gradient-to-r from-[#156372] to-[#0D4A52] text-white h-9 px-2 rounded-r-lg border-l border-[#ffffff40] hover:opacity-90 active:scale-95 shadow-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsNewDropdownOpen(!isNewDropdownOpen);
-                }}
-              >
-                <ChevronDown size={16} />
-              </button>
-              {isNewDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1 w-40 rounded-md border border-gray-200 bg-white p-1 shadow-xl z-50">
-                  <button
-                    className="w-full rounded-md border border-[#2f80ed] bg-[#2f80ed] px-3 py-2 text-left text-sm text-white shadow-[inset_0_0_0_2px_rgba(255,255,255,0.85)] transition-colors hover:bg-[#2a74d7]"
-                    onClick={() => {
-                      setIsNewDropdownOpen(false);
-                      handleCreateNewInvoice();
-                    }}
-                  >
-                    New Invoice
-                  </button>
-                  <button
-                    className="w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                    onClick={() => {
-                      setIsNewDropdownOpen(false);
-                      handleCreateNewCreditNote();
-                    }}
-                  >
-                    New Credit Note
-                  </button>
-                  <button
-                    className="w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                    onClick={() => {
-                      setIsNewDropdownOpen(false);
-                      handleCreateDebitNote();
-                    }}
-                  >
-                    New Debit Note
-                  </button>
-                </div>
-              )}
-            </div>
-            <div
-              className="relative"
-              ref={moreMenuRef}
-              onMouseEnter={() => setIsMoreMenuOpen(true)}
-              onMouseLeave={() => {
-                setIsMoreMenuOpen(false);
-                setSortSubMenuOpen(false);
-                setExportSubMenuOpen(false);
-              }}
-            >
-              <button
-                className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors bg-white shadow-sm"
-                onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
-              >
-                <MoreHorizontal size={18} className="text-gray-500" />
-              </button>
-
-              {isMoreMenuOpen && (
-                <div className="absolute top-full right-0 mt-2 w-60 bg-white border border-gray-100 rounded-lg shadow-xl z-[110] py-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setSortSubMenuOpen(!sortSubMenuOpen);
-                        setExportSubMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${sortSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"}`}
-                      style={sortSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
-                    >
-                      <div className="flex items-center gap-3">
-                        <ArrowUpDown size={16} className={sortSubMenuOpen ? "text-white" : ""} style={!sortSubMenuOpen ? { color: "#1b5e6a" } : {}} />
-                        <span className="font-medium">Sort by</span>
-                      </div>
-                      <ChevronRight size={14} className={sortSubMenuOpen ? "text-white" : "text-slate-400"} />
-                    </button>
-
-                    {sortSubMenuOpen && (
-                      <div className="md:absolute md:top-0 md:right-full md:mr-2 md:w-52 relative w-full bg-white md:border border-gray-100 rounded-lg md:shadow-xl py-2 z-[115] md:animate-in md:fade-in md:slide-in-from-right-1 duration-200">
-                        {sortByOptions.map((option) => {
-                          const isActive = activeSortField === option;
-                          return (
+                        <ChevronRight size={14} className={sortSubMenuOpen ? "text-white" : "text-slate-400"} />
+                      </button>
+                      {sortSubMenuOpen && (
+                        <div className="absolute top-0 right-full mr-2 w-64 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[120]">
+                          {sortByOptions.map((option) => (
                             <button
                               key={option}
                               onClick={() => {
@@ -2234,112 +2183,120 @@ export default function Invoices() {
                                 setSortSubMenuOpen(false);
                                 setIsMoreMenuOpen(false);
                               }}
-                              className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${isActive ? "bg-[#1b5e6a] text-white font-bold" : "text-slate-600 hover:bg-teal-50/50"}`}
+                              className={`w-full text-left px-4 py-2 text-sm transition-colors ${activeSortField === option
+                                ? "bg-[#1b5e6a] text-white font-semibold"
+                                : "text-slate-600 hover:bg-teal-50"
+                                }`}
+                              type="button"
                             >
-                              <span style={isActive ? { color: "white", fontWeight: "bold" } : {}}>{option}</span>
-                              {isActive && (
-                                sortConfig.direction === "asc" ? <ChevronUp size={14} className="text-white" /> : <ChevronDown size={14} className="text-white" />
-                              )}
+                              {option}
                             </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div className="h-px bg-gray-50 my-1 mx-2" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-                  <button
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors group"
-                    onClick={() => {
-                      navigate("/sales/invoices/import");
-                      setIsMoreMenuOpen(false);
-                    }}
-                  >
-                    <Download size={16} className="text-teal-600 group-hover:text-white" />
-                    <span className="font-medium">Import Invoices</span>
-                  </button>
-
-                  <div className="relative">
                     <button
                       onClick={() => {
-                        setExportSubMenuOpen(!exportSubMenuOpen);
-                        setSortSubMenuOpen(false);
+                        navigate("/sales/invoices/import");
+                        setIsMoreMenuOpen(false);
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${exportSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"}`}
-                      style={exportSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
                     >
-                      <div className="flex items-center gap-3">
-                        <Upload size={16} className={exportSubMenuOpen ? "text-white" : ""} style={!exportSubMenuOpen ? { color: "#1b5e6a" } : {}} />
-                        <span className="font-medium">Export</span>
-                      </div>
-                      <ChevronRight size={14} className={exportSubMenuOpen ? "text-white" : "text-slate-400"} />
+                      <Download size={15} />
+                      <span className="font-medium">Import Invoices</span>
                     </button>
 
-                    {exportSubMenuOpen && (
-                      <div className="md:absolute md:top-0 md:right-full md:mr-2 md:w-52 relative w-full bg-white md:border border-gray-100 rounded-lg md:shadow-xl py-2 z-[115] md:animate-in md:fade-in md:slide-in-from-right-1 duration-200">
-                        <button
-                          className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white font-medium transition-colors"
-                          onClick={() => {
-                            handleExportAllInvoices();
-                            setExportSubMenuOpen(false);
-                            setIsMoreMenuOpen(false);
-                          }}
-                        >
-                          Export Invoices
-                        </button>
-                        <button
-                          className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white font-medium transition-colors"
-                          onClick={() => {
-                            handleExportCurrentView();
-                            setExportSubMenuOpen(false);
-                            setIsMoreMenuOpen(false);
-                          }}
-                        >
-                          Export Current View
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setExportSubMenuOpen((prev) => !prev);
+                          setSortSubMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors ${exportSubMenuOpen ? "text-white rounded-md mx-2 w-[calc(100%-16px)] shadow-sm" : "text-slate-600 hover:bg-[#1b5e6a] hover:text-white"
+                          }`}
+                        style={exportSubMenuOpen ? { backgroundColor: "#1b5e6a" } : {}}
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Upload size={15} className={exportSubMenuOpen ? "text-white" : ""} />
+                          <span className="font-medium">Export</span>
+                        </div>
+                        <ChevronRight size={14} className={exportSubMenuOpen ? "text-white" : "text-slate-400"} />
+                      </button>
+                      {exportSubMenuOpen && (
+                        <div className="absolute top-0 right-full mr-2 w-56 bg-white border border-gray-100 rounded-lg shadow-xl py-2 z-[120]">
+                          <button
+                            className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                            onClick={() => {
+                              handleExportAllInvoices();
+                              setExportSubMenuOpen(false);
+                              setIsMoreMenuOpen(false);
+                            }}
+                            type="button"
+                          >
+                            Export Invoices
+                          </button>
+                          <button
+                            className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                            onClick={() => {
+                              handleExportCurrentView();
+                              setExportSubMenuOpen(false);
+                              setIsMoreMenuOpen(false);
+                            }}
+                            type="button"
+                          >
+                            Export Current View
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="h-px bg-gray-50 my-1 mx-2" />
+                    <div className="h-px bg-gray-100 my-1 mx-2" />
 
-                  <button
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors group"
-                    onClick={() => {
-                      navigate("/settings/invoices");
-                      setIsMoreMenuOpen(false);
-                    }}
-                  >
-                    <Settings size={16} className="text-teal-600 group-hover:text-white" />
-                    <span className="font-medium">Preferences</span>
-                  </button>
+                    <button
+                      onClick={() => {
+                        navigate("/settings/invoices");
+                        setIsMoreMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <Settings size={15} />
+                      <span className="font-medium">Preferences</span>
+                    </button>
 
-                  <button
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors group ${isRefreshing ? "opacity-50 cursor-not-allowed" : ""}`}
-                    onClick={() => {
-                      if (!isRefreshing) {
+                    <button
+                      onClick={() => {
                         refreshData();
                         setIsMoreMenuOpen(false);
-                      }
-                    }}
-                  >
-                    <RefreshCw size={16} className={`text-teal-600 group-hover:text-white ${isRefreshing ? "animate-spin" : ""}`} />
-                    <span className="font-medium">Refresh List</span>
-                  </button>
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <RefreshCw size={15} />
+                      <span className="font-medium">Refresh List</span>
+                    </button>
 
-                  <button
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors group"
-                    onClick={handleResetColumnWidth}
-                  >
-                    <RefreshCw size={16} className="text-teal-600 group-hover:text-white" />
-                    <span className="font-medium">Reset Column Width</span>
-                  </button>
-                </div>
-              )}
+                    <button
+                      onClick={() => {
+                        handleResetColumnWidth();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors"
+                      type="button"
+                    >
+                      <RotateCcw size={15} />
+                      <span className="font-medium">Reset Column Width</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Content Area */}
       <div className="relative min-h-0 flex-1 overflow-auto bg-white">
@@ -2402,18 +2359,17 @@ export default function Invoices() {
           </div>
         ) : (
           <div className="bg-white">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-                <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="px-4 py-3 text-left">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-[#f6f7fb] sticky top-0 z-[110]">
+                <tr>
+                  <th className="px-4 py-3 text-left w-10">
                     <div className="flex items-center gap-2">
-
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          setHeaderMenuPosition({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX });
-                          setIsHeaderMenuOpen(true);
+                          setTempVisibleColumns([...visibleColumns]);
+                          setTempColumnOrder([...columnOrder]);
+                          setIsCustomizeColumnsModalOpen(true);
                         }}
                         className="p-1 text-gray-500 hover:text-gray-700 cursor-pointer"
                         title="Customize Columns"
@@ -2422,46 +2378,50 @@ export default function Invoices() {
                       </button>
                     </div>
                   </th>
-                  <th className="px-4 py-3 text-left">
+                  <th className="px-4 py-3 text-left w-10">
                     <button
-                      className="cursor-pointer"
+                      className="cursor-pointer flex items-center"
                       onClick={handleSelectAllInvoices}
                     >
                       {selectedInvoices.size === sortedInvoices.length && sortedInvoices.length > 0 ? (
                         <CheckSquare size={16} fill="#156372" color="#156372" />
                       ) : (
-                        <Square size={16} />
+                        <Square size={16} className="text-gray-400" />
                       )}
                     </button>
                   </th>
                   {visibleColumns.map((colKey) => {
                     const col = invoiceColumnOptions.find(c => c.key === colKey);
                     if (!col) return null;
-                    if (colKey === "invoiceNumber") {
-                      return (
-                        <th key={colKey} className="px-4 py-3 text-left">
-                          <button className="flex items-center gap-1 text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:text-gray-900">
-                            {col.label}
-                            <ArrowUpDown size={14} />
-                          </button>
-                        </th>
-                      );
-                    }
+                    const isSortable = colKey === "invoiceNumber" || colKey === "date" || colKey === "amount" || colKey === "balanceDue" || colKey === "dueDate";
+
                     return (
-                      <th key={colKey} className="px-4 py-3 text-left">
-                        {col.label}
+                      <th
+                        key={colKey}
+                        className="px-4 py-3 text-left text-[11px] font-semibold text-[#7b8494] uppercase tracking-wider select-none"
+                      >
+                        {isSortable ? (
+                          <button
+                            className="flex items-center gap-1 hover:text-gray-900 transition-colors uppercase"
+                            onClick={() => handleSort(col.label)}
+                          >
+                            {col.label}
+                            <ArrowUpDown size={12} className="text-gray-400" />
+                          </button>
+                        ) : (
+                          col.label
+                        )}
                       </th>
                     );
                   })}
-                  <th className="px-4 py-3 text-left">
+                  <th className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-[#f6f7fb]">
                     <button
                       onClick={() => setIsSearchModalOpen(true)}
-                      className="p-1 text-gray-500 hover:text-gray-700 cursor-pointer"
+                      className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
                     >
-                      <Search size={16} />
+                      <Search size={14} />
                     </button>
                   </th>
-                  <th className="px-4 py-3 text-left"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -2487,13 +2447,15 @@ export default function Invoices() {
                       key={invoice.id}
                       onClick={(e) => {
                         // Don't navigate if clicking checkbox or edit button
-                        if (!e.target.closest('.invoice-checkbox') && !e.target.closest('.invoice-edit-button')) {
+                        if (!(e.target as Element).closest('.invoice-checkbox') && !(e.target as Element).closest('.invoice-edit-button')) {
                           navigate(`/sales/invoices/${invoice.id}`);
                         }
                       }}
                       className="group transition-all cursor-pointer hover:bg-slate-50/50"
                     >
-                      <td className="px-4 py-3"></td>
+                      {/* Empty first col under the sliders icon */}
+                      <td className="px-4 py-3 w-10"></td>
+                      {/* Checkbox column */}
                       <td className="px-4 py-3">
                         <button
                           className="invoice-checkbox cursor-pointer"
@@ -2514,25 +2476,24 @@ export default function Invoices() {
                           {renderInvoiceCell(invoice, colKey)}
                         </td>
                       ))}
-                      <td className="px-4 py-3"></td>
-                      <td className="px-4 py-3 relative overflow-visible">
-                        <div className="flex items-center justify-end gap-2">
+                      {/* Last col: action button on hover (right side) */}
+                      <td className="px-4 py-3 relative overflow-visible w-10">
+                        <div className="flex items-center justify-center relative">
                           <button
-                            className={`hidden group-hover:flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r from-[#156372] to-[#0D4A52] cursor-pointer transition-all shadow-md ${activeActionInvoiceId === invoice.id ? '!flex' : ''}`}
+                            className={`hidden group-hover:flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-r from-[#156372] to-[#0D4A52] cursor-pointer transition-all shadow-md ${activeActionInvoiceId === invoice.id ? '!flex' : ''}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setActiveActionInvoiceId(activeActionInvoiceId === invoice.id ? null : invoice.id);
                             }}
                             title="Actions"
                           >
-                            <ChevronDown size={18} className="text-white" />
+                            <ChevronDown size={15} className="text-white" />
                           </button>
 
-                          {/* Action Dropdown */}
                           {activeActionInvoiceId === invoice.id && (
                             <div
                               ref={actionDropdownRef}
-                              className="absolute right-0 top-10 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden"
+                              className="absolute right-0 top-9 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-[200] overflow-hidden"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <div className="flex flex-col py-1">
@@ -2561,7 +2522,7 @@ export default function Invoices() {
                                   ) : (
                                     <FileText size={16} className="text-[#156372]" />
                                   )}
-                                  {isGeneratingPdf ? "Generating PDF..." : "Download the PDF"}
+                                  {isGeneratingPdf ? "Generating PDF..." : "Download PDF"}
                                 </button>
 
                                 <button
@@ -2651,7 +2612,7 @@ export default function Invoices() {
       {/* Bulk Update Modal */}
       {isBulkUpdateModalOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsBulkUpdateModalOpen(false);
@@ -2752,7 +2713,7 @@ export default function Invoices() {
       {/* Mark As Sent Confirmation Modal */}
       {isMarkAsSentModalOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsMarkAsSentModalOpen(false);
@@ -2790,7 +2751,7 @@ export default function Invoices() {
       {/* Dissociate Sales Orders Modal */}
       {isDissociateModalOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsDissociateModalOpen(false);
@@ -2825,7 +2786,7 @@ export default function Invoices() {
       {/* Export Current View Modal */}
       {isExportCurrentViewModalOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsExportCurrentViewModalOpen(false);
@@ -2980,8 +2941,17 @@ export default function Invoices() {
 
       {/* Preferences Sidebar */}
       {(isPreferencesOpen || isFieldCustomizationOpen) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
-          <div className="w-full max-w-2xl bg-white h-full overflow-y-auto shadow-xl">
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
+          onClick={() => {
+            setIsPreferencesOpen(false);
+            setIsFieldCustomizationOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-lg shadow-xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white sticky top-0 z-10">
               <div className="flex items-center gap-4">
@@ -3226,83 +3196,13 @@ export default function Invoices() {
       {/* Search Modal */}
       {isSearchModalOpen && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsSearchModalOpen(false);
-              // Reset search data
-              setSearchModalData({
-                displayName: "",
-                companyName: "",
-                lastName: "",
-                status: "All",
-                address: "",
-                customerType: "",
-                firstName: "",
-                email: "",
-                phone: "",
-                notes: "",
-                itemName: "",
-                description: "",
-                purchaseRate: "",
-                salesAccount: "",
-                sku: "",
-                rate: "",
-                purchaseAccount: "",
-                referenceNumber: "",
-                reason: "",
-                itemDescription: "",
-                adjustmentType: "All",
-                dateFrom: "",
-                dateTo: "",
-                totalRangeFrom: "",
-                totalRangeTo: "",
-                dateRangeFrom: "",
-                dateRangeTo: "",
-                transactionType: "",
-                quoteNumber: "",
-                referenceNumberQuote: "",
-                itemNameQuote: "",
-                itemDescriptionQuote: "",
-                totalRangeFromQuote: "",
-                totalRangeToQuote: "",
-                customerName: "",
-                salesperson: "",
-                projectName: "",
-                taxExemptions: "",
-                addressType: "Billing and Shipping",
-                attention: "",
-                invoiceNumber: "",
-                orderNumber: "",
-                createdBetweenFrom: "",
-                createdBetweenTo: "",
-                itemNameInvoice: "",
-                itemDescriptionInvoice: "",
-                account: "",
-                totalRangeFromInvoice: "",
-                totalRangeToInvoice: "",
-                customerNameInvoice: "",
-                salespersonInvoice: "",
-                projectNameInvoice: "",
-                taxExemptionsInvoice: "",
-                addressTypeInvoice: "Billing and Shipping",
-                attentionInvoice: "",
-                paymentNumber: "",
-                referenceNumberPayment: "",
-                dateRangeFromPayment: "",
-                dateRangeToPayment: "",
-                totalRangeFromPayment: "",
-                totalRangeToPayment: "",
-                statusPayment: "",
-                paymentMethod: "",
-                notesPayment: "",
-                expenseNumber: "",
-                vendorName: ""
-              });
-            }
-          }}
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
+          onClick={() => setIsSearchModalOpen(false)}
         >
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-[800px] mx-4 max-h-[90vh] overflow-y-auto">
+          <div
+            className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
             <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
               <div className="flex items-center gap-6">
@@ -3957,7 +3857,7 @@ export default function Invoices() {
       {/* Share Modal */}
       {showShareModal && selectedInvoiceForShare && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[300] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowShareModal(false);
@@ -4106,33 +4006,10 @@ export default function Invoices() {
           </div>
         </div>
       )}
-      {/* Header Menu Overlay - Rendered outside table to avoid clipping */}
-      {isHeaderMenuOpen && (
-        <>
-          <div className="fixed inset-0 z-[1000]" onClick={() => setIsHeaderMenuOpen(false)}></div>
-          <div
-            className="fixed bg-white border border-gray-200 rounded-md shadow-xl z-[1001] py-1 w-48 animate-in fade-in zoom-in-95 duration-100"
-            style={{ top: `${headerMenuPosition.top}px`, left: `${headerMenuPosition.left}px` }}
-          >
-            <div
-              className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer flex items-center gap-2"
-              onClick={() => {
-                setTempVisibleColumns([...visibleColumns]);
-                setTempColumnOrder([...columnOrder]);
-                setIsCustomizeColumnsModalOpen(true);
-                setIsHeaderMenuOpen(false);
-              }}
-            >
-              <SlidersHorizontal size={14} />
-              <span>Customize Columns</span>
-            </div>
-          </div>
-        </>
-      )}
       {/* Customize Columns Modal */}
       {isCustomizeColumnsModalOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-[3000] overflow-y-auto pt-14 pb-6">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-[500px] overflow-hidden mt-0">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-start justify-center z-[3000] overflow-y-auto pt-[10vh] pb-6 px-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-[500px] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#f9fafb]">
               <div className="flex items-center gap-3">
                 <SlidersHorizontal size={18} className="text-gray-500" />
@@ -4187,9 +4064,8 @@ export default function Invoices() {
                         setDraggedColumnKey(null);
                       }}
                       onDragEnd={() => setDraggedColumnKey(null)}
-                      className={`flex items-center gap-3 px-4 py-2 rounded-md group cursor-pointer transition-colors ${
-                        draggedColumnKey === col.key ? "bg-blue-50" : "hover:bg-gray-50"
-                      }`}
+                      className={`flex items-center gap-3 px-4 py-2 rounded-md group cursor-pointer transition-colors ${draggedColumnKey === col.key ? "bg-blue-50" : "hover:bg-gray-50"
+                        }`}
                       onClick={() => {
                         if (col.locked) return;
                         if (isChecked) {

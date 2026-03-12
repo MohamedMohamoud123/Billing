@@ -89,62 +89,60 @@ export default function NewPricingWidgetModal({ open, onClose }: NewPricingWidge
   };
 
   return (
-    <div className="fixed inset-0 z-[2500] overflow-y-auto bg-black/45">
-      <div className="flex min-h-full items-start justify-center px-4 pb-6 pt-10">
-        <div className="w-full max-w-[620px] overflow-hidden rounded-xl border border-[#d8deea] bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-[#e5e7eb] px-5 py-4">
-            <h2 className="text-[30px] font-medium leading-none text-[#111827]">New Pricing Widget</h2>
-            <button
-              type="button"
-              onClick={() => handleClose()}
-              className="rounded border border-[#2563eb] p-0.5 text-[#ef4444] hover:bg-[#f8fafc] disabled:opacity-60"
-            >
-              <X size={20} />
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-black/60 z-[10000] flex items-start justify-center pt-4 px-6 pb-6 overflow-y-auto">
+      <div className="w-full max-w-[620px] overflow-hidden rounded-xl border border-[#d8deea] bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#e5e7eb] px-5 py-4">
+          <h2 className="text-[30px] font-medium leading-none text-[#111827]">New Pricing Widget</h2>
+          <button
+            type="button"
+            onClick={() => handleClose()}
+            className="rounded border border-[#2563eb] p-0.5 text-[#ef4444] hover:bg-[#f8fafc] disabled:opacity-60"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-          <div className="px-6 py-7">
-            <div className="grid grid-cols-[170px_1fr] items-center gap-x-4 gap-y-6">
-              <label className="text-[14px] text-[#ef4444]">Name*</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="h-10 rounded border border-[#cfd5e3] px-3 text-[14px] text-[#334155] outline-none focus:border-[#3b82f6]"
-              />
+        <div className="px-6 py-7">
+          <div className="grid grid-cols-[170px_1fr] items-center gap-x-4 gap-y-6">
+            <label className="text-[14px] text-[#ef4444]">Name*</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-10 rounded border border-[#cfd5e3] px-3 text-[14px] text-[#334155] outline-none focus:border-[#3b82f6]"
+            />
 
-              <label className="text-[14px] text-[#ef4444]">Product*</label>
-              <select
-                value={product}
-                onChange={(e) => setProduct(e.target.value)}
-                className="h-10 rounded border border-[#cfd5e3] bg-white px-3 text-[14px] text-[#334155] outline-none focus:border-[#3b82f6]"
-              >
-                <option value="">{activeProducts.length === 0 ? "No active products found" : "Select a product"}</option>
-                {activeProducts.map((row) => (
-                  <option key={row.id || row.name} value={row.name}>
-                    {row.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <label className="text-[14px] text-[#ef4444]">Product*</label>
+            <select
+              value={product}
+              onChange={(e) => setProduct(e.target.value)}
+              className="h-10 rounded border border-[#cfd5e3] bg-white px-3 text-[14px] text-[#334155] outline-none focus:border-[#3b82f6]"
+            >
+              <option value="">{activeProducts.length === 0 ? "No active products found" : "Select a product"}</option>
+              {activeProducts.map((row) => (
+                <option key={row.id || row.name} value={row.name}>
+                  {row.name}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          <div className="flex items-center gap-3 border-t border-[#e5e7eb] px-5 py-4">
-            <button
-              type="button"
-              onClick={handleProceed}
-              className="cursor-pointer rounded-lg border-b-[4px] border-[#0D4A52] px-5 py-2 text-[14px] font-medium text-white transition-all hover:-translate-y-[1px] hover:border-b-[6px] hover:brightness-110 active:translate-y-[2px] active:border-b-[2px] active:brightness-90"
-              style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-            >
-              Proceed
-            </button>
-            <button
-              type="button"
-              onClick={() => handleClose()}
-              className="rounded border border-[#cfd5e3] bg-white px-5 py-2 text-[14px] text-[#334155] hover:bg-[#f8fafc]"
-            >
-              Cancel
-            </button>
-          </div>
+        <div className="flex items-center gap-3 border-t border-[#e5e7eb] px-5 py-4">
+          <button
+            type="button"
+            onClick={handleProceed}
+            className="cursor-pointer rounded-lg border-b-[4px] border-[#0D4A52] px-5 py-2 text-[14px] font-medium text-white transition-all hover:-translate-y-[1px] hover:border-b-[6px] hover:brightness-110 active:translate-y-[2px] active:border-b-[2px] active:brightness-90"
+            style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+          >
+            Proceed
+          </button>
+          <button
+            type="button"
+            onClick={() => handleClose()}
+            className="rounded border border-[#cfd5e3] bg-white px-5 py-2 text-[14px] text-[#334155] hover:bg-[#f8fafc]"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

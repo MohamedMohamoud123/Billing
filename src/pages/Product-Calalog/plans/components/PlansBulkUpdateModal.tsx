@@ -113,7 +113,7 @@ export default function PlansBulkUpdateModal({
     };
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/50 p-4 pt-8">
             <div className="w-full max-w-[600px] animate-in zoom-in-95 rounded-xl bg-white shadow-2xl duration-200">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">

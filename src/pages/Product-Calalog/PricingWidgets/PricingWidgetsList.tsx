@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ArrowUpDown, ChevronDown, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpDown, ChevronDown, Copy, Pencil, Plus, Trash2, MoreHorizontal, Download, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import NewPricingWidgetModal from "./components/NewPricingWidgetModal";
@@ -24,6 +24,8 @@ export default function PricingWidgetsPage() {
   const [rows, setRows] = useState<PricingWidgetRecord[]>([]);
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const load = () => setRows(readPricingWidgets());
@@ -35,6 +37,9 @@ export default function PricingWidgetsPage() {
   useEffect(() => {
     const onClickOutside = (event: MouseEvent) => {
       const target = event.target;
+      if (moreRef.current && target instanceof Node && !moreRef.current.contains(target)) {
+        setMoreOpen(false);
+      }
       if (!(target instanceof Element) || !target.closest('[data-row-menu-root="true"]')) {
         setOpenRowMenuId(null);
       }
@@ -102,52 +107,105 @@ export default function PricingWidgetsPage() {
     toast.success("Pricing widget deleted");
   };
 
+  const refreshList = () => setRows(readPricingWidgets());
+
   return (
-    <div className="flex min-h-[calc(100vh-98px)] flex-col border border-[#d8deea] bg-white">
-      <div className="flex items-center justify-between border-b border-[#d8deea] px-6 py-4">
-        <h1 className="text-[32px] font-semibold leading-none text-[#111827]">Pricing Widgets</h1>
-        <button
-          type="button"
-          onClick={() => setIsNewOpen(true)}
-          className="inline-flex cursor-pointer items-center gap-1 rounded-lg border-b-[4px] border-[#0D4A52] px-4 py-1.5 text-sm font-semibold text-white transition-all hover:-translate-y-[1px] hover:border-b-[6px] hover:brightness-110 active:translate-y-[2px] active:border-b-[2px] active:brightness-90"
-          style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-        >
-          <Plus size={16} /> New
-        </button>
+    <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
+      <div className="flex items-center justify-between px-6 border-b border-gray-100 bg-white relative overflow-visible mt-1">
+        <div className="flex items-center gap-8 pl-4">
+          <div className="flex items-center gap-1.5 py-3 border-b-2 border-slate-900 -mb-[px]">
+            <h1 className="text-[15px] font-bold text-slate-900 transition-colors">Pricing Widgets</h1>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 mr-4 py-3">
+          <button
+            type="button"
+            onClick={() => setIsNewOpen(true)}
+            className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] text-sm font-semibold shadow-sm flex items-center gap-1"
+            style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+          >
+            <Plus size={16} /> <span>New</span>
+          </button>
+
+          <div className="relative" ref={moreRef}>
+            <button
+              type="button"
+              onClick={() => setMoreOpen((prev) => !prev)}
+              className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors bg-white shadow-sm"
+              aria-label="More"
+            >
+              <MoreHorizontal size={18} className="text-gray-500" />
+            </button>
+
+            {moreOpen && (
+              <div className="absolute top-full right-0 mt-2 w-60 bg-white border border-gray-100 rounded-lg shadow-xl z-[110] py-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    navigate("/products/pricing-widgets/import");
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors group"
+                >
+                  <Download size={16} className="text-teal-600 group-hover:text-white" />
+                  <span className="font-medium">Import Pricing Widgets</span>
+                </button>
+
+                <div className="h-px bg-gray-50 my-1 mx-2" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    refreshList();
+                    setMoreOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-600 hover:bg-[#1b5e6a] hover:text-white transition-colors group"
+                >
+                  <RefreshCw size={16} className="text-teal-600 group-hover:text-white" />
+                  <span className="font-medium">Refresh List</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-left">
-          <thead className="border-b border-[#d8deea] bg-[#f8fafc]">
-            <tr className="text-[13px] font-semibold uppercase tracking-wide text-[#5f7194]">
-              <th className="px-6 py-3">Name</th>
-              <th className="px-6 py-3">Product</th>
-              <th className="px-6 py-3">Created By</th>
-              <th className="px-6 py-3">
+      <div className="flex-1 overflow-x-auto bg-white min-h-0">
+        <table className="w-full border-collapse text-left min-w-[1200px]">
+          <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+            <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+              <th className="px-4 py-3 bg-[#f6f7fb]">Name</th>
+              <th className="px-4 py-3 bg-[#f6f7fb]">Product</th>
+              <th className="px-4 py-3 bg-[#f6f7fb]">Created By</th>
+              <th className="px-4 py-3 bg-[#f6f7fb]">
                 <button
                   type="button"
                   onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
-                  className="inline-flex items-center gap-1 text-[13px] font-semibold uppercase tracking-wide text-[#5f7194]"
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#7b8494]"
                 >
                   Last Modified Date
                   <ArrowUpDown size={12} className="text-[#2563eb]" />
                 </button>
               </th>
-              <th className="w-[260px] px-6 py-3" />
+              <th className="w-[260px] px-4 py-3 sticky right-0 bg-[#f6f7fb] z-20" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#d8deea]">
+          <tbody className="bg-white">
             {sortedRows.map((row) => (
-              <tr key={row.id} className="group bg-white hover:bg-[#f8fafc]">
-                <td className="px-6 py-5 text-[14px]">
+              <tr
+                key={row.id}
+                className="text-[13px] group transition-all hover:bg-[#f8fafc] cursor-pointer h-[50px] border-b border-[#eef1f6]"
+              >
+                <td className="px-4 py-3">
                   <button type="button" onClick={() => openEditor(row)} className="text-[#2563eb] hover:underline">
                     {row.name || "-"}
                   </button>
                 </td>
-                <td className="px-6 py-5 text-[14px] text-[#111827]">{row.product || "-"}</td>
-                <td className="px-6 py-5 text-[14px] text-[#111827]">{getCreatedBy(row)}</td>
-                <td className="px-6 py-5 text-[14px] text-[#111827]">{formatDate(row.updatedAt)}</td>
-                <td className="px-6 py-5 text-right">
+                <td className="px-4 py-3 text-gray-700">{row.product || "-"}</td>
+                <td className="px-4 py-3 text-gray-700">{getCreatedBy(row)}</td>
+                <td className="px-4 py-3 text-gray-700">{formatDate(row.updatedAt)}</td>
+                <td className="px-4 py-3 text-right sticky right-0 bg-white/95 backdrop-blur-sm group-hover:bg-[#f8fafc] transition-colors">
                   <div
                     data-row-menu-root="true"
                     className={`relative inline-flex items-center gap-4 transition-opacity ${

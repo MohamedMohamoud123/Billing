@@ -694,7 +694,7 @@ export default function PlansPage() {
     const allSelected = currentRows.length > 0 && selectedIds.length === currentRows.length;
 
     return (
-        <div className="flex flex-col w-full min-h-[calc(100vh-100px)] bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
+        <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
             {selectedIds.length > 0 ? (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50 gap-2 sm:h-[57px]">
                     <PlansBulkActions
@@ -707,7 +707,7 @@ export default function PlansPage() {
                     />
                 </div>
             ) : (
-                <div className="flex items-center justify-between border-b border-gray-100 bg-white px-4">
+                <div className="flex items-start justify-between px-4 border-b border-gray-100 bg-white relative overflow-visible mt-3">
                     <div className="flex items-center gap-8 pl-4">
                         <div className="relative" ref={allPlansRef}>
                             <button
@@ -891,21 +891,20 @@ export default function PlansPage() {
             )}
 
             <div className="flex-1 overflow-x-auto bg-white min-h-0">
-                <table className="w-full min-w-[1200px] table-fixed border-collapse text-left">
-                    <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
-                        <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            <th className="w-12 px-4 py-3">
-                                <div>
+                <table className="w-full text-left border-collapse min-w-[1200px]">
+                    <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+                        <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+                            <th className="px-4 py-3 w-16 min-w-[64px]">
+                                <div className="flex items-center gap-2">
                                     <button
+                                        type="button"
                                         onClick={() => setCustomizeOpen(true)}
-                                        className="flex h-6 w-6 items-center justify-center rounded border border-gray-200 bg-white text-[#2563eb] hover:bg-gray-50 hover:text-[#1d4ed8]"
+                                        className="h-6 w-6 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+                                        title="Manage Columns"
                                     >
-                                        <SlidersHorizontal size={15} />
+                                        <SlidersHorizontal size={13} style={{ color: "#2563eb" }} />
                                     </button>
-                                </div>
-                            </th>
-                            {tab === "plans" && (
-                                <th className="w-8 px-2 py-3">
+                                    <div className="h-5 w-px bg-gray-200" />
                                     <input
                                         type="checkbox"
                                         checked={allSelected}
@@ -918,33 +917,27 @@ export default function PlansPage() {
                                         }}
                                         className="h-4 w-4 rounded border-gray-300 text-[#3b82f6]"
                                     />
-                                </th>
-                            )}
+                                </div>
+                            </th>
                             {visibleColumns.map((col) => (
                                 <th
                                     key={col.key}
-                                    className={`group relative px-4 py-3 font-bold ${/tax/i.test(col.key) ? "text-black" : "text-slate-400"}`}
+                                    className={`group relative px-4 py-3 font-semibold ${/tax/i.test(col.key) ? "text-black" : "text-[#7b8494]"}`}
                                     style={{
                                         width: getEffectiveColumnWidth(col),
-                                        minWidth: getEffectiveColumnWidth(col),
-                                        maxWidth: getEffectiveColumnWidth(col),
                                     }}
                                 >
                                     {col.label}
-                                    <div
-                                        className="absolute right-0 top-0 bottom-0 w-[2px] cursor-col-resize border-gray-100 opacity-0 transition-opacity group-hover:border-r group-hover:opacity-100 hover:bg-teal-400/50"
-                                        onMouseDown={(e) => startResizing(col.key, e)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        title="Drag to resize column"
-                                    />
                                 </th>
                             ))}
-                            <th className="sticky right-0 w-10 border-l border-gray-100 bg-white px-4 py-3 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
-                                <Search size={14} className="text-slate-400" />
+                            <th className="px-4 py-3 w-12 sticky right-0 bg-[#f6f7fb]">
+                                <div className="flex items-center justify-center">
+                                    <Search size={14} className="text-gray-300 cursor-pointer transition-colors hover:opacity-80" />
+                                </div>
                             </th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="bg-white">
                         {currentRows.map((row: any) => (
                             <tr
                                 key={row.id}
@@ -955,11 +948,12 @@ export default function PlansPage() {
                                         navigate(`/products/products/${row.id}`);
                                     }
                                 }}
-                                className={`group cursor-pointer transition-all hover:bg-slate-50/50 ${tab === "plans" ? "text-black" : ""}`}
+                                className={`text-[13px] group transition-all hover:bg-[#f8fafc] cursor-pointer h-[50px] border-b border-[#eef1f6] ${tab === "plans" ? "text-black" : ""}`}
                             >
-                                <td className="px-3 py-3" />
-                                {tab === "plans" && (
-                                    <td className="px-2 py-3">
+                                <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="h-6 w-6 shrink-0" aria-hidden />
+                                        <span className="h-5 w-px shrink-0 bg-transparent" aria-hidden />
                                         <input
                                             type="checkbox"
                                             checked={selectedIds.includes(row.id)}
@@ -971,23 +965,21 @@ export default function PlansPage() {
                                             }}
                                             className="h-4 w-4 rounded border-gray-300 text-[#3b82f6]"
                                         />
-                                    </td>
-                                )}
+                                    </div>
+                                </td>
                                 {visibleColumns.map((col) => (
                                     <td
                                         key={col.key}
                                         className={`px-4 py-3 ${/tax/i.test(col.key) ? "text-[12px]" : "text-[13px]"} ${tab === "plans" ? "text-black" : "text-slate-800"}`}
                                         style={{
                                             width: getEffectiveColumnWidth(col),
-                                            minWidth: getEffectiveColumnWidth(col),
-                                            maxWidth: getEffectiveColumnWidth(col),
                                             color: tab === "plans" && col.key !== "plan" ? PLAN_ROW_TEXT_COLOR : undefined,
                                         }}
                                     >
                                         {renderCell(row, col.key)}
                                     </td>
                                 ))}
-                                <td className="px-4 py-3" />
+                                <td className="px-4 py-3 sticky right-0 bg-white/95 backdrop-blur-sm group-hover:bg-[#f8fafc] transition-colors" />
                             </tr>
                         ))}
                         {currentRows.length === 0 && (

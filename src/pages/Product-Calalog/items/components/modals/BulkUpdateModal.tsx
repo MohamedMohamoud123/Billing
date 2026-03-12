@@ -75,7 +75,7 @@ const BulkUpdateModal = ({ onClose, onUpdate, selectedCount }: BulkUpdateModalPr
     };
 
     return (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[2000] backdrop-blur-[2px] animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-black/60 z-[10000] flex items-start justify-center pt-4 px-6 pb-6 overflow-y-auto backdrop-blur-[2px] animate-in fade-in duration-200">
             <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                     <h2 className="text-lg font-semibold text-slate-800">Bulk Update Items</h2>

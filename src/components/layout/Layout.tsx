@@ -16,7 +16,17 @@ export default function Layout({ children }) {
     location.pathname.startsWith("/products/pricing-widgets/new");
   const isFullWidthPage =
     location.pathname.startsWith("/sales/subscriptions") ||
-    location.pathname.startsWith("/sales/customers");
+    location.pathname.startsWith("/sales/customers") ||
+    location.pathname.startsWith("/sales/quotes") ||
+    location.pathname.startsWith("/sales/retainer-invoices") ||
+    location.pathname.startsWith("/sales/invoices") ||
+    location.pathname.startsWith("/products/plans") ||
+    location.pathname.startsWith("/products/products") ||
+    location.pathname.startsWith("/products/coupons") ||
+    location.pathname.startsWith("/products/addons") ||
+    location.pathname.startsWith("/products/pricing-widgets") ||
+    location.pathname.startsWith("/products/price-lists") ||
+    location.pathname.startsWith("/products/items");
 
   if (hideAppChrome) {
     return (

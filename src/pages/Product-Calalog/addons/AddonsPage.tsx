@@ -513,9 +513,9 @@ export default function AddonsPage() {
           className="w-full table-fixed border-collapse text-left"
           style={{ minWidth: tableWidth }}
         >
-          <thead className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
-            <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              <th className="w-12 px-4 py-3">
+          <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+            <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+              <th className="w-12 px-4 py-3 bg-[#f6f7fb]">
                 <div className="flex items-center justify-center">
                   <button
                     onClick={() => setCustomizeOpen(true)}
@@ -526,7 +526,7 @@ export default function AddonsPage() {
                   </button>
                 </div>
               </th>
-              <th className="w-10 px-2 py-3">
+              <th className="w-10 px-2 py-3 bg-[#f6f7fb]">
                 <div className="flex items-center gap-2">
                   <div className="h-5 w-px bg-gray-300" />
                   <input
@@ -540,7 +540,7 @@ export default function AddonsPage() {
               {visibleColumns.map((col) => (
                 <th
                   key={col.key}
-                  className="group relative px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500"
+                  className="group relative px-4 py-3 font-semibold text-[#7b8494]"
                   style={{
                     width: clampAddonColumnWidth(col.width, 160),
                     minWidth: clampAddonColumnWidth(col.width, 160),
@@ -556,8 +556,8 @@ export default function AddonsPage() {
                   />
                 </th>
               ))}
-              <th className="sticky right-0 w-10 border-l border-gray-100 bg-white px-4 py-3 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
-                <Search size={14} className="text-slate-400" />
+              <th className="sticky right-0 w-10 bg-[#f6f7fb] px-4 py-3 z-20">
+                <Search size={14} className="text-gray-300 cursor-pointer transition-colors hover:opacity-80" />
               </th>
             </tr>
           </thead>
@@ -618,7 +618,7 @@ export default function AddonsPage() {
       />
 
       {bulkUpdateOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 bg-black/60 z-[10000] flex items-start justify-center pt-4 px-6 pb-6 overflow-y-auto">
           <div className="w-full max-w-[600px] rounded-lg bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
               <h2 className="text-xl font-medium text-[#111827]">Bulk Update Addons</h2>

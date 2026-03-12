@@ -380,7 +380,7 @@ function ItemsPageContent() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmModal.open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]">
+        <div className="fixed inset-0 bg-black/60 z-[10000] flex items-start justify-center pt-4 px-6 pb-6 overflow-y-auto">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Delete Item{deleteConfirmModal.count > 1 ? 's' : ''}

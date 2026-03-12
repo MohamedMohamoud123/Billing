@@ -429,9 +429,8 @@ export default function Quotes() {
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className={`pointer-events-none absolute left-1/2 top-[5px] bottom-[5px] w-[2px] -translate-x-1/2 rounded ${
-          resizingColumn === key ? "bg-[#156372]" : "bg-transparent group-hover/header:bg-slate-300"
-        }`}
+        className={`pointer-events-none absolute left-1/2 top-[5px] bottom-[5px] w-[2px] -translate-x-1/2 rounded ${resizingColumn === key ? "bg-[#156372]" : "bg-transparent group-hover/header:bg-slate-300"
+          }`}
       />
     </div>
   );
@@ -2091,71 +2090,76 @@ export default function Quotes() {
   };
 
   return (
-    <div className="w-full h-screen flex flex-col bg-white overflow-hidden">
+    <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
       {/* Header Section */}
       {selectedQuotes.length > 0 ? (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50 gap-2 sm:h-[57px]">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center justify-between border-b border-gray-100 bg-white relative overflow-visible px-4">
+          <div className="flex items-center gap-2 py-2.5">
             <button
-              className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors"
+              className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
               onClick={handleBulkUpdate}
             >
               Bulk Update
             </button>
             <button
-              className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors flex items-center gap-1"
+              className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm flex items-center gap-2"
               onClick={handleExportPDF}
             >
-              <FileDown size={16} />
-              <span className="hidden sm:inline">Download PDF</span>
+              <FileDown size={16} className="text-gray-500" />
+              Download PDF
             </button>
             <button
-              className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors"
+              className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
               onClick={handleBulkMarkAsSent}
             >
               Mark As Sent
             </button>
             <button
-              className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-slate-700 hover:bg-[#1b5e6a] hover:text-white bg-white shadow-sm transition-colors"
+              className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
               onClick={handleBulkSubmitForApproval}
             >
               Submit for Approval
             </button>
             <button
-              className="px-3 py-1.5 border border-gray-300 rounded text-xs font-medium text-red-600 hover:bg-red-600 hover:text-white bg-white shadow-sm transition-colors"
+              className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
               onClick={handleBulkDelete}
             >
               Delete
             </button>
 
-            <div className="hidden sm:block w-px h-6 bg-gray-300 mx-2" />
+            <div className="mx-2 h-5 w-px bg-gray-200" />
 
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-medium text-slate-600 bg-slate-200 px-2 py-0.5 rounded-full">{selectedQuotes.length}</span>
-              <span className="text-sm text-slate-600 hidden sm:inline">Selected</span>
+            <div className="inline-flex items-center gap-2 text-sm text-slate-500">
+              <span className="flex h-6 min-w-[24px] items-center justify-center rounded px-2 text-[13px] font-semibold text-white"
+                style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}>
+                {selectedQuotes.length}
+              </span>
+              <span className="text-sm text-gray-700">Selected</span>
             </div>
           </div>
 
           <button
             onClick={() => setSelectedQuotes([])}
-            className="flex items-center gap-1 text-slate-500 hover:text-slate-700 text-sm font-medium transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-600"
           >
-            Esc <X size={16} />
+            <span>Esc</span>
+            <X size={16} className="text-red-500" />
           </button>
         </div>
       ) : (
         <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
           <div className="flex items-center gap-8 pl-4">
             <div className="relative" ref={dropdownRef}>
-              <div
-                className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900"
+              <button
+                type="button"
+                className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900 -mb-[1px] bg-transparent outline-none"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                <h1 className="text-[15px] font-bold text-slate-900 transition-colors">
+                <span className="text-[15px] font-bold text-slate-900 transition-colors">
                   {selectedView}
-                </h1>
+                </span>
                 <ChevronDown size={14} className={`transition-transform duration-200 text-[#156372] ${isDropdownOpen ? 'rotate-180' : ''}`} />
-              </div>
+              </button>
 
               {isDropdownOpen && (
                 <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-2xl z-[100] py-2 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
@@ -2230,21 +2234,23 @@ export default function Quotes() {
             </button>
 
             <div className="relative" ref={newQuoteMenuRef}>
-              <div className="inline-flex items-stretch rounded-md overflow-hidden border border-emerald-600 shadow-sm">
+              <div className="inline-flex items-stretch rounded-lg overflow-hidden border-[#0D4A52] border-b-[4px] shadow-sm">
                 <button
                   onClick={() => {
                     setIsNewQuoteMenuOpen(false);
                     handleCreateNewQuote();
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#156372] text-white text-sm font-semibold cursor-pointer hover:bg-[#0f4f5b] transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 bg-[#156372] text-white text-sm font-semibold cursor-pointer hover:brightness-110 transition-all active:brightness-95"
+                  style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
                 >
-                  <Plus size={16} />
+                  <Plus size={16} strokeWidth={3} />
                   New
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsNewQuoteMenuOpen(prev => !prev)}
-                  className="px-2.5 bg-[#156372] text-white border-l border-[#0f4f5b] hover:bg-[#0f4f5b] transition-colors"
+                  className="px-2 bg-[#156372] text-white border-l border-[#0a3a41] hover:brightness-110 transition-all"
+                  style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
                   aria-label="Open new quote menu"
                 >
                   <ChevronDown size={14} />
@@ -2292,11 +2298,10 @@ export default function Quotes() {
                   <div className="relative">
                     <button
                       onClick={() => setOpenMoreSubmenu((prev) => (prev === "sort" ? null : "sort"))}
-                      className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${
-                        openMoreSubmenu === "sort"
-                          ? "text-white bg-[#156372]"
-                          : "text-gray-700 hover:bg-[#156372] hover:text-white"
-                      }`}
+                      className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center justify-between ${openMoreSubmenu === "sort"
+                        ? "text-white bg-[#156372]"
+                        : "text-gray-700 hover:bg-[#156372] hover:text-white"
+                        }`}
                     >
                       <span className="flex items-center gap-3">
                         <ArrowUpDown size={16} />
@@ -2312,11 +2317,10 @@ export default function Quotes() {
                             <button
                               key={option.key}
                               onClick={() => handleSelectSortFromMenu(option.key)}
-                              className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between ${
-                                isActive
-                                  ? "text-white bg-[#156372]"
-                                  : "text-gray-700 hover:bg-[#156372] hover:text-white"
-                              }`}
+                              className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between ${isActive
+                                ? "text-white bg-[#156372]"
+                                : "text-gray-700 hover:bg-[#156372] hover:text-white"
+                                }`}
                             >
                               <span>{option.label}</span>
                               {isActive ? <Check size={14} /> : null}
@@ -2336,11 +2340,10 @@ export default function Quotes() {
                   <div className="relative">
                     <button
                       onClick={() => setOpenMoreSubmenu((prev) => (prev === "export" ? null : "export"))}
-                      className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-3 ${
-                        openMoreSubmenu === "export"
-                          ? "text-white bg-[#156372]"
-                          : "text-gray-700 hover:bg-[#156372] hover:text-white"
-                      }`}
+                      className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-3 ${openMoreSubmenu === "export"
+                        ? "text-white bg-[#156372]"
+                        : "text-gray-700 hover:bg-[#156372] hover:text-white"
+                        }`}
                     >
                       <Upload size={16} />
                       <span className="flex-1">Export</span>
@@ -2431,25 +2434,25 @@ export default function Quotes() {
         ) : (
           <div className="flex-1 overflow-x-auto bg-white min-h-0">
             <table className="w-full text-left border-collapse" style={{ minWidth: `${tableMinWidth}px` }}>
-              <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-                <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="w-14 px-4 py-3 text-left sticky left-0 z-20 bg-white">
+              <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+                <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+                  <th className="w-16 px-4 py-3 text-left sticky left-0 z-20 bg-[#f6f7fb]">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        className="h-6 w-6 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+                        className="h-6 w-6 flex items-center justify-center rounded border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleCustomizeColumnsOpen();
                         }}
                         title="Customize columns"
                       >
-                        <SlidersHorizontal size={13} className="text-[#1b5e6a]" />
+                        <SlidersHorizontal size={13} className="text-[#156372]" />
                       </button>
                       <div className="h-5 w-px bg-gray-200" />
                       <input
                         type="checkbox"
-                        className="w-4 h-4 rounded border-gray-300 text-[#1b5e6a] focus:ring-0 cursor-pointer"
+                        className="w-4 h-4 rounded border-gray-300 text-[#156372] focus:ring-0 cursor-pointer"
                         checked={selectedQuotes.length === sortedQuotes.length && sortedQuotes.length > 0}
                         onChange={(e) => {
                           if (e.target.checked) {
@@ -2466,7 +2469,7 @@ export default function Quotes() {
                     return (
                       <th
                         key={colKey}
-                        className="group/header relative px-4 py-3 text-left text-[11px] font-bold text-slate-700 uppercase tracking-wide select-none"
+                        className="group/header relative px-4 py-3 text-left text-[11px] font-semibold text-[#7b8494] uppercase tracking-wider select-none bg-[#f6f7fb]"
                         style={{
                           width: `${columnWidths[colKey] || 120}px`,
                           minWidth: `${columnWidths[colKey] || 120}px`,
@@ -2479,10 +2482,10 @@ export default function Quotes() {
                       </th>
                     );
                   })}
-                  <th className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-white border-l border-gray-100 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
+                  <th className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-[#f6f7fb] border-l border-transparent">
                     <button
                       type="button"
-                      className="text-gray-400 hover:text-[#1b5e6a]"
+                      className="text-gray-400 hover:text-[#156372]"
                       onClick={(e) => {
                         e.stopPropagation();
                         setIsAdvancedSearchOpen(true);
@@ -2494,26 +2497,30 @@ export default function Quotes() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#eef1f6]">
                 {sortedQuotes.map((quote) => (
                   <tr
                     key={quote.id}
-                    className={`group transition-all hover:bg-slate-50/50 cursor-pointer ${selectedQuotes.includes(quote.id) ? 'bg-[#1b5e6a1A]' : ''}`}
+                    className={`group transition-all hover:bg-[#f8fafc] cursor-pointer ${selectedQuotes.includes(quote.id) ? 'bg-[#156372]/5' : ''}`}
                     onClick={() => navigate(`/sales/quotes/${quote.id}`)}
                   >
                     <td className="px-4 py-3 sticky left-0 z-20 bg-inherit" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 rounded border-gray-300 text-[#1b5e6a] focus:ring-0 cursor-pointer"
-                        checked={selectedQuotes.includes(quote.id)}
-                        onChange={() => {
-                          setSelectedQuotes(prev =>
-                            prev.includes(quote.id)
-                              ? prev.filter(id => id !== quote.id)
-                              : [...prev, quote.id]
-                          );
-                        }}
-                      />
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 shrink-0" />
+                        <div className="h-5 w-px bg-transparent shrink-0" />
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-gray-300 text-[#156372] focus:ring-0 cursor-pointer"
+                          checked={selectedQuotes.includes(quote.id)}
+                          onChange={() => {
+                            setSelectedQuotes(prev =>
+                              prev.includes(quote.id)
+                                ? prev.filter(id => id !== quote.id)
+                                : [...prev, quote.id]
+                            );
+                          }}
+                        />
+                      </div>
                     </td>
                     {visibleColumns.map((colKey) => (
                       <td
@@ -2526,9 +2533,9 @@ export default function Quotes() {
                         }}
                       >
                         {colKey === 'date' ? (
-                          <span className="font-medium text-[#1b5e6a]">{formatDate(quote.date || quote.quoteDate)}</span>
+                          <span className="font-medium text-[#156372]">{formatDate(quote.date || quote.quoteDate)}</span>
                         ) : colKey === 'location' ? (
-                          <span className="text-[#1b5e6a]">{quote.selectedLocation || quote.location || "Head Office"}</span>
+                          <span className="text-[#156372]">{quote.selectedLocation || quote.location || "Head Office"}</span>
                         ) : colKey === 'quoteNumber' ? (
                           <span className="font-semibold text-[#0f52d1] hover:underline">
                             {quote.quoteNumber || quote.id}
@@ -2541,11 +2548,11 @@ export default function Quotes() {
                             {String(getStatusDisplay(quote.status || "") || "").toUpperCase()}
                           </span>
                         ) : colKey === 'amount' ? (
-                          <span className="font-medium text-[#1b5e6a]">
+                          <span className="font-medium text-[#156372]">
                             {formatAmount(quote.total || quote.amount, quote.currency)}
                           </span>
                         ) : colKey === 'customerName' ? (
-                          <span className="text-[#1b5e6a]">
+                          <span className="text-[#156372]">
                             {quote.customerName || (typeof quote.customer === 'object' && (quote.customer?.displayName || quote.customer?.name)) || 'N/A'}
                           </span>
                         ) : (
@@ -2553,7 +2560,7 @@ export default function Quotes() {
                         )}
                       </td>
                     ))}
-                    <td className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-white/95 backdrop-blur-sm border-l border-gray-50 group-hover:bg-slate-50/95 transition-colors shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]"></td>
+                    <td className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-white/95 backdrop-blur-sm border-l border-[#eef1f6] group-hover:bg-[#f8fafc]/95 transition-colors shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]"></td>
                   </tr>
                 ))}
               </tbody>
@@ -2567,7 +2574,7 @@ export default function Quotes() {
       {/* Mark As Sent Confirmation Modal */}
       {
         isMarkAsSentModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={handleCancelMarkAsSent}>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6" onClick={handleCancelMarkAsSent}>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-auto" onClick={(e) => e.stopPropagation()}>
               <div className="p-6 sm:p-8">
                 <div className="flex items-center justify-center mb-4">
@@ -2608,7 +2615,7 @@ export default function Quotes() {
       {/* Delete Confirmation Modal */}
       {
         isDeleteConfirmModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={handleCancelBulkDelete}>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6" onClick={handleCancelBulkDelete}>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-auto" onClick={(e) => e.stopPropagation()}>
               <div className="p-6 sm:p-8">
                 <div className="flex items-center justify-center mb-4">
@@ -2646,7 +2653,7 @@ export default function Quotes() {
       {
         isAdvancedSearchOpen && (
           <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
+            className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-start justify-center z-[2000] pt-[5vh] overflow-y-auto px-4 py-6"
             onClick={handleCloseAdvancedSearch}
           >
             <div className="bg-white rounded-lg shadow-lg w-full max-w-[800px] mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -3438,7 +3445,7 @@ export default function Quotes() {
       {/* Bulk Update Modal */}
       {
         isBulkUpdateModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={handleCancelBulkUpdate}>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6" onClick={handleCancelBulkUpdate}>
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between p-6 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Bulk Update Quotes</h2>
@@ -3536,7 +3543,7 @@ export default function Quotes() {
       {/* Address Selection Modal */}
       {
         isAddressModalOpen && selectedBulkCustomer && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center" onClick={() => setIsAddressModalOpen(false)}>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[60] flex items-start justify-center pt-[10vh] overflow-y-auto px-4 py-6" onClick={() => setIsAddressModalOpen(false)}>
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between p-6 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Choose Address</h2>
@@ -3926,9 +3933,8 @@ export default function Quotes() {
                                       setExportQuotesData((p) => ({ ...p, status: option }));
                                       setIsExportStatusDropdownOpen(false);
                                     }}
-                                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${
-                                      isSelected ? "bg-[#156372] text-white" : "text-gray-700 hover:bg-[#156372] hover:text-white"
-                                    }`}
+                                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${isSelected ? "bg-[#156372] text-white" : "text-gray-700 hover:bg-[#156372] hover:text-white"
+                                      }`}
                                   >
                                     <span>{option}</span>
                                     {isSelected ? <Check size={14} /> : null}
@@ -4070,8 +4076,8 @@ export default function Quotes() {
       {/* Customize Columns Modal */}
       {
         isCustomizeColumnsModalOpen && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[3000]">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-[500px] overflow-hidden">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-start justify-center z-[3000] pt-[10vh] overflow-y-auto px-4 py-6" onClick={() => setIsCustomizeColumnsModalOpen(false)}>
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-[500px] overflow-hidden" onClick={e => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#f9fafb]">
                 <div className="flex items-center gap-3">

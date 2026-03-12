@@ -578,7 +578,7 @@ const CouponsPage: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-[calc(100vh-140px)] rounded-lg border border-[#d8deea] bg-white shadow-sm overflow-hidden flex flex-col">
+    <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
       {view === 'list' ? (
         selectedCouponId !== null ? (
           <CouponDetail
@@ -600,7 +600,7 @@ const CouponsPage: React.FC = () => {
           />
         ) : (
           <>
-            <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
+            <div className="flex items-center justify-between border-b border-gray-100 bg-white relative overflow-visible px-4">
               {selectedIds.length > 0 ? (
                 <div className="flex w-full items-center justify-between py-2.5">
                   <div className="flex items-center gap-2">
@@ -647,43 +647,46 @@ const CouponsPage: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="relative py-3 pl-4" ref={filterRef}>
-                    <button
-                      type="button"
-                      onClick={() => setFilterOpen((prev) => !prev)}
-                      className="flex items-center gap-2 rounded-lg bg-[#f7f8fc] px-3 py-1.5 text-[15px] font-bold text-slate-900 hover:bg-[#f1f3f9]"
-                    >
-                      <span>All Coupons</span>
-                      <ChevronDown size={16} className={`text-[#1b5e6a] transition-transform ${filterOpen ? 'rotate-180' : ''}`} />
-                    </button>
+                  <div className="flex items-center gap-8 pl-4">
+                    <div className="relative" ref={filterRef}>
+                      <button
+                        type="button"
+                        onClick={() => setFilterOpen((prev) => !prev)}
+                        className="inline-flex items-center gap-1.5 border-b-2 border-slate-900 py-4 text-[15px] font-bold text-slate-900 -mb-[1px]"
+                      >
+                        <span>{activeFilter === 'All' ? 'All Coupons' : activeFilter}</span>
+                        <ChevronDown size={14} className={`text-[#1b5e6a] transition-transform ${filterOpen ? 'rotate-180' : ''}`} />
+                      </button>
 
-                    {filterOpen && (
-                      <div className="absolute left-0 top-full z-[100] mt-2 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-                        {(['All', 'Active', 'Inactive', 'Expired'] as const).map((filter) => (
-                          <button
-                            key={filter}
-                            type="button"
-                            onClick={() => {
-                              setActiveFilter(filter);
-                              setFilterOpen(false);
-                              setSelectedIds([]);
-                            }}
-                            className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-blue-50"
-                          >
-                            <span className={`text-[14px] ${activeFilter === filter ? 'font-medium text-blue-600' : 'text-gray-700'}`}>{filter}</span>
-                            <Star size={14} className="text-gray-300" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                      {filterOpen && (
+                        <div className="absolute left-0 top-full z-[100] mt-2 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+                          {(['All', 'Active', 'Inactive', 'Expired'] as const).map((filter) => (
+                            <button
+                              key={filter}
+                              type="button"
+                              onClick={() => {
+                                setActiveFilter(filter);
+                                setFilterOpen(false);
+                                setSelectedIds([]);
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-blue-50"
+                            >
+                              <span className={`text-[14px] ${activeFilter === filter ? 'font-medium text-blue-600' : 'text-gray-700'}`}>{filter}</span>
+                              <Star size={14} className="text-gray-300" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-2 items-center">
+
+                  <div className="flex gap-2 items-center mr-4">
                     <button
                       onClick={() => navigate('/products/coupons/new')}
-                      className="cursor-pointer transition-all text-white px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-1 text-sm font-semibold"
+                      className="cursor-pointer transition-all text-white px-3 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-1 text-sm font-semibold"
                       style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
                     >
-                      <Plus size={16} /> New
+                      <Plus size={16} strokeWidth={3} /> New
                     </button>
 
                     <div className="relative" ref={moreRef}>
@@ -788,32 +791,31 @@ const CouponsPage: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-auto bg-white min-h-0">
-              <table className="w-full min-w-[1040px] table-fixed text-left border-collapse">
-                <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-                  <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    <th className="px-4 py-3 w-16 min-w-[64px]">
-                      <div className="grid grid-cols-[24px_1px_16px] items-center gap-2">
+              <table className="w-full min-w-[1040px] text-left border-collapse">
+                <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+                  <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+                    <th className="px-4 py-3 w-16 min-w-[64px] bg-[#f6f7fb]">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          className="h-6 w-6 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50"
+                          className="h-6 w-6 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
                           title="Customize Columns"
                           onClick={() => setIsCustomizeModalOpen(true)}
                         >
-                          <SlidersHorizontal size={13} className="text-[#1b5e6a]" />
+                          <SlidersHorizontal size={13} className="text-[#2563eb]" />
                         </button>
                         <div className="h-5 w-px bg-gray-200" />
                         <input
                           type="checkbox"
                           checked={selectedIds.length === filteredCoupons.length && filteredCoupons.length > 0}
                           onChange={toggleSelectAll}
-                          className="cursor-pointer h-4 w-4 rounded border-gray-300"
-                          style={{ accentColor: accentColor }}
+                          className="h-4 w-4 rounded border-gray-300 text-[#3b82f6]"
                         />
                       </div>
                     </th>
 
                     {visibleColumns.map((col) => (
-                      <th key={col.key} className="px-4 py-3 relative group/header" style={{ width: col.width }}>
+                      <th key={col.key} className="px-4 py-3 relative group/header bg-[#f6f7fb]" style={{ width: col.width }}>
                         <span className="truncate block">{col.label}</span>
                         <div
                           className="absolute right-0 top-0 bottom-0 w-[2px] cursor-col-resize hover:bg-teal-400/50 group-hover/header:border-r border-gray-100"
@@ -822,8 +824,10 @@ const CouponsPage: React.FC = () => {
                       </th>
                     ))}
 
-                    <th className="px-4 py-3 text-right w-10">
-                      <Search size={14} className="inline text-gray-300" />
+                    <th className="px-4 py-3 w-12 sticky right-0 bg-[#f6f7fb]">
+                      <div className="flex items-center justify-center">
+                        <Search size={14} className="text-gray-300 cursor-pointer transition-colors hover:opacity-80" />
+                      </div>
                     </th>
                   </tr>
                 </thead>
@@ -832,20 +836,19 @@ const CouponsPage: React.FC = () => {
                   {filteredCoupons.map((coupon) => (
                     <tr
                       key={coupon.id}
-                      className="group transition-all hover:bg-slate-50/50 cursor-pointer"
+                      className="text-[13px] group transition-all hover:bg-[#f8fafc] cursor-pointer h-[50px] border-b border-[#eef1f6]"
                       onClick={() => setSelectedCouponId(coupon.id)}
                     >
-                      <td className="px-4 py-3 w-16 min-w-[64px]">
-                        <div className="grid grid-cols-[24px_1px_16px] items-center gap-2">
-                          <span className="h-6 w-6" aria-hidden />
-                          <span className="h-5 w-px bg-transparent" aria-hidden />
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="h-6 w-6 shrink-0" aria-hidden />
+                          <span className="h-5 w-px shrink-0 bg-transparent" aria-hidden />
                           <input
                             type="checkbox"
                             checked={selectedIds.includes(coupon.id)}
                             onChange={() => toggleSelectOne(coupon.id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="cursor-pointer h-4 w-4 rounded border-gray-300"
-                            style={{ accentColor: accentColor }}
+                            className="h-4 w-4 rounded border-gray-300 text-[#3b82f6]"
                           />
                         </div>
                       </td>
@@ -856,7 +859,7 @@ const CouponsPage: React.FC = () => {
                         </td>
                       ))}
 
-                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3 sticky right-0 bg-white/95 backdrop-blur-sm group-hover:bg-[#f8fafc] transition-colors shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]" />
                     </tr>
                   ))}
                 </tbody>
@@ -864,7 +867,7 @@ const CouponsPage: React.FC = () => {
             </div>
 
             {isCustomizeModalOpen && (
-              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-start justify-center p-4 pt-8 overflow-y-auto">
                 <div className="bg-white rounded-xl shadow-2xl w-[500px] max-h-[90vh] flex flex-col overflow-hidden">
                   <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                     <div className="flex items-center gap-2">
@@ -945,7 +948,7 @@ const CouponsPage: React.FC = () => {
           initialCoupon={editingCouponId ? records.find((record) => record.id === editingCouponId) || null : null}
         />
       )}
-    </div>
+    </div >
   );
 };
 

@@ -208,7 +208,7 @@ export default function CreateAccountModal({ accountType, onClose, onSave }: Cre
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]"
+      className="fixed inset-0 bg-black/60 z-[10000] flex items-start justify-center pt-4 px-6 pb-6 overflow-y-auto"
       onClick={onClose}
     >
       <div
