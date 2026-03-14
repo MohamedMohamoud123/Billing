@@ -341,6 +341,13 @@ const PHONE_COUNTRY_OPTIONS = [
     { name: "Zimbabwe", phoneCode: "+263" },
 ];
 
+const ACCOUNT_OPTIONS = [
+    "General Income",
+    "Sales",
+    "Service Revenue",
+    "Discount Given",
+];
+
 const NewSubscriptionPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -376,9 +383,6 @@ const NewSubscriptionPage = () => {
     const [salespersonSearch, setSalespersonSearch] = useState("");
     const [isSalespersonDropdownOpen, setIsSalespersonDropdownOpen] = useState(false);
     const salespersonDropdownRef = useRef<HTMLDivElement>(null);
-    const [isTaxPreferenceDropdownOpen, setIsTaxPreferenceDropdownOpen] = useState(false);
-    const taxPreferenceDropdownRef = useRef<HTMLDivElement>(null);
-    const [taxPreferenceSearch, setTaxPreferenceSearch] = useState("");
     const [isReportingTagDropdownOpen, setIsReportingTagDropdownOpen] = useState(false);
     const reportingTagDropdownRef = useRef<HTMLDivElement>(null);
     const [reportingTagSearch, setReportingTagSearch] = useState("");
@@ -396,8 +400,14 @@ const NewSubscriptionPage = () => {
     const [itemSearches, setItemSearches] = useState<Record<number, string>>({});
     const [openTaxDropdowns, setOpenTaxDropdowns] = useState<Record<number, boolean>>({});
     const [taxSearches, setTaxSearches] = useState<Record<number, string>>({});
+    const [openAccountDropdowns, setOpenAccountDropdowns] = useState<Record<number, boolean>>({});
+    const [accountSearches, setAccountSearches] = useState<Record<number, string>>({});
+    const [openItemTagDropdowns, setOpenItemTagDropdowns] = useState<Record<number, boolean>>({});
+    const [itemTagSearches, setItemTagSearches] = useState<Record<number, string>>({});
     const itemDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const taxDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const accountDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const itemTagDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const [showOtherPreferences, setShowOtherPreferences] = useState(false);
     const [isBulkItemsModalOpen, setIsBulkItemsModalOpen] = useState(false);
     const [selectedBulkItems, setSelectedBulkItems] = useState<string[]>([]);
@@ -481,7 +491,7 @@ const NewSubscriptionPage = () => {
         nextBillingOn: "",
         status: "",
         items: [
-            { id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "" }
+            { id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "", account: "", reportingTag: "" }
         ],
         reportingTags: [] as any[]
         ,
@@ -1675,7 +1685,7 @@ const NewSubscriptionPage = () => {
             ...prev,
             items: [
                 ...prev.items,
-                { id: newId, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "" }
+                { id: newId, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "", account: "", reportingTag: "" }
             ]
         }));
     };
@@ -1809,7 +1819,9 @@ const NewSubscriptionPage = () => {
                     tax: item.taxName || "Select a Tax",
                     taxRate: item.taxRate || 0,
                     amount: item.rate || item.sellingPrice || 0,
-                    description: item.description || ""
+                    description: item.description || "",
+                    account: "",
+                    reportingTag: ""
                 });
             }
         });
@@ -2573,96 +2585,40 @@ const NewSubscriptionPage = () => {
                                     {/* Item Table Section */}
                                     <div className="border-y border-gray-200 py-3">
                                         <div className="flex items-center gap-4 text-[13px] text-slate-600">
-                                            <div className="relative" ref={taxPreferenceDropdownRef}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsTaxPreferenceDropdownOpen(!isTaxPreferenceDropdownOpen)}
-                                                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 rounded transition-colors"
+                                            <div className="relative w-44">
+                                                <select
+                                                    className="w-full pl-3 pr-7 py-1.5 bg-transparent text-[13px] outline-none appearance-none"
+                                                    value={formData.taxPreference}
+                                                    onChange={(e) => handleChange("taxPreference", e.target.value)}
                                                 >
-                                                    <span className="text-blue-600 font-medium">{formData.taxPreference}</span>
-                                                    <ChevronDown size={14} className="text-gray-400" />
-                                                </button>
-                                                {isTaxPreferenceDropdownOpen && (
-                                                    <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-[200]">
-                                                        <div className="p-2 border-b border-gray-50">
-                                                            <div className="relative">
-                                                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                                <input
-                                                                    type="text"
-                                                                    className="w-full pl-7 pr-2 py-1 text-[12px] bg-gray-50 border border-transparent focus:border-blue-500 rounded outline-none"
-                                                                    placeholder="Search"
-                                                                    value={taxPreferenceSearch}
-                                                                    onChange={(e) => setTaxPreferenceSearch(e.target.value)}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div className="py-1">
-                                                            {["Tax Exclusive", "Tax Inclusive"].filter(opt => opt.toLowerCase().includes(taxPreferenceSearch.toLowerCase())).map(opt => (
-                                                                <button
-                                                                    key={opt}
-                                                                    onClick={() => {
-                                                                        handleChange("taxPreference", opt);
-                                                                        setIsTaxPreferenceDropdownOpen(false);
-                                                                    }}
-                                                                    className="w-full text-left px-4 py-2 hover:bg-gray-50 text-[13px] flex items-center justify-between"
-                                                                >
-                                                                    <span>{opt}</span>
-                                                                    {formData.taxPreference === opt && <Check size={14} className="text-blue-600" />}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                    <option>Tax Exclusive</option>
+                                                    <option>Tax Inclusive</option>
+                                                </select>
+                                                <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
                                             </div>
                                             <div className="h-6 w-px bg-gray-200" />
-                                            <div className="relative flex-1 max-w-[200px]" ref={reportingTagDropdownRef}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsReportingTagDropdownOpen(!isReportingTagDropdownOpen)}
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded text-[13px] text-gray-700 w-full hover:bg-gray-200 transition-colors"
+                                            <div className="relative w-56">
+                                                <select
+                                                    className="w-full pl-3 pr-7 py-1.5 bg-transparent text-[13px] text-slate-700 outline-none appearance-none"
+                                                    value={formData.priceListId}
+                                                    onChange={(e) => {
+                                                        const nextId = e.target.value;
+                                                        const nextList = priceLists.find((pl) => String(pl.id) === String(nextId));
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            priceListId: nextId,
+                                                            priceListName: nextList?.name || "Select Price List",
+                                                        }));
+                                                    }}
                                                 >
-                                                    <span className="truncate flex-1 text-left">{formData.tag || "Select Reporting Tag"}</span>
-                                                    {formData.tag ? (
-                                                        <X size={14} className="text-gray-400 hover:text-gray-600" onClick={(e) => { e.stopPropagation(); handleChange("tag", ""); }} />
-                                                    ) : (
-                                                        <ChevronDown size={14} className="text-gray-400" />
-                                                    )}
-                                                </button>
-                                                {isReportingTagDropdownOpen && (
-                                                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg z-[210]">
-                                                        <div className="p-2 border-b border-gray-50">
-                                                            <div className="relative">
-                                                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                                <input
-                                                                    type="text"
-                                                                    className="w-full pl-7 pr-2 py-1 text-[12px] bg-gray-50 border border-transparent focus:border-blue-500 rounded outline-none"
-                                                                    placeholder="Search tags"
-                                                                    value={reportingTagSearch}
-                                                                    onChange={(e) => setReportingTagSearch(e.target.value)}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div className="max-h-[200px] overflow-y-auto py-1">
-                                                            {reportingTags.filter(t => t.name.toLowerCase().includes(reportingTagSearch.toLowerCase())).length === 0 ? (
-                                                                <div className="px-4 py-2 text-[12px] text-gray-400 italic">No tags found</div>
-                                                            ) : (
-                                                                reportingTags.filter(t => t.name.toLowerCase().includes(reportingTagSearch.toLowerCase())).map(tag => (
-                                                                    <button
-                                                                        key={tag.id}
-                                                                        onClick={() => {
-                                                                            handleChange("tag", tag.name);
-                                                                            setIsReportingTagDropdownOpen(false);
-                                                                        }}
-                                                                        className="w-full text-left px-4 py-2 hover:bg-gray-50 text-[13px] flex items-center justify-between"
-                                                                    >
-                                                                        <span>{tag.name}</span>
-                                                                        {formData.tag === tag.name && <Check size={14} className="text-blue-600" />}
-                                                                    </button>
-                                                                ))
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                    <option value="">Select Price List</option>
+                                                    {priceLists.map((pl) => (
+                                                        <option key={pl.id} value={pl.id}>
+                                                            {pl.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
                                             </div>
                                         </div>
                                     </div>
@@ -2694,13 +2650,14 @@ const NewSubscriptionPage = () => {
                                                     <th className="text-center py-2.5 px-4 text-[11px] font-bold text-gray-500 uppercase w-32">Price</th>
                                                     <th className="text-left py-2.5 px-4 text-[11px] font-bold text-gray-500 uppercase w-48">Tax</th>
                                                     <th className="text-right py-2.5 px-4 text-[11px] font-bold text-gray-500 uppercase w-32">Amount</th>
-                                                    <th className="w-10"></th>
+                                                    <th className="w-16"></th>
                                                 </tr>
 
                                             </thead>
                                             <tbody>
                                                 {formData.items.map((item) => (
-                                                    <tr key={item.id} className="border-b border-gray-200 hover:bg-gray-50/30 group">
+                                                    <React.Fragment key={item.id}>
+                                                        <tr className="border-b border-gray-200 hover:bg-gray-50/30 group">
                                                         <td className="py-3 px-4">
                                                             <div className="flex gap-3">
                                                                 <div className="pt-2 text-gray-300">
@@ -2770,7 +2727,7 @@ const NewSubscriptionPage = () => {
                                                             <div className="relative" ref={(el) => { taxDropdownRefs.current[String(item.id)] = el; }}>
                                                                 <button
                                                                     onClick={() => setOpenTaxDropdowns(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                                                                    className={`w-full px-3 py-1.5 border border-transparent hover:border-gray-300 rounded text-[13px] text-left flex items-center justify-between transition-all bg-transparent ${item.tax === "Select a Tax" ? "text-gray-400 font-normal outline-dotted outline-1" : "text-gray-800 font-medium"}`}
+                                                                    className={`w-full px-3 py-1.5 border border-gray-200 hover:border-gray-300 rounded text-[13px] text-left flex items-center justify-between transition-all bg-white ${item.tax === "Select a Tax" ? "text-gray-400 font-normal" : "text-gray-800 font-medium"}`}
                                                                 >
                                                                     <span className="truncate">{item.tax}</span>
                                                                     <ChevronDown size={14} className="text-gray-400 shrink-0" />
@@ -2807,15 +2764,120 @@ const NewSubscriptionPage = () => {
                                                         <td className="py-3 px-4 align-top text-right text-[13px] font-semibold text-gray-800 pt-5">
                                                             {item.amount.toFixed(2)}
                                                         </td>
-                                                        <td className="py-3 px-2 align-top pt-5">
-                                                            <button
-                                                                onClick={() => handleRemoveItem(item.id)}
-                                                                className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                                                            >
-                                                                <Trash2 size={16} />
-                                                            </button>
+                                                        <td className="py-3 px-2 align-top pt-4">
+                                                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button className="text-gray-400 hover:text-gray-600">
+                                                                    <MoreVertical size={16} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRemoveItem(item.id)}
+                                                                    className="text-gray-300 hover:text-red-500 transition-colors"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
                                                         </td>
-                                                    </tr>
+                                                        </tr>
+                                                        <tr className="bg-white">
+                                                            <td colSpan={6} className="px-4 py-2 border-b border-gray-200 text-[12px] text-slate-600">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="relative w-56" ref={(el) => { accountDropdownRefs.current[String(item.id)] = el; }}>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setOpenAccountDropdowns(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                                                            className="w-full px-3 py-1.5 border border-gray-200 rounded text-left flex items-center justify-between text-[12px] bg-white hover:border-gray-300"
+                                                                        >
+                                                                            <span className={item.account ? "text-gray-700" : "text-gray-400"}>
+                                                                                {item.account || "Select an account"}
+                                                                            </span>
+                                                                            <ChevronDown size={12} className="text-gray-400" />
+                                                                        </button>
+                                                                        {openAccountDropdowns[item.id] && (
+                                                                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[220]">
+                                                                                <div className="p-2 border-b border-gray-50">
+                                                                                    <div className="relative">
+                                                                                        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            className="w-full pl-7 pr-2 py-1 text-[12px] bg-gray-50 border border-transparent focus:border-blue-500 rounded outline-none"
+                                                                                            placeholder="Search accounts"
+                                                                                            value={accountSearches[item.id] || ""}
+                                                                                            onChange={(e) => setAccountSearches(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="max-h-[160px] overflow-y-auto py-1">
+                                                                                    {ACCOUNT_OPTIONS.filter(acc => acc.toLowerCase().includes((accountSearches[item.id] || "").toLowerCase())).map(acc => (
+                                                                                        <button
+                                                                                            key={acc}
+                                                                                            onClick={() => {
+                                                                                                handleItemChange(item.id, "account", acc);
+                                                                                                setOpenAccountDropdowns(prev => ({ ...prev, [item.id]: false }));
+                                                                                            }}
+                                                                                            className="w-full text-left px-4 py-2 hover:bg-gray-50 text-[12px]"
+                                                                                        >
+                                                                                            {acc}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                    {ACCOUNT_OPTIONS.filter(acc => acc.toLowerCase().includes((accountSearches[item.id] || "").toLowerCase())).length === 0 && (
+                                                                                        <div className="px-4 py-2 text-[12px] text-gray-400 italic">No accounts found</div>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="h-4 w-px bg-gray-200" />
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-gray-500">Reporting Tags:</span>
+                                                                        <div className="relative" ref={(el) => { itemTagDropdownRefs.current[String(item.id)] = el; }}>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setOpenItemTagDropdowns(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                                                                className="flex items-center gap-1.5 px-2 py-0.5 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all text-[12px]"
+                                                                            >
+                                                                                <span className={item.reportingTag ? "text-blue-600" : "text-gray-400"}>
+                                                                                    {item.reportingTag || "Select Tag"}
+                                                                                </span>
+                                                                                <ChevronDown size={12} className="text-gray-400" />
+                                                                            </button>
+                                                                            {openItemTagDropdowns[item.id] && (
+                                                                                <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-md shadow-lg z-[220]">
+                                                                                    <div className="p-2 border-b border-gray-50">
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            className="w-full px-2 py-1 text-[12px] bg-gray-50 border border-transparent focus:border-blue-500 rounded outline-none"
+                                                                                            placeholder="Search tags"
+                                                                                            value={itemTagSearches[item.id] || ""}
+                                                                                            onChange={(e) => setItemTagSearches(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div className="max-h-[160px] overflow-y-auto py-1">
+                                                                                        {reportingTags.filter(t => t.name.toLowerCase().includes((itemTagSearches[item.id] || "").toLowerCase())).length === 0 ? (
+                                                                                            <div className="px-4 py-2 text-[12px] text-gray-400 italic">No tags found</div>
+                                                                                        ) : (
+                                                                                            reportingTags.filter(t => t.name.toLowerCase().includes((itemTagSearches[item.id] || "").toLowerCase())).map(tag => (
+                                                                                                <button
+                                                                                                    key={tag.id}
+                                                                                                    onClick={() => {
+                                                                                                        handleItemChange(item.id, "reportingTag", tag.name);
+                                                                                                        setOpenItemTagDropdowns(prev => ({ ...prev, [item.id]: false }));
+                                                                                                    }}
+                                                                                                    className="w-full text-left px-4 py-1.5 hover:bg-gray-50 text-[12px] flex items-center justify-between"
+                                                                                                >
+                                                                                                    <span>{tag.name}</span>
+                                                                                                    {item.reportingTag === tag.name && <Check size={12} className="text-blue-600" />}
+                                                                                                </button>
+                                                                                            ))
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    </React.Fragment>
                                                 ))}
                                             </tbody>
                                         </table>
@@ -2919,6 +2981,7 @@ const NewSubscriptionPage = () => {
                                 </div>
                             )}
 
+                            {formData.contentType !== "items" && (
                             <div className={(formData.contentType === "product" && !formData.productId) ? "opacity-30 pointer-events-none" : ""}>
                             {/* Coupon Section */}
                             <div className="space-y-3">
@@ -2992,6 +3055,8 @@ const NewSubscriptionPage = () => {
                                     </tbody>
                                 </table>
                             </div>
+                            </div>
+                            )}
 
                             {/* Subscription Term Section */}
                             <div className="space-y-6 pt-4">
@@ -3121,217 +3186,17 @@ const NewSubscriptionPage = () => {
                                             )}
                                         </div>
                                     </div>
-
-                                    <div className="h-px bg-gray-100 my-6" />
-
                                     <div className="flex items-center">
-                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Metered Billing</label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={formData.meteredBilling}
-                                                onChange={(e) => handleChange("meteredBilling", e.target.checked)}
-                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-0"
-                                            />
-                                            <span className="text-[13px] text-gray-600">Invoice customer based on their usage</span>
-                                        </label>
+                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Associate Project(s) Hours</label>
+                                        <div className="text-[13px] text-gray-500">There are no active projects for this customer.</div>
                                     </div>
 
-                                    <div className="flex items-center">
-                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Project</label>
-                                        <div className="relative w-full">
-                                            <select className="w-full px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none appearance-none bg-white">
-                                                <option>None</option>
-                                            </select>
-                                            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        </div>
-                                    </div>
-
-                                    <div className="h-px bg-gray-100 my-6" />
-
-                                    <div className="flex items-center">
-                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Payment Mode</label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={formData.paymentMode === "offline"}
-                                                onChange={(e) => handleChange("paymentMode", e.target.checked ? "offline" : "online")}
-                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-0"
-                                            />
-                                            <span className="text-[13px] text-gray-600">Collect payment offline</span>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center">
-                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Payment Terms</label>
-                                        <div className="relative w-full">
-                                            <select
-                                                className="w-full px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none appearance-none bg-white font-medium"
-                                                value={formData.paymentTerms}
-                                                onChange={(e) => handleChange("paymentTerms", e.target.value)}
-                                            >
-                                                <option>Due on Receipt</option>
-                                                <option>Net 15</option>
-                                                <option>Net 30</option>
-                                                <option>Net 45</option>
-                                                <option>Net 60</option>
-                                            </select>
-                                            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center">
-                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Partial Payments</label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-0"
-                                                checked={formData.partialPayments}
-                                                onChange={(e) => handleChange("partialPayments", e.target.checked)}
-                                            />
-                                            <span className="text-[13px] text-gray-600">Enable Partial Payments</span>
-                                            <HelpCircle size={14} className="text-gray-400" />
-                                        </label>
-                                    </div>
-
-                                    <div className="space-y-1 py-4">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[13px] font-bold text-slate-800">Want to get paid faster?</span>
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-5 h-3 bg-[#1a1f3c] rounded-sm flex items-center justify-center overflow-hidden">
-                                                    <div className="w-full h-full bg-gradient-to-r from-orange-400 to-yellow-300" />
-                                                </div>
-                                                <div className="w-5 h-3 bg-blue-700 rounded-sm" />
-                                            </div>
-                                        </div>
-                                        <p className="text-[12px] text-gray-500">
-                                            Configure payment gateways and receive payments online. <button className="text-blue-500 hover:underline">Set up Payment Gateway</button>
-                                        </p>
-                                    </div>
+                                    {/* Additional preferences hidden for now */}
                                 </div>
                             </div>
-
-                            {/* Proration Section */}
-                            <div className="space-y-4 pt-4">
-                                <h3 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2 uppercase tracking-wide">Proration Preference</h3>
-                                <div className="space-y-3">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.prorateCharges}
-                                            onChange={(e) => handleChange("prorateCharges", e.target.checked)}
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-0"
-                                        />
-                                        <span className="text-[13px] text-gray-700 font-medium">Prorate Charges & Credits</span>
-                                        <HelpCircle size={14} className="text-gray-400" />
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.generateInvoices}
-                                            onChange={(e) => handleChange("generateInvoices", e.target.checked)}
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-0"
-                                        />
-                                        <span className="text-[13px] text-gray-700 font-medium">Generate invoices when proration occurs</span>
-                                        <HelpCircle size={14} className="text-gray-400" />
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowOtherPreferences(!showOtherPreferences)}
-                                    className="flex items-center gap-1 text-blue-500 font-bold text-[13px] hover:underline"
-                                >
-                                    Other Preferences {showOtherPreferences ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                </button>
-
-                                {showOtherPreferences && (
-                                    <div className="space-y-4 pl-0 mt-4 border border-gray-100 p-6 rounded-lg bg-gray-50/30">
-                                        <div className="flex items-center">
-                                            <label className="text-[13px] text-gray-600 w-44 shrink-0">Invoice Template</label>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[13px] text-gray-800">{formData.invoiceTemplate}</span>
-                                                <button className="text-blue-500 hover:text-blue-600">
-                                                    <Pencil size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center">
-                                            <label className="text-[13px] text-gray-600 w-44 shrink-0">Round Off Preference</label>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[13px] text-gray-800">{formData.roundOffPreference}</span>
-                                                <button className="text-blue-500 hover:text-blue-600">
-                                                    <Pencil size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-start">
-                                            <label className="text-[13px] text-gray-600 w-44 shrink-0 mt-1 flex items-center gap-1">
-                                                Customer Notes
-                                                <Info size={14} className="text-gray-400" />
-                                            </label>
-                                            <textarea
-                                                className="w-full max-w-xl px-3 py-2 border border-gray-200 rounded text-[13px] outline-none min-h-[80px] bg-white"
-                                                value={formData.customerNotes}
-                                                onChange={(e) => handleChange("customerNotes", e.target.value)}
-                                                placeholder="Thanks for your business."
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                                        </div>
-                                    </div>
-                                    {isEditMode && (
-                                        <div className="pt-4 border-t border-gray-100 space-y-3">
-                                            <div className="text-[12px] font-semibold text-gray-600 uppercase">When to apply changes</div>
-                                            <label className="flex items-center gap-2 text-[13px] text-gray-600">
-                                                <input
-                                                    type="radio"
-                                                    name="applyChanges"
-                                                    checked={formData.applyChanges === "immediately"}
-                                                    onChange={() => handleChange("applyChanges", "immediately")}
-                                                />
-                                                Immediately
-                                            </label>
-                                            <label className="flex items-center gap-2 text-[13px] text-gray-600">
-                                                <input
-                                                    type="radio"
-                                                    name="applyChanges"
-                                                    checked={formData.applyChanges === "end_of_term"}
-                                                    onChange={() => handleChange("applyChanges", "end_of_term")}
-                                                />
-                                                End of term
-                                            </label>
-                                            <label className="flex items-center gap-2 text-[13px] text-gray-600">
-                                                <input
-                                                    type="radio"
-                                                    name="applyChanges"
-                                                    checked={formData.applyChanges === "scheduled"}
-                                                    onChange={() => handleChange("applyChanges", "scheduled")}
-                                                />
-                                                Scheduled date
-                                            </label>
-                                            {formData.applyChanges === "scheduled" && (
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-[12px] text-gray-500">Apply on</span>
-                                                    <input
-                                                        type="date"
-                                                        className="px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none"
-                                                        value={formData.applyChangesDate}
-                                                        onChange={(e) => handleChange("applyChangesDate", e.target.value)}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
             {isAddressModalOpen && (
                 <div
@@ -3685,6 +3550,7 @@ const NewSubscriptionPage = () => {
                     Cancel
                 </button>
             </div>
+        </div>
         </div>
     );
 };
