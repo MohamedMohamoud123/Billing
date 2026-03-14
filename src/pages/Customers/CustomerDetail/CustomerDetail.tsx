@@ -3622,7 +3622,8 @@ export default function CustomerDetail() {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 min-w-0 flex flex-col overflow-hidden min-h-0" style={{ marginRight: 0, paddingRight: 0 }}>
+            <div className="flex-1 min-w-0 flex flex-col overflow-y-auto min-h-0 custom-scrollbar" style={{ marginRight: 0, paddingRight: 0 }}>
+                <div className="sticky top-0 z-30 bg-white">
                 {/* Header - Show action header when showActionHeader is true, otherwise show normal header */}
                 {!isCustomerActive(customer) ? (
                     /* Action Header Bar */
@@ -4021,10 +4022,11 @@ export default function CustomerDetail() {
                         Statement
                     </button>
                 </div>
+                </div>
 
                 {/* Tab Content */}
                 {activeTab === "overview" && (
-                    <div className="flex-1 min-h-0 overflow-y-auto bg-[#f8f9fc]">
+                    <div className="flex-1 min-h-0 bg-[#f8f9fc]">
                         <div className="flex min-h-full">
                             {/* Left Column */}
                             <div className="w-[370px] flex-shrink-0 border-r border-gray-200 bg-[#f8f9fc]">
@@ -5559,7 +5561,7 @@ export default function CustomerDetail() {
                 )}
 
                 {activeTab === "comments" && (
-                    <div className="flex-1 min-h-0 overflow-y-auto p-6">
+                    <div className="flex-1 min-h-0 p-6">
                         {/* Comment Editor */}
                         <div className="mb-8 bg-white rounded-lg border border-gray-200 p-6">
                             <div className="flex gap-2 mb-4 pb-4 border-b border-gray-200">
@@ -5641,7 +5643,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "transactions" && (
-                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 p-6" style={{ paddingRight: 0 }}>
                             <div className="relative inline-block mb-4" ref={goToTransactionsDropdownRef}>
                                 <button
                                     className="flex items-center gap-1 text-sm text-[#0f5ca8] cursor-pointer hover:underline"
@@ -6744,7 +6746,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "purchases" && (
-                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 p-6" style={{ paddingRight: 0 }}>
                             <button className="flex items-center gap-2 px-4 py-2 mb-4 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-700 cursor-pointer hover:bg-gray-100">
                                 Go to transactions
                                 <ChevronDown size={16} />
@@ -6812,7 +6814,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "mails" && (
-                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 p-6" style={{ paddingRight: 0 }}>
                             <div className="bg-white rounded-lg border border-gray-200">
                                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                                     <h3 className="text-lg font-semibold text-gray-900">System Mails</h3>
@@ -6893,7 +6895,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "statement" && (
-                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 p-6" style={{ paddingRight: 0 }}>
                             {/* Statement Header */}
                             <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
                                 <div className="flex items-center gap-3">

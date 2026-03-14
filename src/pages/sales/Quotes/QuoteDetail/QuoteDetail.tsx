@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -2530,7 +2530,7 @@ const QuoteDetail = () => {
           }
         }
       `}</style>
-      <div className="w-full h-full min-h-0 flex bg-white overflow-hidden">
+      <div className="w-full h-[calc(100vh-4rem)] min-h-0 flex bg-white overflow-hidden">
         {/* Left Sidebar - Quote List */}
         <div className="w-[320px] lg:w-[320px] md:w-[270px] border-r border-gray-200 bg-white flex flex-col h-full min-h-0 overflow-hidden hidden md:flex">
           {/* Header with Filter or Bulk Actions */}

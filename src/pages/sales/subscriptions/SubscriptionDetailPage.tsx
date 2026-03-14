@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "react-toastify";
 import {
   ChevronDown,
   Plus,
@@ -14,7 +15,7 @@ import {
   FileText,
   Trash2,
 } from "lucide-react";
-import { salespersonsAPI } from "../../../services/api";
+import { salespersonsAPI, invoicesAPI } from "../../../services/api";
 import { getCustomerById } from "../salesModel";
 import { useUser } from "../../../lib/auth/UserContext";
 import { runSubscriptionBillingSimulation } from "./subscriptionBilling";
@@ -50,6 +51,7 @@ export default function SubscriptionDetailPage() {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [moreDropdownOpen, setMoreDropdownOpen] = useState(false);
   const [detailMoreOpen, setDetailMoreOpen] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [subscriptions, setSubscriptions] = useState(() => {
     try {
@@ -67,6 +69,12 @@ export default function SubscriptionDetailPage() {
   const [isManageContactsOpen, setIsManageContactsOpen] = useState(false);
   const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelOtherReason, setCancelOtherReason] = useState("");
+  const [cancelError, setCancelError] = useState("");
+  const [invoiceHistory, setInvoiceHistory] = useState<any[]>([]);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [isChangeBillingOpen, setIsChangeBillingOpen] = useState(false);
   const [billingDateDraft, setBillingDateDraft] = useState("");
   const [billingReasonDraft, setBillingReasonDraft] = useState("");
@@ -75,7 +83,15 @@ export default function SubscriptionDetailPage() {
   const [customerProfile, setCustomerProfile] = useState<any | null>(null);
   const [salespersons, setSalespersons] = useState<any[]>([]);
   const [selectedSalespersonId, setSelectedSalespersonId] = useState("");
-  const [coupons, setCoupons] = useState<Array<{ id: string; couponName: string; couponCode: string }>>([]);
+  const [coupons, setCoupons] = useState<
+    Array<{
+      id: string;
+      couponName: string;
+      couponCode: string;
+      discountType: string;
+      discountValue: number;
+    }>
+  >([]);
   const [selectedCouponId, setSelectedCouponId] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "invoice" | "activity">("overview");
@@ -192,8 +208,30 @@ export default function SubscriptionDetailPage() {
     if (!rate) return sum;
     return sum + (item.amount * rate) / 100;
   }, 0);
-  const couponDiscount = Number(String(selected?.couponValue || "").replace(/[^\d.]/g, "")) || 0;
+  const parseCouponDiscount = (rawValue: string | undefined, baseAmount: number) => {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return 0;
+    const percentMatch = raw.match(/(-?\d+(\.\d+)?)\s*%/);
+    if (percentMatch) {
+      const pct = Number(percentMatch[1]) || 0;
+      return (baseAmount * pct) / 100;
+    }
+    const numeric = Number(raw.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+  const couponDiscount = parseCouponDiscount(selected?.couponValue, subtotal);
   const total = Math.max(subtotal + taxAmount - couponDiscount, 0);
+  const hasCouponApplied =
+    couponDiscount > 0 ||
+    Boolean(String(selected?.couponCode || "").trim()) ||
+    Boolean(String(selected?.coupon || "").trim());
+
+  const formatCouponValue = (coupon: { discountType: string; discountValue: number }) => {
+    const normalized = String(coupon.discountType || "").toLowerCase();
+    const isPercent = normalized.includes("percent") || normalized.includes("%");
+    if (isPercent) return `${coupon.discountValue}%`;
+    return `AMD${coupon.discountValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
   const customerId = String(selected?.customerId || customerProfile?._id || customerProfile?.id || "").trim();
   const contactPersons = useMemo(() => {
     const list = Array.isArray(customerProfile?.contactPersons)
@@ -239,6 +277,64 @@ export default function SubscriptionDetailPage() {
     }
   };
 
+  const handleProceedCancel = () => {
+    if (!selected) return;
+    const reason =
+      cancelReason === "Others" ? cancelOtherReason.trim() : cancelReason.trim();
+    if (!reason) {
+      setCancelError("Please select a reason for cancellation.");
+      return;
+    }
+    const next = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      return {
+        ...sub,
+        status: "CANCELLED",
+        cancellationReason: reason,
+        scheduledCancellationDate: sub?.scheduledCancellationDate || new Date().toISOString(),
+      };
+    });
+    setSubscriptions(next);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+    setIsCancelModalOpen(false);
+    setCancelReason("");
+    setCancelOtherReason("");
+    setCancelError("");
+    toast.success("Subscription cancelled successfully.");
+  };
+
+  const applyCouponForSelected = () => {
+    if (!selected) return;
+    const chosen = coupons.find((row) => row.id === selectedCouponId);
+    if (!chosen) {
+      toast.error("Select a coupon to apply.");
+      return;
+    }
+    const nextValue = formatCouponValue(chosen);
+    const updated = subscriptions.map((sub: any) => {
+      if (sub.id !== selected.id) return sub;
+      return {
+        ...sub,
+        coupon: chosen.couponName,
+        couponCode: chosen.couponCode,
+        couponValue: nextValue,
+      };
+    });
+    setSubscriptions(updated);
+    try {
+      localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+    setSelectedCouponId("");
+    setIsAddCouponOpen(false);
+    toast.success("Coupon applied successfully.");
+  };
+
   const notes = Array.isArray(selected?.notes) ? selected.notes : [];
   const formatNoteDate = (value: string) =>
     new Date(value).toLocaleString("en-GB", {
@@ -258,6 +354,67 @@ export default function SubscriptionDetailPage() {
       year: "numeric",
     });
   };
+
+  useEffect(() => {
+    if (activeTab !== "invoice" || !selected?.id) return;
+    let mounted = true;
+    const loadInvoices = async () => {
+      setInvoiceLoading(true);
+      try {
+        const response = await invoicesAPI.getAll({ limit: 1000 });
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        const normalized = rows.map((inv: any) => ({
+          id: String(inv?._id || inv?.id || ""),
+          invoiceNumber: String(inv?.invoiceNumber || inv?.number || inv?.invoiceNo || "").trim(),
+          invoiceDate: String(inv?.invoiceDate || inv?.date || inv?.createdAt || "").trim(),
+          total: Number(inv?.total ?? inv?.amount ?? inv?.balance ?? 0) || 0,
+          status: String(inv?.status || "draft").toUpperCase(),
+          recurringProfileId: String(inv?.recurringProfileId || inv?.subscriptionId || inv?.recurringId || ""),
+          referenceNumber: String(inv?.referenceNumber || "").trim(),
+          subscriptionNumber: String(inv?.subscriptionNumber || "").trim(),
+          customerId: String(inv?.customerId || ""),
+        }));
+        const filtered = normalized.filter((inv: any) => {
+          if (inv.recurringProfileId && String(inv.recurringProfileId) === String(selected?.id)) return true;
+          if (inv.subscriptionNumber && inv.subscriptionNumber === String(selected?.subscriptionNumber || "")) return true;
+          if (inv.referenceNumber && inv.referenceNumber === String(selected?.referenceNumber || "")) return true;
+          return false;
+        });
+        if (mounted) setInvoiceHistory(filtered);
+      } catch {
+        try {
+          const raw = localStorage.getItem("taban_books_invoices");
+          const parsed = raw ? JSON.parse(raw) : [];
+          const rows = Array.isArray(parsed) ? parsed : [];
+          const normalized = rows.map((inv: any) => ({
+            id: String(inv?._id || inv?.id || ""),
+            invoiceNumber: String(inv?.invoiceNumber || inv?.number || inv?.invoiceNo || "").trim(),
+            invoiceDate: String(inv?.invoiceDate || inv?.date || inv?.createdAt || "").trim(),
+            total: Number(inv?.total ?? inv?.amount ?? inv?.balance ?? 0) || 0,
+            status: String(inv?.status || "draft").toUpperCase(),
+            recurringProfileId: String(inv?.recurringProfileId || inv?.subscriptionId || inv?.recurringId || ""),
+            referenceNumber: String(inv?.referenceNumber || "").trim(),
+            subscriptionNumber: String(inv?.subscriptionNumber || "").trim(),
+          }));
+          const filtered = normalized.filter((inv: any) => {
+            if (inv.recurringProfileId && String(inv.recurringProfileId) === String(selected?.id)) return true;
+            if (inv.subscriptionNumber && inv.subscriptionNumber === String(selected?.subscriptionNumber || "")) return true;
+            if (inv.referenceNumber && inv.referenceNumber === String(selected?.referenceNumber || "")) return true;
+            return false;
+          });
+          if (mounted) setInvoiceHistory(filtered);
+        } catch {
+          if (mounted) setInvoiceHistory([]);
+        }
+      } finally {
+        if (mounted) setInvoiceLoading(false);
+      }
+    };
+    loadInvoices();
+    return () => {
+      mounted = false;
+    };
+  }, [activeTab, selected?.id, selected?.subscriptionNumber, selected?.referenceNumber]);
 
   const saveNoteForSelected = () => {
     if (!selected) return;
@@ -435,6 +592,8 @@ export default function SubscriptionDetailPage() {
             id: String(row?.id || row?._id || `coupon-${idx}`),
             couponName: String(row?.couponName || row?.name || "").trim(),
             couponCode: String(row?.couponCode || row?.code || "").trim(),
+            discountType: String(row?.discountType || row?.type || "Flat"),
+            discountValue: Number(row?.discountValue ?? row?.value ?? 0) || 0,
           }))
           .filter((row: any) => row.couponName && row.couponCode);
         setCoupons(mapped);
@@ -672,7 +831,7 @@ export default function SubscriptionDetailPage() {
       </div>
 
       {hasSelection ? (
-      <div className="flex-1 overflow-y-auto h-full">
+      <div className="flex-1 overflow-y-auto h-full bg-slate-50">
         <div className="sticky top-0 z-[30] bg-white">
           <div className="flex items-start justify-between px-8 py-4 border-b border-gray-200">
           <div>
@@ -762,16 +921,27 @@ export default function SubscriptionDetailPage() {
               </button>
               {detailMoreOpen && (
                 <div className="absolute top-full right-0 mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-xl z-[20] overflow-hidden">
+                  {!hasCouponApplied && (
+                    <button
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={() => {
+                        setDetailMoreOpen(false);
+                        setIsAddCouponOpen(true);
+                      }}
+                    >
+                      Add Coupon
+                    </button>
+                  )}
                   <button
-                    className="w-full text-left px-4 py-2.5 text-sm text-white bg-[#3b82f6] hover:bg-[#2563eb]"
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                     onClick={() => {
                       setDetailMoreOpen(false);
-                      setIsAddCouponOpen(true);
+                      const productName =
+                        String(selected?.productName || selected?.planName || "").trim();
+                      const query = productName ? `?product=${encodeURIComponent(productName)}` : "";
+                      navigate(`/products/addons/new${query}`);
                     }}
                   >
-                    Add Coupon
-                  </button>
-                  <button className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
                     Add One Time Addon
                   </button>
                   <button
@@ -784,36 +954,50 @@ export default function SubscriptionDetailPage() {
                     Add Charge
                   </button>
                   <div className="h-px bg-gray-100" />
-                  <button className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                  <button
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      setDetailMoreOpen(false);
+                    }}
+                  >
                     Create Quote
                   </button>
                   <div className="h-px bg-gray-100" />
-                  <button className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                  <button
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      setDetailMoreOpen(false);
+                    }}
+                  >
                     Update Custom Fields
                   </button>
                   <div className="h-px bg-gray-100" />
-                  <button className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                  <button
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      setDetailMoreOpen(false);
+                    }}
+                  >
                     Disable Metered Billing
                   </button>
-                  <button className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                  <button
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      setDetailMoreOpen(false);
+                      setCancelReason("");
+                      setCancelOtherReason("");
+                      setCancelError("");
+                      setIsCancelModalOpen(true);
+                    }}
+                  >
                     Cancel Subscription
                   </button>
                   <button
                     className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
                     onClick={() => {
                       if (!selected?.id) return;
-                      const ok = window.confirm("Delete this subscription? This action cannot be undone.");
-                      if (!ok) return;
-                      const updated = subscriptions.filter((row: any) => row.id !== selected.id);
-                      setSubscriptions(updated);
-                      setSelectedIds((prev) => prev.filter((id) => id !== selected.id));
-                      try {
-                        localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
-                      } catch {
-                        // ignore storage errors
-                      }
                       setDetailMoreOpen(false);
-                      navigate("/sales/subscriptions");
+                      setShowDeleteModal(true);
                     }}
                   >
                     Delete Subscription
@@ -1158,7 +1342,9 @@ export default function SubscriptionDetailPage() {
                     <div className="min-w-0">
                       {(couponDiscount > 0 || selected?.couponCode || selected?.coupon) && (
                         <div className="flex flex-col text-xs text-gray-500">
-                          <span>Inclusive of SC</span>
+                          <span>
+                            Inclusive of {selected?.couponCode || selected?.coupon || "Coupon"}
+                          </span>
                           <button
                             type="button"
                             className="text-blue-600 hover:underline"
@@ -1369,7 +1555,7 @@ export default function SubscriptionDetailPage() {
               <div className="px-5 py-4 border-t border-gray-200 flex items-center gap-2">
                 <button
                   className="px-4 py-2 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold"
-                  onClick={() => setIsAddCouponOpen(false)}
+                  onClick={applyCouponForSelected}
                 >
                   Apply
                 </button>
@@ -1386,7 +1572,7 @@ export default function SubscriptionDetailPage() {
 
         {isAddChargeOpen && (
           <div className="fixed inset-0 z-[210] flex items-start justify-center bg-black/40">
-            <div className="mt-14 w-full max-w-[720px] bg-white rounded-lg shadow-2xl overflow-hidden">
+            <div className="mt-14 w-full max-w-[760px] bg-white rounded-lg shadow-2xl overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                 <h3 className="text-[16px] font-semibold text-gray-900">Add Charge</h3>
                 <button
@@ -1398,23 +1584,41 @@ export default function SubscriptionDetailPage() {
               </div>
 
               <div className="px-6 py-5">
-                <div className="grid grid-cols-[1fr_1.4fr] gap-6 rounded-lg border border-gray-200 p-4">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                <div className="grid grid-cols-[1fr_1.4fr] gap-6 rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="flex gap-4 border-r border-gray-100 pr-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400">
                       <User size={20} />
                     </div>
-                    <div>
-                      <div className="text-xs text-gray-500">Customer Name</div>
-                      <div className="text-sm font-medium text-gray-900">{selected.customerName}</div>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-xs text-gray-500">Customer Name</div>
+                        <div className="text-sm font-medium text-gray-900">{selected.customerName}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Subscription#</div>
+                        <div className="text-sm font-medium text-gray-900">{selected.subscriptionNumber}</div>
+                      </div>
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500">Subscription#</div>
-                    <div className="text-sm font-medium text-gray-900">{selected.subscriptionNumber}</div>
+                    <label className="text-sm text-red-500">Amount*</label>
+                    <div className="mt-2 flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm">
+                      <span className="text-gray-500">{currencyCode}</span>
+                      <input
+                        className="flex-1 outline-none"
+                        placeholder="0.00"
+                        value={chargeAmount}
+                        onChange={(e) => setChargeAmount(e.target.value)}
+                      />
+                    </div>
+                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500">
+                      <input type="checkbox" />
+                      Allow partial payments
+                    </label>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mt-5">
+                <div className="mt-5 grid grid-cols-2 gap-6">
                   <div>
                     <label className="text-sm text-gray-700">Account</label>
                     <select className="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
@@ -1428,31 +1632,23 @@ export default function SubscriptionDetailPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-sm text-red-500">Amount*</label>
-                    <div className="mt-2 flex items-center gap-2 border border-gray-300 rounded-md px-3 py-2 text-sm">
-                      <span className="text-gray-500">AMD</span>
-                      <input
-                        className="flex-1 outline-none"
-                        placeholder="0.00"
-                        value={chargeAmount}
-                        onChange={(e) => setChargeAmount(e.target.value)}
-                      />
-                    </div>
-                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500">
-                      <input type="checkbox" />
-                      Allow partial payments
-                    </label>
-                  </div>
-                  <div>
                     <label className="text-sm text-red-500">Reason*</label>
-                    <textarea className="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm" rows={3} placeholder="This will be displayed in the line item details of the invoice sent to your customer." />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="text-sm text-gray-700">Description</label>
-                    <textarea className="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm" rows={3} placeholder="Mention why you are adding this charge." />
+                    <textarea
+                      className="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                      rows={3}
+                      placeholder="This will be displayed in the line item details of the invoice sent to your customer."
+                    />
                   </div>
                   <div>
-                    <label className="text-sm text-gray-700">Reporting Tags</label>
+                    <label className="text-sm text-gray-700">Description</label>
+                    <textarea
+                      className="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                      rows={3}
+                      placeholder="Mention why you are adding this charge."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-700 uppercase text-[11px] tracking-wide">Reporting Tags</label>
                     <select className="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
                       <option>None</option>
                     </select>
@@ -1465,7 +1661,13 @@ export default function SubscriptionDetailPage() {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-200 flex items-center gap-2">
-                <button className="px-4 py-2 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold">
+                <button
+                  className="px-4 py-2 bg-[#10a37f] hover:bg-[#0e8a6b] text-white rounded-md text-sm font-semibold"
+                  onClick={() => {
+                    setIsAddChargeOpen(false);
+                    toast.success("Charge added successfully.");
+                  }}
+                >
                   Charge
                 </button>
                 <button
@@ -1536,6 +1738,81 @@ export default function SubscriptionDetailPage() {
                   }}
                 >
                   Update
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isCancelModalOpen && (
+          <div className="fixed inset-0 z-[220] flex items-start justify-center bg-black/50 pt-8 px-4 pb-8 overflow-y-auto">
+            <div className="w-full max-w-[760px] rounded-xl bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#fbfbfd]">
+                <div className="text-[16px] font-medium text-gray-800">Configure Cancel Subscription</div>
+                <button
+                  type="button"
+                  onClick={() => setIsCancelModalOpen(false)}
+                  className="h-8 w-8 rounded-md border border-blue-500 bg-white flex items-center justify-center hover:bg-blue-50"
+                  aria-label="Close"
+                >
+                  <X size={16} className="text-red-500" />
+                </button>
+              </div>
+
+              <div className="px-8 py-6">
+                <div className="text-sm font-medium text-red-500 mb-3">Reason for Cancellation*</div>
+
+                <div className="space-y-2">
+                  {["Doesn't meet my needs", "Found a better alternative", "Very Expensive", "Others"].map((reason) => (
+                    <label key={reason} className="flex items-center gap-3 text-sm text-gray-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="cancel-reason"
+                        value={reason}
+                        checked={cancelReason === reason}
+                        onChange={() => {
+                          setCancelReason(reason);
+                          setCancelError("");
+                        }}
+                        className="h-4 w-4"
+                        style={{ accentColor: "#14b8a6" }}
+                      />
+                      <span>{reason}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {cancelReason === "Others" && (
+                  <div className="mt-4">
+                    <input
+                      value={cancelOtherReason}
+                      onChange={(e) => {
+                        setCancelOtherReason(e.target.value);
+                        setCancelError("");
+                      }}
+                      placeholder="Type reason..."
+                      className="w-full h-10 px-3 rounded-md border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-teal-200"
+                    />
+                  </div>
+                )}
+
+                {cancelError && <div className="mt-3 text-sm text-red-600">{cancelError}</div>}
+              </div>
+
+              <div className="flex items-center gap-2 px-8 py-5 border-t border-gray-100 bg-white">
+                <button
+                  type="button"
+                  onClick={handleProceedCancel}
+                  className="px-5 py-2 rounded-md bg-[#22b573] text-white text-sm font-semibold hover:brightness-95"
+                >
+                  Proceed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCancelModalOpen(false)}
+                  className="px-5 py-2 rounded-md border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
                 </button>
               </div>
             </div>
@@ -1633,6 +1910,59 @@ export default function SubscriptionDetailPage() {
       ) : (
         <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
           No subscriptions found. Create or update a subscription to see details.
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 pt-16">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-2xl border border-slate-200">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-3">
+              <div className="h-7 w-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[12px] font-bold">
+                !
+              </div>
+              <h3 className="text-[15px] font-semibold text-slate-800 flex-1">Delete subscription?</h3>
+              <button
+                type="button"
+                className="h-7 w-7 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                onClick={() => setShowDeleteModal(false)}
+                aria-label="Close"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="px-5 py-3 text-[13px] text-slate-600">
+              You cannot retrieve this subscription once it has been deleted.
+            </div>
+            <div className="flex items-center justify-start gap-2 border-t border-slate-100 px-5 py-3">
+              <button
+                type="button"
+                className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-[12px] hover:bg-blue-700"
+                onClick={() => {
+                  if (!selected?.id) return;
+                  const updated = subscriptions.filter((row: any) => row.id !== selected.id);
+                  setSubscriptions(updated);
+                  setSelectedIds((prev) => prev.filter((id) => id !== selected.id));
+                  try {
+                    localStorage.setItem("taban_subscriptions_v1", JSON.stringify(updated));
+                  } catch {
+                    // ignore storage errors
+                  }
+                  toast.success("Subscription deleted successfully.");
+                  setShowDeleteModal(false);
+                  navigate("/sales/subscriptions");
+                }}
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                className="px-4 py-1.5 rounded-md border border-slate-300 text-[12px] text-slate-700 hover:bg-slate-50"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

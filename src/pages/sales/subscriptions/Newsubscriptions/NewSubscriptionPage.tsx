@@ -341,12 +341,90 @@ const PHONE_COUNTRY_OPTIONS = [
     { name: "Zimbabwe", phoneCode: "+263" },
 ];
 
-const ACCOUNT_OPTIONS = [
-    "General Income",
-    "Sales",
-    "Service Revenue",
-    "Discount Given",
+const ACCOUNT_GROUPS = [
+    {
+        title: "Other Current Asset",
+        items: [
+            "Advance Tax",
+            "Employee Advance",
+            "Goods In Transit",
+            "Prepaid Expenses",
+            "Retention Receivable",
+        ],
+    },
+    {
+        title: "Fixed Asset",
+        items: [
+            "Furniture and Equipment",
+        ],
+    },
+    {
+        title: "Other Current Liability",
+        items: [
+            "Employee Reimbursements",
+            "Opening Balance Adjustments",
+            "Retention Payable",
+            "Unearned Revenue",
+        ],
+    },
+    {
+        title: "Equity",
+        items: [
+            "Drawings",
+            "Opening Balance Offset",
+            "Owner's Equity",
+        ],
+    },
+    {
+        title: "Income",
+        items: [
+            "Discount",
+            "General Income",
+            "Interest Income",
+            "Late Fee Income",
+            "Other Charges",
+            "Sales",
+            "Shipping Charge",
+        ],
+    },
+    {
+        title: "Expense",
+        items: [
+            "Advertising And Marketing",
+            "Automobile Expense",
+            "Bad Debt",
+            "Bank Fees and Charges",
+            "Consultant Expense",
+            "Credit Card Charges",
+            "Depreciation Expense",
+            "IT and Internet Expenses",
+            "Janitorial Expense",
+            "Lodging",
+            "Meals and Entertainment",
+            "Office Supplies",
+            "Other Expenses",
+            "Postage",
+            "Printing and Stationery",
+            "Purchase Discounts",
+            "Rent Expense",
+            "Repairs and Maintenance",
+            "Salaries and Employee Wages",
+            "sdff",
+            "Telephone Expense",
+            "Travel Expense",
+            "Uncategorized",
+        ],
+    },
+    {
+        title: "Cost Of Goods Sold",
+        items: [
+            "Cost Of Goods Sold",
+            "Cost of Goods Sold",
+        ],
+    },
 ];
+
+const ACCOUNT_OPTIONS = ACCOUNT_GROUPS.flatMap((group) => [group.title, ...group.items]);
 
 const NewSubscriptionPage = () => {
     const navigate = useNavigate();
@@ -404,14 +482,17 @@ const NewSubscriptionPage = () => {
     const [accountSearches, setAccountSearches] = useState<Record<number, string>>({});
     const [openItemTagDropdowns, setOpenItemTagDropdowns] = useState<Record<number, boolean>>({});
     const [itemTagSearches, setItemTagSearches] = useState<Record<number, string>>({});
+    const [openItemMenus, setOpenItemMenus] = useState<Record<number, boolean>>({});
     const itemDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const taxDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const accountDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const itemTagDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const itemMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const [showOtherPreferences, setShowOtherPreferences] = useState(false);
     const [isBulkItemsModalOpen, setIsBulkItemsModalOpen] = useState(false);
     const [selectedBulkItems, setSelectedBulkItems] = useState<string[]>([]);
     const [bulkItemSearch, setBulkItemSearch] = useState("");
+    const [bulkItemQuantities, setBulkItemQuantities] = useState<Record<string, number>>({});
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [billingAddress, setBillingAddress] = useState<any | null>(null);
     const [shippingAddress, setShippingAddress] = useState<any | null>(null);
@@ -468,11 +549,15 @@ const NewSubscriptionPage = () => {
         basePrice: 0.00,
         tax: "Select a Tax",
         subscriptionNumber: "SUB-00002",
+        profileName: "",
+        billEveryCount: 1,
+        billEveryUnit: "Week(s)",
         startDate: new Date().toISOString().split('T')[0],
         expiresAfter: "",
         neverExpires: false,
         referenceNumber: "",
         salesperson: "",
+        customZxc: "",
         meteredBilling: true,
         paymentMode: "offline",
         paymentTerms: "Due on Receipt",
@@ -491,7 +576,7 @@ const NewSubscriptionPage = () => {
         nextBillingOn: "",
         status: "",
         items: [
-            { id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "", account: "", reportingTag: "" }
+            { id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "", account: "", reportingTag: "", imageUrl: "", sku: "", showAdditional: true, isHeader: false, headerText: "" }
         ],
         reportingTags: [] as any[]
         ,
@@ -1119,6 +1204,19 @@ const NewSubscriptionPage = () => {
             if (couponDropdownRef.current && !couponDropdownRef.current.contains(event.target as Node)) {
                 setIsCouponDropdownOpen(false);
             }
+            const menuEntries = Object.entries(itemMenuRefs.current);
+            if (menuEntries.length > 0) {
+                let clickedInsideMenu = false;
+                for (const [, ref] of menuEntries) {
+                    if (ref && ref.contains(event.target as Node)) {
+                        clickedInsideMenu = true;
+                        break;
+                    }
+                }
+                if (!clickedInsideMenu) {
+                    setOpenItemMenus({});
+                }
+            }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -1679,13 +1777,49 @@ const NewSubscriptionPage = () => {
         return lines;
     };
 
+    const buildEmptyItem = (id: number) => ({
+        id,
+        itemDetails: "",
+        quantity: 1,
+        rate: 0,
+        tax: "Select a Tax",
+        taxRate: 0,
+        amount: 0,
+        description: "",
+        account: "",
+        reportingTag: "",
+        imageUrl: "",
+        sku: "",
+        showAdditional: true,
+        isHeader: false,
+        headerText: "",
+    });
+
+    const buildHeaderItem = (id: number) => ({
+        id,
+        itemDetails: "",
+        quantity: 0,
+        rate: 0,
+        tax: "Select a Tax",
+        taxRate: 0,
+        amount: 0,
+        description: "",
+        account: "",
+        reportingTag: "",
+        imageUrl: "",
+        sku: "",
+        showAdditional: false,
+        isHeader: true,
+        headerText: "",
+    });
+
     const handleAddItem = () => {
         const newId = formData.items.length > 0 ? Math.max(...formData.items.map((i: any) => i.id)) + 1 : 1;
         setFormData(prev => ({
             ...prev,
             items: [
                 ...prev.items,
-                { id: newId, itemDetails: "", quantity: 1, rate: 0, tax: "Select a Tax", taxRate: 0, amount: 0, description: "", account: "", reportingTag: "" }
+                buildEmptyItem(newId)
             ]
         }));
     };
@@ -1702,6 +1836,9 @@ const NewSubscriptionPage = () => {
         setFormData(prev => {
             const newItems = prev.items.map((item: any) => {
                 if (item.id === id) {
+                    if (item.isHeader) {
+                        return { ...item, [field]: value };
+                    }
                     const updatedItem = { ...item, [field]: value };
                     if (field === 'quantity' || field === 'rate') {
                         updatedItem.amount = (Number(updatedItem.quantity) || 0) * (Number(updatedItem.rate) || 0);
@@ -1717,18 +1854,23 @@ const NewSubscriptionPage = () => {
     const handleSelectItem = (id: number, item: any) => {
         const newItems = formData.items.map(it => {
             if (it.id === id) {
+                const displayName = getItemDisplayName(item);
+                const rate = getItemRate(item);
                 return {
                     ...it,
-                    itemDetails: item.name,
-                    rate: item.rate || 0,
-                    description: item.description || "",
-                    amount: (it.quantity || 1) * (item.rate || 0)
+                    itemDetails: displayName,
+                    rate,
+                    description: item.description || item.salesDescription || item.purchaseDescription || "",
+                    imageUrl: getItemImageUrl(item),
+                    sku: getItemSku(item),
+                    amount: (it.quantity || 1) * rate
                 };
             }
             return it;
         });
         setFormData(prev => ({ ...prev, items: newItems }));
         setOpenItemDropdowns(prev => ({ ...prev, [id]: false }));
+        setItemSearches(prev => ({ ...prev, [id]: "" }));
     };
 
     const handleSelectTax = (id: number, tax: Tax) => {
@@ -1744,6 +1886,57 @@ const NewSubscriptionPage = () => {
         });
         setFormData(prev => ({ ...prev, items: newItems }));
         setOpenTaxDropdowns(prev => ({ ...prev, [id]: false }));
+    };
+
+    const insertItemAt = (index: number, item: any) => {
+        setFormData((prev) => {
+            const next = [...prev.items];
+            next.splice(index, 0, item);
+            return { ...prev, items: next };
+        });
+    };
+
+    const handleToggleAdditionalInfo = (id: number) => {
+        setFormData((prev) => ({
+            ...prev,
+            items: prev.items.map((item: any) =>
+                item.id === id ? { ...item, showAdditional: !item.showAdditional } : item
+            ),
+        }));
+    };
+
+    const handleCloneItemRow = (id: number) => {
+        setFormData((prev) => {
+            const index = prev.items.findIndex((i: any) => i.id === id);
+            if (index < 0) return prev;
+            const nextId = Math.max(0, ...prev.items.map((i: any) => i.id)) + 1;
+            const clone = { ...prev.items[index], id: nextId };
+            const next = [...prev.items];
+            next.splice(index + 1, 0, clone);
+            return { ...prev, items: next };
+        });
+    };
+
+    const handleInsertNewRow = (id: number) => {
+        setFormData((prev) => {
+            const index = prev.items.findIndex((i: any) => i.id === id);
+            const nextId = Math.max(0, ...prev.items.map((i: any) => i.id)) + 1;
+            const newItem = buildEmptyItem(nextId);
+            const next = [...prev.items];
+            next.splice(index + 1, 0, newItem);
+            return { ...prev, items: next };
+        });
+    };
+
+    const handleInsertHeaderRow = (id: number) => {
+        setFormData((prev) => {
+            const index = prev.items.findIndex((i: any) => i.id === id);
+            const nextId = Math.max(0, ...prev.items.map((i: any) => i.id)) + 1;
+            const newItem = buildHeaderItem(nextId);
+            const next = [...prev.items];
+            next.splice(index + 1, 0, newItem);
+            return { ...prev, items: next };
+        });
     };
 
     const handleAddonSelect = (lineId: number, addon: PlanAddonOption) => {
@@ -1786,12 +1979,61 @@ const NewSubscriptionPage = () => {
         setCouponSearch("");
     };
 
+    const getItemDisplayName = (item: any) =>
+        String(item?.name || item?.itemName || item?.productName || item?.title || "").trim();
+
+    const getItemRate = (item: any) =>
+        Number(item?.rate ?? item?.sellingPrice ?? item?.price ?? item?.salesRate ?? 0) || 0;
+
+    const getItemSku = (item: any) =>
+        String(item?.sku || item?.itemCode || item?.code || "").trim();
+
+    const getItemImageUrl = (item: any) => {
+        const direct =
+            item?.imageUrl ||
+            item?.imageURL ||
+            item?.image_url ||
+            item?.itemImage ||
+            item?.thumbnail ||
+            item?.thumbnailUrl ||
+            item?.thumbnailURL ||
+            item?.photo ||
+            item?.photoUrl ||
+            item?.avatar ||
+            item?.image;
+        if (typeof direct === "string") return direct.trim();
+        if (direct && typeof direct === "object") {
+            const nested = direct.url || direct.href || direct.path || direct.src;
+            if (typeof nested === "string") return nested.trim();
+        }
+        const imagesArray = Array.isArray(item?.images) ? item.images : [];
+        if (imagesArray.length > 0) {
+            const first = imagesArray[0];
+            if (typeof first === "string") return first.trim();
+            if (first && typeof first === "object") {
+                const nested = first.url || first.href || first.path || first.src;
+                if (typeof nested === "string") return nested.trim();
+            }
+        }
+        const attachments = Array.isArray(item?.attachments) ? item.attachments : [];
+        if (attachments.length > 0) {
+            const first = attachments[0];
+            if (typeof first === "string") return first.trim();
+            if (first && typeof first === "object") {
+                const nested = first.url || first.href || first.path || first.src;
+                if (typeof nested === "string") return nested.trim();
+            }
+        }
+        return "";
+    };
+
     const filteredItemOptions = (search: string) => {
         const term = (search || "").toLowerCase();
-        return availableItems.filter(item =>
-            (item.name || "").toLowerCase().includes(term) ||
-            (item.sku || "").toLowerCase().includes(term)
-        );
+        return availableItems.filter(item => {
+            const name = getItemDisplayName(item).toLowerCase();
+            const sku = getItemSku(item).toLowerCase();
+            return name.includes(term) || sku.includes(term);
+        });
     };
 
     const totalItemAmount = useMemo(() => {
@@ -1805,6 +2047,9 @@ const NewSubscriptionPage = () => {
         selectedBulkItems.forEach(itemId => {
             const item = availableItems.find(i => String(i.id || i._id) === itemId);
             if (item) {
+                const displayName = getItemDisplayName(item);
+                const rate = getItemRate(item);
+                const qty = Math.max(1, Number(bulkItemQuantities[itemId] || 1));
                 // Remove the first empty row if it exists
                 if (newItems.length === 1 && !newItems[0].itemDetails) {
                     newItems.pop();
@@ -1813,15 +2058,20 @@ const NewSubscriptionPage = () => {
                 currentMaxId++;
                 newItems.push({
                     id: currentMaxId,
-                    itemDetails: item.name,
-                    quantity: 1,
-                    rate: item.rate || item.sellingPrice || 0,
+                    itemDetails: displayName,
+                    quantity: qty,
+                    rate,
                     tax: item.taxName || "Select a Tax",
                     taxRate: item.taxRate || 0,
-                    amount: item.rate || item.sellingPrice || 0,
-                    description: item.description || "",
+                    amount: rate * qty,
+                    description: item.description || item.salesDescription || item.purchaseDescription || "",
                     account: "",
-                    reportingTag: ""
+                    reportingTag: "",
+                    imageUrl: getItemImageUrl(item),
+                    sku: getItemSku(item),
+                    showAdditional: true,
+                    isHeader: false,
+                    headerText: "",
                 });
             }
         });
@@ -1829,6 +2079,7 @@ const NewSubscriptionPage = () => {
         setFormData(prev => ({ ...prev, items: newItems }));
         setIsBulkItemsModalOpen(false);
         setSelectedBulkItems([]);
+        setBulkItemQuantities({});
     };
 
     return (
@@ -2584,22 +2835,11 @@ const NewSubscriptionPage = () => {
                                 <div className="space-y-4">
                                     {/* Item Table Section */}
                                     <div className="border-y border-gray-200 py-3">
-                                        <div className="flex items-center gap-4 text-[13px] text-slate-600">
-                                            <div className="relative w-44">
-                                                <select
-                                                    className="w-full pl-3 pr-7 py-1.5 bg-transparent text-[13px] outline-none appearance-none"
-                                                    value={formData.taxPreference}
-                                                    onChange={(e) => handleChange("taxPreference", e.target.value)}
-                                                >
-                                                    <option>Tax Exclusive</option>
-                                                    <option>Tax Inclusive</option>
-                                                </select>
-                                                <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
-                                            </div>
-                                            <div className="h-6 w-px bg-gray-200" />
+                                        <div className="flex items-center gap-3 text-[13px] text-slate-600">
+                                            <FileText size={14} className="text-gray-400" />
                                             <div className="relative w-56">
                                                 <select
-                                                    className="w-full pl-3 pr-7 py-1.5 bg-transparent text-[13px] text-slate-700 outline-none appearance-none"
+                                                    className="w-full pl-1 pr-6 py-1.5 bg-transparent text-[13px] text-slate-700 outline-none appearance-none"
                                                     value={formData.priceListId}
                                                     onChange={(e) => {
                                                         const nextId = e.target.value;
@@ -2618,7 +2858,7 @@ const NewSubscriptionPage = () => {
                                                         </option>
                                                     ))}
                                                 </select>
-                                                <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                                <ChevronDown size={13} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400" />
                                             </div>
                                         </div>
                                     </div>
@@ -2657,14 +2897,41 @@ const NewSubscriptionPage = () => {
                                             <tbody>
                                                 {formData.items.map((item) => (
                                                     <React.Fragment key={item.id}>
+                                                        {item.isHeader ? (
+                                                            <tr className="bg-gray-50/50 border-b border-gray-200">
+                                                                <td colSpan={6} className="px-4 py-2">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={item.headerText || ""}
+                                                                            onChange={(e) => handleItemChange(item.id, "headerText", e.target.value)}
+                                                                            placeholder="Header name"
+                                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded text-[13px] text-slate-700 outline-none bg-white"
+                                                                        />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleRemoveItem(item.id)}
+                                                                            className="text-red-500"
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                        <>
                                                         <tr className="border-b border-gray-200 hover:bg-gray-50/30 group">
                                                         <td className="py-3 px-4">
                                                             <div className="flex gap-3">
                                                                 <div className="pt-2 text-gray-300">
                                                                     <GripVertical size={14} />
                                                                 </div>
-                                                                <div className="w-10 h-10 bg-gray-100 rounded border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
-                                                                    <ImageIcon size={18} />
+                                                                <div className="w-10 h-10 bg-gray-100 rounded border border-gray-200 flex items-center justify-center text-gray-400 shrink-0 overflow-hidden">
+                                                                    {item.imageUrl ? (
+                                                                        <img src={item.imageUrl} alt={item.itemDetails || "Item"} className="w-full h-full object-cover" />
+                                                                    ) : (
+                                                                        <ImageIcon size={18} />
+                                                                    )}
                                                                 </div>
                                                                 <div className="flex-1 space-y-2">
                                                                     <div className="relative" ref={(el) => { itemDropdownRefs.current[String(item.id)] = el; }}>
@@ -2674,6 +2941,14 @@ const NewSubscriptionPage = () => {
                                                                             onChange={(e) => {
                                                                                 handleItemChange(item.id, 'itemDetails', e.target.value);
                                                                                 setItemSearches(prev => ({ ...prev, [item.id]: e.target.value }));
+                                                                                setOpenItemDropdowns(prev => ({ ...prev, [item.id]: true }));
+                                                                            }}
+                                                                            onFocus={() => {
+                                                                                setItemSearches(prev => ({ ...prev, [item.id]: "" }));
+                                                                                setOpenItemDropdowns(prev => ({ ...prev, [item.id]: true }));
+                                                                            }}
+                                                                            onClick={() => {
+                                                                                setItemSearches(prev => ({ ...prev, [item.id]: "" }));
                                                                                 setOpenItemDropdowns(prev => ({ ...prev, [item.id]: true }));
                                                                             }}
                                                                             placeholder="Type or click to select an item."
@@ -2690,14 +2965,17 @@ const NewSubscriptionPage = () => {
                                                                                             onClick={() => handleSelectItem(item.id, opt)}
                                                                                             className="w-full text-left px-4 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-0"
                                                                                         >
-                                                                                            <div className="text-[13px] font-medium text-gray-800">{opt.name}</div>
-                                                                                            <div className="text-[11px] text-gray-400">Rate: {opt.rate} {formData.currency}</div>
+                                                                                            <div className="text-[13px] font-medium text-gray-800">{getItemDisplayName(opt)}</div>
+                                                                                            <div className="text-[11px] text-gray-400">Rate: {getItemRate(opt)} {formData.currency}</div>
                                                                                         </button>
                                                                                     ))
                                                                                 )}
                                                                             </div>
                                                                         )}
                                                                     </div>
+                                                                    {item.sku && (
+                                                                        <div className="text-[11px] text-gray-400">SKU: {item.sku}</div>
+                                                                    )}
                                                                     <textarea
                                                                         placeholder="Add a description for your item"
                                                                         value={item.description}
@@ -2765,19 +3043,84 @@ const NewSubscriptionPage = () => {
                                                             {item.amount.toFixed(2)}
                                                         </td>
                                                         <td className="py-3 px-2 align-top pt-4">
-                                                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button className="text-gray-400 hover:text-gray-600">
-                                                                    <MoreVertical size={16} />
-                                                                </button>
+                                                            <div className="flex items-center justify-end gap-2 opacity-100">
+                                                                <div className="relative" ref={(el) => { itemMenuRefs.current[String(item.id)] = el; }}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            setOpenItemMenus((prev) => ({
+                                                                                [item.id]: !prev[item.id],
+                                                                            }))
+                                                                        }
+                                                                        className="text-gray-400 hover:text-gray-600"
+                                                                    >
+                                                                        <MoreVertical size={16} />
+                                                                    </button>
+                                                                    {openItemMenus[item.id] && (
+                                                                        <div className="absolute right-0 top-full mt-2 w-56 rounded-md border border-gray-200 bg-white shadow-lg z-[300] py-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    handleToggleAdditionalInfo(item.id);
+                                                                                    setOpenItemMenus({});
+                                                                                }}
+                                                                                className="w-full text-left px-4 py-2 text-[12px] text-slate-700 hover:bg-gray-50"
+                                                                            >
+                                                                                {item.showAdditional ? "Hide Additional Information" : "Show Additional Information"}
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    handleCloneItemRow(item.id);
+                                                                                    setOpenItemMenus({});
+                                                                                }}
+                                                                                className="w-full text-left px-4 py-2 text-[12px] text-slate-700 hover:bg-gray-50"
+                                                                            >
+                                                                                Clone
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    handleInsertNewRow(item.id);
+                                                                                    setOpenItemMenus({});
+                                                                                }}
+                                                                                className="w-full text-left px-4 py-2 text-[12px] text-slate-700 hover:bg-gray-50"
+                                                                            >
+                                                                                Insert New Row
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setIsBulkItemsModalOpen(true);
+                                                                                    setOpenItemMenus({});
+                                                                                }}
+                                                                                className="w-full text-left px-4 py-2 text-[12px] text-slate-700 hover:bg-gray-50"
+                                                                            >
+                                                                                Insert Items in Bulk
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    handleInsertHeaderRow(item.id);
+                                                                                    setOpenItemMenus({});
+                                                                                }}
+                                                                                className="w-full text-left px-4 py-2 text-[12px] text-slate-700 hover:bg-gray-50"
+                                                                            >
+                                                                                Insert New Header
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                                 <button
                                                                     onClick={() => handleRemoveItem(item.id)}
-                                                                    className="text-gray-300 hover:text-red-500 transition-colors"
+                                                                    className="text-red-500"
                                                                 >
                                                                     <Trash2 size={16} />
                                                                 </button>
                                                             </div>
                                                         </td>
                                                         </tr>
+                                                        {item.showAdditional !== false && (
                                                         <tr className="bg-white">
                                                             <td colSpan={6} className="px-4 py-2 border-b border-gray-200 text-[12px] text-slate-600">
                                                                 <div className="flex items-center gap-4">
@@ -2806,8 +3149,9 @@ const NewSubscriptionPage = () => {
                                                                                         />
                                                                                     </div>
                                                                                 </div>
-                                                                                <div className="max-h-[160px] overflow-y-auto py-1">
-                                                                                    {ACCOUNT_OPTIONS.filter(acc => acc.toLowerCase().includes((accountSearches[item.id] || "").toLowerCase())).map(acc => (
+                                                                            <div className="max-h-[160px] overflow-y-auto py-1">
+                                                                                {(accountSearches[item.id] || "").trim() ? (
+                                                                                    ACCOUNT_OPTIONS.filter(acc => acc.toLowerCase().includes((accountSearches[item.id] || "").toLowerCase())).map(acc => (
                                                                                         <button
                                                                                             key={acc}
                                                                                             onClick={() => {
@@ -2818,11 +3162,32 @@ const NewSubscriptionPage = () => {
                                                                                         >
                                                                                             {acc}
                                                                                         </button>
-                                                                                    ))}
-                                                                                    {ACCOUNT_OPTIONS.filter(acc => acc.toLowerCase().includes((accountSearches[item.id] || "").toLowerCase())).length === 0 && (
-                                                                                        <div className="px-4 py-2 text-[12px] text-gray-400 italic">No accounts found</div>
-                                                                                    )}
-                                                                                </div>
+                                                                                    ))
+                                                                                ) : (
+                                                                                    ACCOUNT_GROUPS.map((group) => (
+                                                                                        <div key={group.title}>
+                                                                                            <div className="px-4 py-2 text-[12px] font-semibold text-slate-800">
+                                                                                                {group.title}
+                                                                                            </div>
+                                                                                            {group.items.map((acc) => (
+                                                                                                <button
+                                                                                                    key={`${group.title}-${acc}`}
+                                                                                                    onClick={() => {
+                                                                                                        handleItemChange(item.id, "account", acc);
+                                                                                                        setOpenAccountDropdowns(prev => ({ ...prev, [item.id]: false }));
+                                                                                                    }}
+                                                                                                    className="w-full text-left px-6 py-2 hover:bg-gray-50 text-[12px]"
+                                                                                                >
+                                                                                                    {acc}
+                                                                                                </button>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    ))
+                                                                                )}
+                                                                                {(accountSearches[item.id] || "").trim() && ACCOUNT_OPTIONS.filter(acc => acc.toLowerCase().includes((accountSearches[item.id] || "").toLowerCase())).length === 0 && (
+                                                                                    <div className="px-4 py-2 text-[12px] text-gray-400 italic">No accounts found</div>
+                                                                                )}
+                                                                            </div>
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -2877,6 +3242,9 @@ const NewSubscriptionPage = () => {
                                                                 </div>
                                                             </td>
                                                         </tr>
+                                                        )}
+                                                        </>
+                                                        )}
                                                     </React.Fragment>
                                                 ))}
                                             </tbody>
@@ -2886,12 +3254,9 @@ const NewSubscriptionPage = () => {
                                         <div className="flex items-center">
                                             <button
                                                 onClick={handleAddItem}
-                                                className="flex items-center gap-2 px-4 py-2 bg-[#eef3ff] border border-[#d7deef] text-[#1f3f79] rounded-l-md text-[13px] font-medium hover:bg-[#e7eefb] transition-colors border-r-0"
+                                                className="flex items-center gap-2 px-4 py-2 bg-[#eef3ff] border border-[#d7deef] text-[#1f3f79] rounded-md text-[13px] font-medium hover:bg-[#e7eefb] transition-colors"
                                             >
                                                 <Plus size={16} className="text-blue-600" /> Add New Row
-                                            </button>
-                                            <button className="px-2 py-2 bg-[#eef3ff] border border-[#d7deef] text-[#1f3f79] rounded-r-md text-[13px] font-medium hover:bg-[#e7eefb] transition-colors">
-                                                <ChevronDown size={14} />
                                             </button>
                                         </div>
                                         <button
@@ -2906,74 +3271,169 @@ const NewSubscriptionPage = () => {
                                     {/* Bulk Items Modal */}
                                     {isBulkItemsModalOpen && (
                                         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[500] backdrop-blur-sm">
-                                            <div className="bg-white rounded-lg shadow-2xl w-[600px] max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
-                                                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                                                    <h3 className="text-lg font-medium text-slate-800">Add Items in Bulk</h3>
-                                                    <button onClick={() => setIsBulkItemsModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                            <div className="bg-white rounded-lg shadow-2xl w-[900px] h-[520px] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+                                                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+                                                    <h3 className="text-[16px] font-semibold text-slate-800">Add Items in Bulk</h3>
+                                                    <button onClick={() => setIsBulkItemsModalOpen(false)} className="text-red-500 hover:text-red-600 transition-colors">
                                                         <X size={20} />
                                                     </button>
                                                 </div>
-                                                <div className="p-4 border-b border-gray-50 bg-white">
-                                                    <div className="relative">
-                                                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                        <input
-                                                            type="text"
-                                                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-lg text-[14px] outline-none focus:ring-2 focus:ring-blue-500/20"
-                                                            placeholder="Search items by name or SKU..."
-                                                            value={bulkItemSearch}
-                                                            onChange={(e) => setBulkItemSearch(e.target.value)}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="flex-1 overflow-y-auto p-2">
-                                                    <div className="grid grid-cols-1 gap-1">
-                                                        {availableItems.filter(item =>
-                                                            (item.name || "").toLowerCase().includes(bulkItemSearch.toLowerCase()) ||
-                                                            (item.sku || "").toLowerCase().includes(bulkItemSearch.toLowerCase())
-                                                        ).map(item => (
-                                                            <button
-                                                                key={item.id || item._id}
-                                                                onClick={() => {
+
+                                                <div className="flex flex-1 min-h-0">
+                                                    <div className="w-[360px] border-r border-gray-100 flex flex-col">
+                                                        <div className="px-4 py-3 border-b border-gray-50 bg-white">
+                                                            <input
+                                                                type="text"
+                                                                className="w-full px-3 py-2 bg-white border border-blue-300 rounded-md text-[12px] outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                                placeholder="Type to search or scan the barcode of the item"
+                                                                value={bulkItemSearch}
+                                                                onChange={(e) => setBulkItemSearch(e.target.value)}
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1 overflow-y-auto">
+                                                            {availableItems
+                                                                .filter(item =>
+                                                                    getItemDisplayName(item).toLowerCase().includes(bulkItemSearch.toLowerCase()) ||
+                                                                    getItemSku(item).toLowerCase().includes(bulkItemSearch.toLowerCase())
+                                                                )
+                                                                .map(item => {
                                                                     const id = String(item.id || item._id);
-                                                                    setSelectedBulkItems(prev =>
-                                                                        prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+                                                                    const isSelected = selectedBulkItems.includes(id);
+                                                                    return (
+                                                                        <button
+                                                                            key={id}
+                                                                            onClick={() => {
+                                                                                setSelectedBulkItems(prev => {
+                                                                                    const next = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
+                                                                                    return next;
+                                                                                });
+                                                                                setBulkItemQuantities(prev => ({
+                                                                                    ...prev,
+                                                                                    [id]: Math.max(1, Number(prev[id] || 1)),
+                                                                                }));
+                                                                            }}
+                                                                            className={`group w-full text-left px-4 py-3 border-b border-gray-50 flex items-start justify-between transition-colors ${isSelected ? "bg-slate-50 ring-1 ring-blue-200" : "hover:bg-blue-50"}`}
+                                                                        >
+                                                                            <div className="min-w-0">
+                                                                                <div className={`text-[12px] font-semibold truncate ${isSelected ? "text-slate-800" : "text-slate-800 group-hover:text-blue-600"}`}>
+                                                                                    {getItemDisplayName(item)}
+                                                                                </div>
+                                                                                <div className="text-[11px] text-gray-500">SKU: {getItemSku(item) || "-" } · Rate: {formData.currency} {getItemRate(item).toFixed(2)}</div>
+                                                                            </div>
+                                                                            <div className={`mt-1 h-5 w-5 rounded-full border flex items-center justify-center ${isSelected ? "bg-green-500 border-green-500 text-white" : "border-gray-300 text-gray-300"}`}>
+                                                                                <Check size={12} />
+                                                                            </div>
+                                                                        </button>
                                                                     );
-                                                                }}
-                                                                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all ${selectedBulkItems.includes(String(item.id || item._id)) ? "bg-blue-50 border-blue-100" : "hover:bg-gray-50 border-transparent"} border`}
-                                                            >
-                                                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedBulkItems.includes(String(item.id || item._id)) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-300"}`}>
-                                                                    {selectedBulkItems.includes(String(item.id || item._id)) && <Check size={14} />}
+                                                                })}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex-1 flex flex-col">
+                                                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                                            <div className="flex items-center gap-2 text-[14px] font-semibold text-slate-700">
+                                                                Selected Items
+                                                                <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full border border-gray-300 text-[12px] font-semibold">
+                                                                    {selectedBulkItems.length}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-[11px] text-gray-500">
+                                                                Total Quantity: {selectedBulkItems.reduce((sum, id) => sum + (bulkItemQuantities[id] || 1), 0)}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex-1 overflow-y-auto">
+                                                            {selectedBulkItems.length === 0 ? (
+                                                                <div className="h-full flex items-center justify-center text-[12px] text-gray-500">
+                                                                    Click the item names from the left pane to select them
                                                                 </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="text-[14px] font-medium text-slate-800 truncate">{item.name}</div>
-                                                                    {item.sku && <div className="text-[12px] text-gray-500 uppercase tracking-tight">SKU: {item.sku}</div>}
+                                                            ) : (
+                                                                <div className="p-4 space-y-3">
+                                                                    {selectedBulkItems.map((id, index) => {
+                                                                        const item = availableItems.find(i => String(i.id || i._id) === id);
+                                                                        if (!item) return null;
+                                                                        const qty = Math.max(1, Number(bulkItemQuantities[id] || 1));
+                                                                        return (
+                                                                            <div key={id} className="flex items-center justify-between gap-3 group">
+                                                                                <div className="text-[12px] text-slate-700">
+                                                                                    [{index + 1}] {getItemDisplayName(item)}
+                                                                                </div>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="flex items-center gap-1 rounded-md border border-blue-400 px-1 py-0.5">
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() =>
+                                                                                                setBulkItemQuantities(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [id]: Math.max(1, (prev[id] || 1) - 1),
+                                                                                                }))
+                                                                                            }
+                                                                                            className="h-6 w-6 rounded-full bg-blue-500 text-white text-[12px] leading-none hover:bg-blue-600"
+                                                                                        >
+                                                                                            -
+                                                                                        </button>
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            value={qty}
+                                                                                            onChange={(e) => {
+                                                                                                const next = Math.max(1, Number(e.target.value) || 1);
+                                                                                                setBulkItemQuantities(prev => ({ ...prev, [id]: next }));
+                                                                                            }}
+                                                                                            className="w-8 text-center text-[12px] text-blue-700 outline-none"
+                                                                                            aria-label={`Quantity of ${getItemDisplayName(item)}`}
+                                                                                        />
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() =>
+                                                                                                setBulkItemQuantities(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [id]: (prev[id] || 1) + 1,
+                                                                                                }))
+                                                                                            }
+                                                                                            className="h-6 w-6 rounded-full bg-blue-500 text-white text-[12px] leading-none hover:bg-blue-600"
+                                                                                        >
+                                                                                            +
+                                                                                        </button>
+                                                                                    </div>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            setSelectedBulkItems(prev => prev.filter(x => x !== id));
+                                                                                            setBulkItemQuantities(prev => {
+                                                                                                const next = { ...prev };
+                                                                                                delete next[id];
+                                                                                                return next;
+                                                                                            });
+                                                                                        }}
+                                                                                        className="h-6 w-6 rounded-full border border-red-300 text-red-500 hover:bg-red-50"
+                                                                                        aria-label="Remove selected item"
+                                                                                    >
+                                                                                        <X size={12} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                 </div>
-                                                                <div className="text-[14px] font-semibold text-slate-700">
-                                                                    {formData.currency} {Number(item.rate || item.sellingPrice || 0).toFixed(2)}
-                                                                </div>
-                                                            </button>
-                                                        ))}
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-                                                    <span className="text-[13px] text-gray-500 font-medium">
-                                                        {selectedBulkItems.length} items selected
-                                                    </span>
-                                                    <div className="flex items-center gap-3">
-                                                        <button
-                                                            onClick={() => setIsBulkItemsModalOpen(false)}
-                                                            className="px-4 py-2 text-[14px] font-medium text-gray-600 hover:text-gray-800 transition-colors"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                        <button
-                                                            onClick={handleAddBulkItems}
-                                                            disabled={selectedBulkItems.length === 0}
-                                                            className={`px-5 py-2 rounded-lg text-[14px] font-bold text-white shadow-sm transition-all ${selectedBulkItems.length === 0 ? "bg-gray-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`}
-                                                        >
-                                                            Add Items
-                                                        </button>
-                                                    </div>
+
+                                                <div className="px-6 py-3 border-t border-gray-100 flex items-center gap-3 bg-white">
+                                                    <button
+                                                        onClick={handleAddBulkItems}
+                                                        disabled={selectedBulkItems.length === 0}
+                                                        className={`px-4 py-1.5 rounded-md text-[12px] font-semibold text-white ${selectedBulkItems.length === 0 ? "bg-gray-300 cursor-not-allowed" : "bg-green-500 hover:bg-green-600"}`}
+                                                    >
+                                                        Add Items
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setIsBulkItemsModalOpen(false)}
+                                                        className="px-4 py-1.5 rounded-md border border-gray-300 text-[12px] text-gray-700 hover:bg-gray-50"
+                                                    >
+                                                        Cancel
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -3070,6 +3530,39 @@ const NewSubscriptionPage = () => {
                                             value={formData.subscriptionNumber}
                                             onChange={(e) => handleChange("subscriptionNumber", e.target.value)}
                                         />
+                                    </div>
+                                    <div className="flex items-center">
+                                        <label className="text-[13px] text-[#d9534f] w-44 shrink-0">Profile Name*</label>
+                                        <input
+                                            type="text"
+                                            className="w-full px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none"
+                                            value={formData.profileName}
+                                            onChange={(e) => handleChange("profileName", e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="flex items-center">
+                                        <label className="text-[13px] text-[#d9534f] w-44 shrink-0">Bill Every*</label>
+                                        <div className="flex items-center gap-3 w-full">
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                className="w-20 px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none text-center"
+                                                value={formData.billEveryCount}
+                                                onChange={(e) => handleChange("billEveryCount", Math.max(1, Number(e.target.value) || 1))}
+                                            />
+                                            <div className="relative">
+                                                <select
+                                                    className="w-32 px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none appearance-none bg-white"
+                                                    value={formData.billEveryUnit}
+                                                    onChange={(e) => handleChange("billEveryUnit", e.target.value)}
+                                                >
+                                                    {["Day(s)", "Week(s)", "Month(s)", "Year(s)"].map((unit) => (
+                                                        <option key={unit} value={unit}>{unit}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="flex items-center">
                                         <label className="text-[13px] text-gray-600 w-44 shrink-0">Start Date</label>
@@ -3190,6 +3683,118 @@ const NewSubscriptionPage = () => {
                                         <label className="text-[13px] text-gray-600 w-44 shrink-0">Associate Project(s) Hours</label>
                                         <div className="text-[13px] text-gray-500">There are no active projects for this customer.</div>
                                     </div>
+
+                                    <div className="border-t border-gray-100 pt-4" />
+
+                                    <div className="flex items-center">
+                                        <label className="text-[13px] text-[#d9534f] w-44 shrink-0">zxc*</label>
+                                        <div className="relative w-full">
+                                            <select
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none appearance-none bg-white"
+                                                value={formData.customZxc}
+                                                onChange={(e) => handleChange("customZxc", e.target.value)}
+                                            >
+                                                <option value="">Select</option>
+                                                <option value="ZXC">ZXC</option>
+                                            </select>
+                                            <ChevronDown size={14} className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-gray-400" />
+                                            {formData.customZxc && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleChange("customZxc", "")}
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500"
+                                                    aria-label="Clear"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="border-t border-gray-100 pt-4" />
+
+                                    <div className="flex items-center">
+                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Payment Mode</label>
+                                        <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                                            <input
+                                                type="checkbox"
+                                                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-0"
+                                                checked={formData.paymentMode === "offline"}
+                                                onChange={(e) => handleChange("paymentMode", e.target.checked ? "offline" : "online")}
+                                            />
+                                            Collect payment offline
+                                        </label>
+                                    </div>
+                                    <div className="flex items-center">
+                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Payment Terms</label>
+                                        <div className="relative w-60">
+                                            <select
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded text-[13px] outline-none appearance-none bg-white"
+                                                value={formData.paymentTerms}
+                                                onChange={(e) => handleChange("paymentTerms", e.target.value)}
+                                            >
+                                                {["Due on Receipt", "Net 15", "Net 30", "Net 45", "Net 60"].map((term) => (
+                                                    <option key={term} value={term}>{term}</option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center">
+                                        <label className="text-[13px] text-gray-600 w-44 shrink-0">Partial Payments</label>
+                                        <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                                            <input
+                                                type="checkbox"
+                                                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-0"
+                                                checked={formData.partialPayments}
+                                                onChange={(e) => handleChange("partialPayments", e.target.checked)}
+                                            />
+                                            Enable Partial Payments
+                                        </label>
+                                    </div>
+                                    <div className="text-[12px] text-gray-500 pl-44">
+                                        Want to get paid faster? Set up Payment Gateway
+                                    </div>
+
+                                    <div className="border-t border-gray-100 pt-4" />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOtherPreferences((prev) => !prev)}
+                                        className="flex items-center gap-2 text-[13px] text-blue-600 hover:text-blue-700"
+                                    >
+                                        Other Preferences
+                                        <ChevronRight size={14} className={`transition-transform ${showOtherPreferences ? "rotate-90" : ""}`} />
+                                    </button>
+
+                                    {showOtherPreferences && (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center">
+                                                <label className="text-[13px] text-gray-600 w-44 shrink-0">Invoice Template</label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[13px] text-gray-700">{formData.invoiceTemplate}</span>
+                                                    <Pencil size={14} className="text-blue-600" />
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center">
+                                                <label className="text-[13px] text-gray-600 w-44 shrink-0">Round Off Preference</label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[13px] text-gray-700">{formData.roundOffPreference}</span>
+                                                    <Pencil size={14} className="text-blue-600" />
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start">
+                                                <label className="text-[13px] text-gray-600 w-44 shrink-0 flex items-center gap-2">
+                                                    Customer Notes
+                                                    <Info size={12} className="text-gray-400" />
+                                                </label>
+                                                <textarea
+                                                    className="w-full min-h-[90px] px-3 py-2 border border-gray-300 rounded text-[13px] outline-none"
+                                                    value={formData.customerNotes}
+                                                    onChange={(e) => handleChange("customerNotes", e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Additional preferences hidden for now */}
                                 </div>

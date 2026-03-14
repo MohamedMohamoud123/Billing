@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
@@ -87,8 +87,7 @@ const NewQuote = () => {
     customerNotes: "Looking forward for your business.",
     termsAndConditions: "",
     attachedFiles: [],
-    createRetainerInvoice: false,
-    retainerPercentage: "",
+
     reportingTags: [] as any[],
     contactPersons: []
   });
@@ -1099,6 +1098,7 @@ const NewQuote = () => {
 
               return {
                 id: item.item?._id || item.item || item._id || item.id || index + 1, // Map product ID if available
+                itemType: item.itemType || "item",
                 itemDetails: item.name || item.itemName || item.itemDetails || "",
                 name: item.name || item.itemName || "",
                 quantity,
@@ -1118,18 +1118,20 @@ const NewQuote = () => {
             // Get customer name - check both customer and customerName fields
             const customerName = quote.customerName || quote.customer || "";
 
-            setFormData({
+            setFormData(prev => ({
+              ...prev,
               customerName: customerName,
-              selectedLocation: (quote as any).selectedLocation || (quote as any).location || "Head Office",
-              selectedPriceList: (quote as any).selectedPriceList || (quote as any).priceList || (quote as any).priceListName || "Select Price List",
+              selectedLocation: (quote as any).selectedLocation || (quote as any).location || prev.selectedLocation,
+              selectedPriceList: (quote as any).selectedPriceList || (quote as any).priceList || (quote as any).priceListName || prev.selectedPriceList,
               quoteNumber: quote.quoteNumber || quote.id || "",
               referenceNumber: quote.referenceNumber || "",
               quoteDate: formatDateForInput(quote.quoteDate || quote.date),
               expiryDate: formatDateForInput(quote.expiryDate),
-              salesperson: quote.salesperson || "",
-              projectName: quote.projectName || "",
-              subject: quote.subject || "",
-              taxExclusive: quote.taxExclusive || "Tax Exclusive",
+              salesperson: quote.salesperson || prev.salesperson,
+              salespersonId: quote.salespersonId || prev.salespersonId,
+              projectName: quote.projectName || prev.projectName,
+              subject: quote.subject || prev.subject,
+              taxExclusive: quote.taxExclusive || prev.taxExclusive,
               items: mappedItems.length > 0 ? mappedItems : [{ id: 1, itemType: "item", itemDetails: "", quantity: 1, rate: 0, tax: "", amount: 0, reportingTags: [] }],
               subTotal: subTotalValue,
               totalTax: totalTaxValue,
@@ -1140,14 +1142,22 @@ const NewQuote = () => {
               adjustment: Number(quote.adjustment || 0),
               roundOff: Number(quote.roundOff || 0),
               total: Number(quote.total || quote.amount || 0),
-              currency: quote.currency || "AMD",
-              customerNotes: quote.customerNotes || "Looking forward for your business.",
-              termsAndConditions: quote.termsAndConditions || "",
-              attachedFiles: quote.attachedFiles || [],
-              createRetainerInvoice: Boolean((quote as any).createRetainerInvoice),
-              retainerPercentage: String((quote as any).retainerPercentage || ""),
-              reportingTags: Array.isArray((quote as any).reportingTags) ? (quote as any).reportingTags : []
-            });
+              currency: quote.currency || prev.currency,
+              customerNotes: quote.customerNotes || quote.notes || prev.customerNotes,
+              termsAndConditions: quote.termsAndConditions || quote.terms || prev.termsAndConditions,
+              attachedFiles: quote.attachedFiles || prev.attachedFiles,
+
+              reportingTags: Array.isArray((quote as any).reportingTags) ? (quote as any).reportingTags : prev.reportingTags
+            }));
+
+            // Sync calendar state with the loaded dates
+            const parsedQuoteDate = new Date(quote.quoteDate || quote.date);
+            if (!isNaN(parsedQuoteDate.getTime())) setQuoteDateCalendar(parsedQuoteDate);
+
+            if (quote.expiryDate) {
+              const parsedExpiryDate = new Date(quote.expiryDate);
+              if (!isNaN(parsedExpiryDate.getTime())) setExpiryDateCalendar(parsedExpiryDate);
+            }
 
             // Set selected customer if exists - check both customer and customerName
             if (customerName) {
@@ -3352,8 +3362,7 @@ const NewQuote = () => {
         adjustment: adjustment,
         roundOff: roundOff,
         total: finalTotal,
-        createRetainerInvoice: Boolean(formData.createRetainerInvoice),
-        retainerPercentage: formData.createRetainerInvoice ? (parseFloat(formData.retainerPercentage || 0) || 0) : 0,
+
 
         // Other fields
         currency: formData.currency,
@@ -3473,8 +3482,7 @@ const NewQuote = () => {
         adjustment: adjustment,
         roundOff: roundOff,
         total: finalTotal,
-        createRetainerInvoice: Boolean(formData.createRetainerInvoice),
-        retainerPercentage: formData.createRetainerInvoice ? (parseFloat(formData.retainerPercentage || 0) || 0) : 0,
+
         currency: formData.currency,
         customerNotes: formData.customerNotes,
         termsAndConditions: formData.termsAndConditions,
@@ -4781,50 +4789,6 @@ const NewQuote = () => {
 
                 <div className="border-t border-gray-200 pt-5">
                   <div className="space-y-4">
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        name="createRetainerInvoice"
-                        checked={Boolean(formData.createRetainerInvoice)}
-                        onChange={(e) => {
-                          const isChecked = e.target.checked;
-                          setFormData(prev => ({
-                            ...prev,
-                            createRetainerInvoice: isChecked,
-                            retainerPercentage: isChecked ? prev.retainerPercentage : ""
-                          }));
-                        }}
-                        className="rounded border-gray-300 text-[#156372] focus:ring-[#156372]"
-                      />
-                      <span className="inline-flex items-center gap-1">
-                        Create a retainer invoice for this quote automatically
-                        <Info size={13} className="text-gray-400" />
-                      </span>
-                    </label>
-
-                    {formData.createRetainerInvoice && (
-                      <div className="ml-6">
-                        <label className="inline-flex items-center gap-1 text-sm text-gray-700 mb-2">
-                          <span>Percentage to be collected</span>
-                          <Info size={12} className="text-gray-400" />
-                        </label>
-                        <div className="flex items-center h-10 w-[260px] border border-gray-300 rounded-md bg-white overflow-hidden">
-                          <input
-                            type="number"
-                            name="retainerPercentage"
-                            min="0"
-                            max="100"
-                            value={formData.retainerPercentage}
-                            onChange={handleChange}
-                            className="flex-1 h-full px-3 text-sm text-gray-700 outline-none text-right"
-                          />
-                          <span className="h-full min-w-[34px] px-3 border-l border-gray-300 flex items-center justify-center text-sm text-gray-600">
-                            %
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="ml-6 text-sm text-gray-700">
                       <p className="flex flex-wrap items-center">
                         <span>Want to get paid faster?</span>

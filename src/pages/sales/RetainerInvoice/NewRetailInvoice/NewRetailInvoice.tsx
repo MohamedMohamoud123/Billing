@@ -43,6 +43,14 @@ export default function NewRetailInvoice() {
   const [retainerNumberMode, setRetainerNumberMode] = useState<"auto" | "manual">("auto");
   const [retainerPrefix, setRetainerPrefix] = useState("RET-");
   const [retainerNextNumber, setRetainerNextNumber] = useState("00001");
+  const RETAINER_SELECTED_VIEW_STORAGE_KEY = "taban_retainer_selected_view_v1";
+  const ensureRetainerListAllView = () => {
+    try {
+      localStorage.setItem(RETAINER_SELECTED_VIEW_STORAGE_KEY, "all");
+    } catch {
+      // ignore local storage errors
+    }
+  };
   const [customerId, setCustomerId] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("Head Office");
   const [reference, setReference] = useState("");
@@ -694,12 +702,18 @@ export default function NewRetailInvoice() {
           ""
       ).trim();
 
-      const payload = {
-        invoiceNumber,
-        customer: customerId,
-        customerName: resolvedCustomerName,
-        date: invoiceDate,
-        invoiceDate,
+    const normalizedInvoiceNumber = String(invoiceNumber || "").trim();
+    const finalInvoiceNumber =
+      normalizedInvoiceNumber.toUpperCase().startsWith("RET-")
+        ? normalizedInvoiceNumber
+        : buildRetainerNumber(retainerPrefix || "RET-", normalizedInvoiceNumber);
+
+    const payload = {
+      invoiceNumber: finalInvoiceNumber,
+      customer: customerId,
+      customerName: resolvedCustomerName,
+      date: invoiceDate,
+      invoiceDate,
         dueDate: invoiceDate,
         status,
         items,
@@ -714,16 +728,44 @@ export default function NewRetailInvoice() {
         taxExclusive: taxPreference,
         location: selectedLocation,
         selectedLocation,
-        reportingTags: Object.entries(reportingTagSelections)
-          .filter(([, value]) => value && value !== "None")
-          .map(([tagId, value]) => ({ tagId, value })),
-      } as any;
+      reportingTags: Object.entries(reportingTagSelections)
+        .filter(([, value]) => value && value !== "None")
+        .map(([tagId, value]) => ({ tagId, value })),
+      invoiceType: "retainer",
+    } as any;
 
       let savedInvoice: any = null;
       if (isEditMode && id) {
         savedInvoice = await updateInvoice(id, payload);
       } else {
         savedInvoice = await saveInvoice(payload);
+      }
+
+      const resolvedInvoiceId = String(
+        (savedInvoice as any)?.id || (savedInvoice as any)?._id || id || ""
+      ).trim();
+      try {
+        const key = "taban_books_invoices";
+        const raw = localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : [];
+        const list = Array.isArray(parsed) ? parsed : [];
+        const idx = list.findIndex((row: any) => String(row?._id || row?.id) === resolvedInvoiceId);
+        const stored = {
+          ...payload,
+          ...savedInvoice,
+          id: resolvedInvoiceId || (savedInvoice as any)?.id || (savedInvoice as any)?._id,
+          _id: resolvedInvoiceId || (savedInvoice as any)?.id || (savedInvoice as any)?._id,
+          invoiceNumber: finalInvoiceNumber,
+          updatedAt: new Date().toISOString(),
+        };
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...stored };
+        } else {
+          list.unshift(stored);
+        }
+        localStorage.setItem(key, JSON.stringify(list));
+      } catch {
+        // ignore local storage errors
       }
 
       toast.success(
@@ -735,14 +777,18 @@ export default function NewRetailInvoice() {
           ? "Retainer invoice saved as draft."
           : "Retainer invoice saved and sent successfully."
       );
-      const resolvedInvoiceId = String(
-        (savedInvoice as any)?.id || (savedInvoice as any)?._id || id || ""
-      ).trim();
+      try {
+        localStorage.setItem(RETAINER_SELECTED_VIEW_STORAGE_KEY, "all");
+      } catch {
+        // ignore local storage errors
+      }
+
       if (status === "sent" && resolvedInvoiceId) {
         navigate(`/sales/retainer-invoices/${resolvedInvoiceId}/send-email`);
       } else if (isEditMode && id) {
         navigate(`/sales/retainer-invoices/${id}`);
       } else {
+        ensureRetainerListAllView();
         navigate("/sales/retainer-invoices");
       }
     } catch (error: any) {
@@ -841,7 +887,13 @@ export default function NewRetailInvoice() {
     <div className="flex min-h-[calc(100vh-98px)] flex-col bg-white">
       <div className="flex items-center justify-between border-b px-6 py-3">
         <h1 className="text-lg font-normal text-gray-800">{isEditMode ? "Edit Retainer Invoice" : "New Retainer Invoice"}</h1>
-        <button onClick={() => navigate("/sales/retainer-invoices")} className="text-gray-400 hover:text-gray-600 transition-colors">
+        <button
+          onClick={() => {
+            ensureRetainerListAllView();
+            navigate("/sales/retainer-invoices");
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+        >
           <X size={22} />
         </button>
       </div>
@@ -1275,7 +1327,10 @@ export default function NewRetailInvoice() {
             {savingMode === "sent" ? "Saving..." : isEditMode ? "Update and Send" : "Save and Send"}
           </button>
           <button
-            onClick={() => navigate("/sales/retainer-invoices")}
+            onClick={() => {
+              ensureRetainerListAllView();
+              navigate("/sales/retainer-invoices");
+            }}
             className="bg-white border border-gray-300 text-gray-700 px-6 py-1.5 rounded text-[13px] font-medium hover:bg-gray-50 active:scale-95 transition-all"
           >
             Cancel

@@ -24,7 +24,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { getInvoicesPaginated, Invoice } from "../salesModel";
+import { deleteInvoice, getInvoicesPaginated, Invoice } from "../salesModel";
 import { useOrganizationBranding } from "../../../hooks/useOrganizationBranding";
 
 type RetainerRow = {
@@ -310,6 +310,7 @@ export default function RetainerInvoice() {
   );
   const [draftSelectedColumns, setDraftSelectedColumns] = useState<Set<RetainerColumnKey>>(new Set());
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   const viewDropdownRef = useRef<HTMLDivElement>(null);
   const moreDropdownRef = useRef<HTMLDivElement>(null);
@@ -517,6 +518,25 @@ export default function RetainerInvoice() {
       else next.delete(rowId);
       return next;
     });
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkDeleteLoading) return;
+    const ids = Array.from(selectedRowIds);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} retainer invoice${ids.length > 1 ? "s" : ""}? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      setBulkDeleteLoading(true);
+      await Promise.all(ids.map((retainerId) => deleteInvoice(retainerId)));
+      setRows((prev) => prev.filter((row) => !selectedRowIds.has(row.id)));
+      setSelectedRowIds(new Set());
+    } catch (error) {
+      console.error("Failed to delete retainer invoices:", error);
+    } finally {
+      setBulkDeleteLoading(false);
+    }
   };
 
   const escapeHtml = (value: any) =>
@@ -872,8 +892,8 @@ export default function RetainerInvoice() {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-screen bg-white">
-      <div className="border-b border-gray-100 bg-white sticky top-0 z-[100]">
+    <div className="flex flex-col h-[calc(100vh-64px)] min-h-0 bg-white overflow-hidden">
+      <div className="border-b border-gray-100 bg-white shrink-0 z-[100]">
         {hasVisibleSelection ? (
           /* Bulk Action Header */
           <div className="flex items-center justify-between px-4 h-[60px]">
@@ -890,14 +910,12 @@ export default function RetainerInvoice() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setRows((prev) => prev.filter((row) => !selectedRowIds.has(row.id)));
-                  setSelectedRowIds(new Set());
-                }}
+                onClick={() => void handleBulkDelete()}
+                disabled={bulkDeleteLoading}
                 className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
               >
                 <Trash2 size={16} className="text-gray-500" />
-                <span>Delete</span>
+                <span>{bulkDeleteLoading ? "Deleting..." : "Delete"}</span>
               </button>
 
               <div className="mx-2 h-5 w-px bg-gray-200" />
@@ -1162,7 +1180,7 @@ export default function RetainerInvoice() {
       </div>
 
 
-      <div className="flex-1 overflow-x-auto bg-white min-h-0">
+      <div className="flex-1 overflow-auto bg-white min-h-0">
         {(loading || hasRows) && (
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">

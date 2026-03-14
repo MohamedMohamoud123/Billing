@@ -178,6 +178,13 @@ export default function Retailinvoicedetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { accentColor } = useOrganizationBranding();
+  const ensureRetainerListAllView = () => {
+    try {
+      localStorage.setItem(RETAINER_SELECTED_VIEW_STORAGE_KEY, "all");
+    } catch {
+      // ignore local storage errors
+    }
+  };
 
   const [loading, setLoading] = useState(true);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
@@ -971,6 +978,7 @@ Amount: ${currency}${formatMoney(amountValue)}</p>
       if (nextId) {
         navigate(`/sales/retainer-invoices/${nextId}`);
       } else {
+        ensureRetainerListAllView();
         navigate("/sales/retainer-invoices");
       }
     } catch (error) {
@@ -1034,6 +1042,7 @@ Amount: ${currency}${formatMoney(amountValue)}</p>
       await deleteInvoice(invoiceId);
       setIsDetailActionsMenuOpen(false);
       toast.success("Retainer invoice deleted");
+      ensureRetainerListAllView();
       navigate("/sales/retainer-invoices");
     } catch (error) {
       console.error("Failed to delete retainer invoice:", error);
@@ -1268,6 +1277,7 @@ Amount: ${currency}${formatMoney(amountValue)}</p>
       setIsBulkActionsOpen(false);
       setReloadTick((v) => v + 1);
       if (id && ids.includes(String(id))) {
+        ensureRetainerListAllView();
         navigate("/sales/retainer-invoices");
       }
     } catch (error) {
@@ -1613,7 +1623,10 @@ Amount: ${currency}${formatMoney(amountValue)}</p>
             </button>
             <button
               type="button"
-              onClick={() => navigate("/sales/retainer-invoices")}
+              onClick={() => {
+                ensureRetainerListAllView();
+                navigate("/sales/retainer-invoices");
+              }}
               className="h-8 w-8 rounded-[6px] border border-[#cfd5e2] bg-white text-[#ef4444] inline-flex items-center justify-center hover:bg-[#fff5f5]"
             >
               <X size={15} />

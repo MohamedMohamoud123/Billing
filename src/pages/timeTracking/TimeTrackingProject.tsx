@@ -5,7 +5,7 @@ import { projectsAPI, timeEntriesAPI, customersAPI, usersAPI } from "../../servi
 import toast from "react-hot-toast";
 import NewCustomViewForm from "./NewCustomViewForm";
 import NewLogEntryForm from "./NewLogEntryForm";
-import BulkUpdateModal from "../purchases/shared/BulkUpdateModal";
+import BulkUpdateModal from "../Expense/shared/BulkUpdateModal";
 import ProjectsCustomizeColumnsModal from "./components/ProjectsCustomizeColumnsModal";
 
 export default function TimeTrackingProject() {
@@ -1560,10 +1560,10 @@ export default function TimeTrackingProject() {
   };
 
   return (
-    <div className="flex flex-col w-full relative">
+    <div className="flex flex-col w-full relative h-[calc(100vh-64px)] overflow-hidden">
       {/* Header */}
       {selectedProjects.length === 0 && (
-        <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3 sticky top-0 z-30 shadow-sm">
           <div ref={dropdownRef} className="relative">
             <button
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -1686,7 +1686,7 @@ export default function TimeTrackingProject() {
       )}
 
       {selectedProjects.length > 0 && (
-        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 sticky top-0 z-30 shadow-sm">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowBulkUpdateModal(true)}
@@ -1706,11 +1706,11 @@ export default function TimeTrackingProject() {
         </div>
       )}
 
-      <div className="min-h-[calc(100vh-60px)] bg-white">
+      <div className="flex-1 overflow-hidden bg-white flex flex-col">
         {viewMode === 'list' ? (
-          <div className="overflow-x-auto overflow-y-visible border-t border-gray-200 bg-white">
+          <div className="flex-1 overflow-auto border-t border-gray-200 bg-white">
             <table className="w-full border-collapse bg-white">
-              <thead className="relative z-10">
+              <thead className="sticky top-0 z-20 bg-gray-50 shadow-sm">
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="w-[60px] px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500 projects-select-header">
                     <div className="flex items-center gap-2 projects-select-header-actions" ref={projectsColumnsMenuRef}>
@@ -2470,8 +2470,8 @@ export default function TimeTrackingProject() {
                   fontSize: '14px',
                   fontWeight: '500'
                 }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = '#e5e7eb'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = '#f3f4f6'}
+                onMouseEnter={(e) => (e.target as any).style.backgroundColor = '#e5e7eb'}
+                onMouseLeave={(e) => (e.target as any).style.backgroundColor = '#f3f4f6'}
               >
                 Cancel
               </button>
@@ -2492,8 +2492,8 @@ export default function TimeTrackingProject() {
                   fontWeight: '500',
                   transition: 'background-color 0.2s'
                 }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = '#0D4A52'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = '#156372'}
+                onMouseEnter={(e) => (e.target as any).style.backgroundColor = '#0D4A52'}
+                onMouseLeave={(e) => (e.target as any).style.backgroundColor = '#156372'}
               >
                 Export
               </button>
@@ -2889,8 +2889,8 @@ export default function TimeTrackingProject() {
                   fontSize: '14px',
                   fontWeight: '500'
                 }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = '#e5e7eb'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = '#f3f4f6'}
+                onMouseEnter={(e) => (e.target as any).style.backgroundColor = '#e5e7eb'}
+                onMouseLeave={(e) => (e.target as any).style.backgroundColor = '#f3f4f6'}
               >
                 Cancel
               </button>
@@ -2917,8 +2917,8 @@ export default function TimeTrackingProject() {
                   fontWeight: '500',
                   transition: 'background-color 0.2s'
                 }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = '#0D4A52'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = '#156372'}
+                onMouseEnter={(e) => (e.target as any).style.backgroundColor = '#0D4A52'}
+                onMouseLeave={(e) => (e.target as any).style.backgroundColor = '#156372'}
               >
                 Export
               </button>

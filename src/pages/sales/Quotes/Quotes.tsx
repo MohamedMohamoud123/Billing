@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingSpinner from "../../../components/LoadingSpinner";
 import { getQuotes, deleteQuotes, updateQuote, getCustomers, getProjects, getSalespersons, getCustomViews, deleteCustomView } from "../salesModel";
@@ -508,6 +508,30 @@ export default function Quotes() {
     loadData();
   }, [location.pathname]);
 
+  const resolveCustomerName = (q: Quote) => {
+    // If it's already an object with a name, use it
+    if (typeof q.customer === 'object' && q.customer) {
+      const name = q.customer.displayName || q.customer.name || q.customer.companyName;
+      if (name) return name;
+    }
+
+    // Try to find by ID in our customers list
+    const customerId = q.customerId || (typeof q.customer === 'string' ? q.customer : q.customer?._id || q.customer?.id);
+    if (customerId) {
+      const found = customers.find(c => (c._id || c.id) === customerId);
+      if (found) return found.displayName || found.name || found.companyName || found.company_name;
+    }
+
+    // If customerName exists but looks like an ID, try one last time to match it as an ID
+    if (q.customerName && q.customerName.startsWith('cus-')) {
+      const found = customers.find(c => (c._id || c.id) === q.customerName);
+      if (found) return found.displayName || found.name || found.companyName;
+    }
+
+    // Fallback to what we have
+    return q.customerName || (typeof q.customer === 'string' ? q.customer : '') || 'N/A';
+  };
+
   const getQuoteFieldValue = (quote, fieldName) => {
     const getCustomerName = (q) => {
       if (q.customerName) return q.customerName;
@@ -521,7 +545,7 @@ export default function Quotes() {
       "Date": quote.quoteDate || quote.date || "",
       "Quote#": quote.quoteNumber || quote.id || "",
       "Reference Number": quote.referenceNumber || "",
-      "Customer Name": getCustomerName(quote),
+      "Customer Name": resolveCustomerName(quote),
       "Status": quote.status || "draft",
       "Amount": quote.total || quote.amount || 0,
       "Project Name": quote.projectName || "",
@@ -2089,11 +2113,22 @@ export default function Quotes() {
     return `${day}/${month}/${year}`;
   };
 
+  const headerRowRef = useRef<HTMLDivElement | null>(null);
+  const [headerRowHeight, setHeaderRowHeight] = useState(56);
+
+  useLayoutEffect(() => {
+    const height = headerRowRef.current?.offsetHeight || 0;
+    setHeaderRowHeight(height || 56);
+  }, [selectedQuotes.length, selectedView]);
+
   return (
-    <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
+    <div className="flex flex-col h-[calc(100vh-64px)] w-full bg-white font-sans text-gray-800 antialiased relative overflow-hidden">
       {/* Header Section */}
       {selectedQuotes.length > 0 ? (
-        <div className="flex items-center justify-between border-b border-gray-100 bg-white relative overflow-visible px-4">
+        <div
+          ref={headerRowRef}
+          className="sticky top-0 z-30 flex items-center justify-between border-b border-gray-100 bg-white relative overflow-visible px-4"
+        >
           <div className="flex items-center gap-2 py-2.5">
             <button
               className="px-4 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
@@ -2147,7 +2182,10 @@ export default function Quotes() {
           </button>
         </div>
       ) : (
-        <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white">
+        <div
+          ref={headerRowRef}
+          className="sticky top-0 z-30 flex items-center justify-between px-4 border-b border-gray-100 bg-white"
+        >
           <div className="flex items-center gap-8 pl-4">
             <div className="relative" ref={dropdownRef}>
               <button
@@ -2432,11 +2470,14 @@ export default function Quotes() {
             </button>
           </div>
         ) : (
-          <div className="flex-1 overflow-x-auto bg-white min-h-0">
+          <div
+            className="flex-1 overflow-auto bg-white min-h-0"
+            style={{ height: `calc(100% - ${headerRowHeight}px)` }}
+          >
             <table className="w-full text-left border-collapse" style={{ minWidth: `${tableMinWidth}px` }}>
-              <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+              <thead className="bg-[#f6f7fb] sticky top-0 z-20 border-b border-[#e6e9f2]">
                 <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
-                  <th className="w-16 px-4 py-3 text-left sticky left-0 z-20 bg-[#f6f7fb]">
+                  <th className="w-16 px-4 py-3 text-left bg-[#f6f7fb]">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -2482,7 +2523,7 @@ export default function Quotes() {
                       </th>
                     );
                   })}
-                  <th className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-[#f6f7fb] border-l border-transparent">
+                  <th className="w-10 px-4 py-3 text-right bg-[#f6f7fb] border-l border-transparent">
                     <button
                       type="button"
                       className="text-gray-400 hover:text-[#156372]"
@@ -2504,7 +2545,7 @@ export default function Quotes() {
                     className={`group transition-all hover:bg-[#f8fafc] cursor-pointer ${selectedQuotes.includes(quote.id) ? 'bg-[#156372]/5' : ''}`}
                     onClick={() => navigate(`/sales/quotes/${quote.id}`)}
                   >
-                    <td className="px-4 py-3 sticky left-0 z-20 bg-inherit" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-3 bg-inherit" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 shrink-0" />
                         <div className="h-5 w-px bg-transparent shrink-0" />
@@ -2553,14 +2594,14 @@ export default function Quotes() {
                           </span>
                         ) : colKey === 'customerName' ? (
                           <span className="text-[#156372]">
-                            {quote.customerName || (typeof quote.customer === 'object' && (quote.customer?.displayName || quote.customer?.name)) || 'N/A'}
+                            {resolveCustomerName(quote)}
                           </span>
                         ) : (
                           quote[colKey] || "-"
                         )}
                       </td>
                     ))}
-                    <td className="w-10 px-4 py-3 text-right sticky right-0 z-20 bg-white/95 backdrop-blur-sm border-l border-[#eef1f6] group-hover:bg-[#f8fafc]/95 transition-colors shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]"></td>
+                    <td className="w-10 px-4 py-3 text-right border-l border-[#eef1f6] group-hover:bg-[#f8fafc]/95 transition-colors"></td>
                   </tr>
                 ))}
               </tbody>

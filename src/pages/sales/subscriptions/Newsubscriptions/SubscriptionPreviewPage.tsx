@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { creditNotesAPI, invoicesAPI, paymentsReceivedAPI } from "../../../../services/api";
 
@@ -833,6 +834,7 @@ const SubscriptionPreviewPage = () => {
             } catch {
               // ignore storage errors
             }
+            toast.success(isEditMode ? "Subscription updated successfully." : "Subscription created successfully.");
             navigate("/sales/subscriptions");
           }}
           className="px-5 py-2 bg-[#22b573] text-white rounded font-bold text-[13px] hover:brightness-95"

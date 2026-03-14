@@ -1,5 +1,6 @@
-import React, { useMemo, useRef, useEffect, useState } from "react";
+import React, { useMemo, useRef, useEffect, useLayoutEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import {
     ChevronDown,
     Search,
@@ -103,6 +104,7 @@ const SubscriptionsPage = () => {
     const [addressFieldSearch, setAddressFieldSearch] = useState("");
     const [isAddressPickerOpen, setIsAddressPickerOpen] = useState(false);
     const [columnSearch, setColumnSearch] = useState("");
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
     const filterDropdownRef = useRef<HTMLDivElement>(null);
     const moreDropdownRef = useRef<HTMLDivElement>(null);
@@ -513,6 +515,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsCancelModalOpen(false);
         setSelectedIds([]);
+        toast.success("Subscriptions cancelled successfully.");
     };
 
     const handleSavePause = () => {
@@ -549,6 +552,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsPauseModalOpen(false);
         setSelectedIds([]);
+        toast.success("Subscriptions paused successfully.");
     };
 
     const handleSaveResume = () => {
@@ -582,6 +586,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsResumeModalOpen(false);
         setSelectedIds([]);
+        toast.success("Subscriptions resumed successfully.");
     };
 
     const handleUpdateAutocharge = () => {
@@ -604,6 +609,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsAutochargeModalOpen(false);
         setSelectedIds([]);
+        toast.success("Autocharge updated successfully.");
     };
 
     const handleUpdateNextBillingDate = () => {
@@ -635,6 +641,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsNextBillingModalOpen(false);
         setSelectedIds([]);
+        toast.success("Next billing date updated successfully.");
     };
 
     const handleProceedPaymentTerms = () => {
@@ -658,6 +665,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsPaymentTermsModalOpen(false);
         setSelectedIds([]);
+        toast.success("Payment terms updated successfully.");
     };
 
     const INVOICE_PDF_TEMPLATES = useMemo<string[]>(() => [], []);
@@ -689,6 +697,7 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsInvoiceTemplateModalOpen(false);
         setSelectedIds([]);
+        toast.success("Invoice template updated successfully.");
     };
 
     const handleProceedUpdateAddress = () => {
@@ -719,12 +728,38 @@ const SubscriptionsPage = () => {
         persistSubscriptions(next);
         setIsUpdateAddressModalOpen(false);
         setSelectedIds([]);
+        toast.success("Address updated successfully.");
     };
 
+    const handleProceedDelete = () => {
+        if (selectedIds.length === 0) {
+            setIsDeleteModalOpen(false);
+            return;
+        }
+        const next = subscriptions.filter((sub: any) => !selectedIds.includes(sub.id));
+        persistSubscriptions(next);
+        setSelectedIds([]);
+        setIsDeleteModalOpen(false);
+        toast.success("Selected subscriptions deleted.");
+    };
+
+    const stickyTopOffset = 0;
+    const headerRowRef = useRef<HTMLDivElement | null>(null);
+    const [headerRowHeight, setHeaderRowHeight] = useState(56);
+
+    useLayoutEffect(() => {
+        const headerHeight = headerRowRef.current?.offsetHeight || 0;
+        setHeaderRowHeight(headerHeight || 56);
+    }, [selectedIds.length, filterType]);
+
     return (
-        <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
+        <div className="flex flex-col h-[calc(100vh-64px)] w-full bg-white font-sans text-gray-800 antialiased relative overflow-hidden">
             {selectedIds.length > 0 ? (
-                <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white relative overflow-visible mt-3">
+                <div
+                    ref={headerRowRef}
+                    className="sticky z-30 flex items-center justify-between px-4 border-b border-gray-100 bg-white relative overflow-visible"
+                    style={{ top: stickyTopOffset }}
+                >
                     <div className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-2 pr-2 overflow-visible">
                         <div className="flex min-w-0 items-center gap-2 sm:gap-3 overflow-x-auto whitespace-nowrap">
                             {[
@@ -772,6 +807,17 @@ const SubscriptionsPage = () => {
                                     >
                                         Invoice Template
                                     </button>
+                                    <div className="h-px bg-gray-100 my-1" />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setMoreDropdownOpen(false);
+                                            setIsDeleteModalOpen(true);
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                                    >
+                                        Delete Selected
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -797,7 +843,11 @@ const SubscriptionsPage = () => {
                     </button>
                 </div>
             ) : (
-                <div className="flex items-start justify-between px-4 border-b border-gray-100 bg-white relative overflow-visible mt-3">
+                <div
+                    ref={headerRowRef}
+                    className="sticky z-30 flex items-start justify-between px-4 border-b border-gray-100 bg-white relative overflow-visible"
+                    style={{ top: stickyTopOffset }}
+                >
                     <div className="flex items-center gap-6 pl-4">
                         <div className="relative" ref={filterDropdownRef}>
                             <div
@@ -872,9 +922,15 @@ const SubscriptionsPage = () => {
                 </div>
             )}
 
-            <div className="flex-1 overflow-x-auto bg-white min-h-0">
+            <div
+                className="flex-1 overflow-auto bg-white min-h-0"
+                style={{ height: `calc(100% - ${headerRowHeight}px)` }}
+            >
                 <table className="w-full text-left border-collapse min-w-[1200px]">
-                    <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+                    <thead
+                        className="bg-[#f6f7fb] sticky z-20 border-b border-[#e6e9f2]"
+                        style={{ top: 0 }}
+                    >
                         <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
                             <th className="px-4 py-3 w-16 min-w-[64px]">
                                 <div className="flex items-center gap-2">
@@ -1987,6 +2043,45 @@ const SubscriptionsPage = () => {
                             <button
                                 type="button"
                                 onClick={() => setIsCancelModalOpen(false)}
+                                className="px-5 py-2 rounded-md border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isDeleteModalOpen && (
+                <div className="fixed inset-0 bg-black/50 z-[10000] flex items-start justify-center pt-8 px-4 pb-8 overflow-y-auto">
+                    <div className="w-full max-w-[520px] rounded-xl bg-white shadow-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#fbfbfd]">
+                            <div className="text-[16px] font-medium text-gray-800">Delete Subscriptions</div>
+                            <button
+                                type="button"
+                                onClick={() => setIsDeleteModalOpen(false)}
+                                className="h-8 w-8 rounded-md border border-blue-500 bg-white flex items-center justify-center hover:bg-blue-50"
+                                aria-label="Close"
+                            >
+                                <X size={16} className="text-red-500" />
+                            </button>
+                        </div>
+
+                        <div className="px-6 py-5 text-sm text-gray-700">
+                            Are you sure you want to delete the selected subscriptions? This action cannot be undone.
+                        </div>
+
+                        <div className="flex items-center gap-2 px-6 py-4 border-t border-gray-100 bg-white">
+                            <button
+                                type="button"
+                                onClick={handleProceedDelete}
+                                className="px-5 py-2 rounded-md bg-red-500 text-white text-sm font-semibold hover:brightness-95"
+                            >
+                                Delete
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsDeleteModalOpen(false)}
                                 className="px-5 py-2 rounded-md border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
                             >
                                 Cancel
