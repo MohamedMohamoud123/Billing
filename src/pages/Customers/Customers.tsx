@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getCustomViews, getCustomersPaginated, getCustomers } from "../salesModel";
-import { customersAPI, taxesAPI } from "../../services/api";
+import { customersAPI, taxesAPI, reportingTagsAPI, currenciesAPI } from "../../services/api";
 import FieldCustomization from "../shared/FieldCustomization";
 import { usePaymentTermsDropdown } from "../../../hooks/usePaymentTermsDropdown";
 import { toast } from "react-toastify";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import { ChevronDown, ChevronUp, Plus, MoreVertical, Search, ArrowUpDown, Filter, Star, X, Trash2, Download, Upload, Settings, RefreshCw, ChevronRight, ChevronLeft, GripVertical, Lock, Users, FileText, Check, Printer, Eye, EyeOff, Info, Layers, Edit, ClipboardList, SlidersHorizontal, Layout, AlignLeft, RotateCcw, Pin, PinOff, Loader2, ImageIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, MoreVertical, Search, ArrowUpDown, Filter, Star, X, Trash2, Download, Upload, Settings, RefreshCw, ChevronRight, ChevronLeft, GripVertical, Lock, Users, FileText, Check, Eye, EyeOff, Info, Layers, Edit, ClipboardList, SlidersHorizontal, Layout, AlignLeft, RotateCcw, Pin, PinOff, Loader2, AlertTriangle } from "lucide-react";
+import SearchableDropdown from "../../components/ui/SearchableDropdown";
 
 const defaultCustomerViews = [
   "All Customers",
@@ -129,11 +130,7 @@ export default function Customers() {
     toast.success("Column widths reset to default");
   };
 
-  const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
-  const [settingsDropdownPosition, setSettingsDropdownPosition] = useState({ top: 0, left: 0 });
   const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false);
-  const settingsDropdownRef = useRef<HTMLDivElement>(null);
-  const settingsDropdownMenuRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
 
   const visibleColumns = useMemo(() => columns.filter(c => c.visible), [columns]);
@@ -264,19 +261,128 @@ export default function Customers() {
   const [visibilityPreference, setVisibilityPreference] = useState("only-me");
   const [hoveredView, setHoveredView] = useState(null);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isBulkMoreMenuOpen, setIsBulkMoreMenuOpen] = useState(false);
   const [isSortBySubmenuOpen, setIsSortBySubmenuOpen] = useState(false);
   const [isBulkUpdateModalOpen, setIsBulkUpdateModalOpen] = useState(false);
+  const [bulkConsolidatedAction, setBulkConsolidatedAction] = useState<null | "enable" | "disable">(null);
+  const [isBulkConsolidatedUpdating, setIsBulkConsolidatedUpdating] = useState(false);
   const [bulkUpdateData, setBulkUpdateData] = useState({
     customerType: "",
+    creditLimit: "",
     currency: "",
     taxRate: "",
     paymentTerms: "",
     customerLanguage: "",
-    accountsReceivable: ""
+    accountsReceivable: "",
+    priceListId: "",
+    reportingTags: {} as Record<string, string>
   });
   const [isCurrencyDropdownOpen, setIsCurrencyDropdownOpen] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
   const currencyDropdownRef = useRef(null);
+  const [priceLists, setPriceLists] = useState<Array<{ id: string; name: string; currency: string; pricingScheme: string }>>([]);
+  const [availableReportingTags, setAvailableReportingTags] = useState<any[]>([]);
+
+  const loadPriceLists = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('inv_price_lists_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        setPriceLists(parsed.map((p: any) => ({
+          id: String(p.id || p._id || ""),
+          name: String(p.name || ""),
+          currency: String(p.currency || ""),
+          pricingScheme: String(p.pricingScheme || "")
+        })).filter((p: any) => p.id));
+      } else {
+        setPriceLists([]);
+      }
+    } catch {
+      setPriceLists([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPriceLists();
+  }, [loadPriceLists]);
+
+  const normalizeReportingTagOptions = (tag: any): string[] => {
+    const candidates = Array.isArray(tag?.options)
+      ? tag.options
+      : Array.isArray(tag?.values)
+        ? tag.values
+        : [];
+
+    return candidates
+      .map((option: any) => {
+        if (typeof option === "string") return option.trim();
+        if (option && typeof option === "object") {
+          return String(
+            option.value ??
+            option.label ??
+            option.name ??
+            option.option ??
+            option.title ??
+            ""
+          ).trim();
+        }
+        return "";
+      })
+      .filter((value: string) => Boolean(value));
+  };
+
+  const normalizeReportingTagAppliesTo = (tag: any): string[] => {
+    const direct = Array.isArray(tag?.appliesTo) ? tag.appliesTo : [];
+    const fromModulesObject = tag?.modules && typeof tag.modules === "object"
+      ? Object.keys(tag.modules).filter((key) => Boolean(tag.modules[key]))
+      : [];
+    const fromModuleSettings = tag?.moduleSettings && typeof tag.moduleSettings === "object"
+      ? Object.keys(tag.moduleSettings).filter((key) => Boolean(tag.moduleSettings[key]))
+      : [];
+    const fromAssociations = Array.isArray(tag?.associations) ? tag.associations : [];
+    const fromModulesList = Array.isArray(tag?.modulesList) ? tag.modulesList : [];
+
+    return [...direct, ...fromModulesObject, ...fromModuleSettings, ...fromAssociations, ...fromModulesList]
+      .map((value: any) => String(value || "").toLowerCase().trim())
+      .filter(Boolean);
+  };
+
+  const loadReportingTags = useCallback(async () => {
+    try {
+      const response = await reportingTagsAPI.getAll();
+      const rows = Array.isArray(response) ? response : (response?.data || []);
+      if (!Array.isArray(rows)) {
+        setAvailableReportingTags([]);
+        return;
+      }
+
+      const filtered = rows
+        .filter((tag: any) => {
+          const appliesTo = normalizeReportingTagAppliesTo(tag);
+          const hasCustomersAssociation = appliesTo.some((entry) => entry.includes("customer"));
+          return hasCustomersAssociation;
+        })
+        .map((tag: any) => ({
+          ...tag,
+          options: normalizeReportingTagOptions(tag),
+        }));
+
+      const tagsToUse = filtered.length > 0
+        ? filtered
+        : rows.map((tag: any) => ({
+          ...tag,
+          options: normalizeReportingTagOptions(tag),
+        }));
+
+      setAvailableReportingTags(tagsToUse);
+    } catch (error) {
+      setAvailableReportingTags([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReportingTags();
+  }, [loadReportingTags]);
 
   // Use payment terms hook
   const paymentTermsHook = usePaymentTermsDropdown({
@@ -294,9 +400,18 @@ export default function Customers() {
   const [isAccountsReceivableDropdownOpen, setIsAccountsReceivableDropdownOpen] = useState(false);
   const [accountsReceivableSearch, setAccountsReceivableSearch] = useState("");
   const accountsReceivableDropdownRef = useRef(null);
+
+  const closeBulkUpdateDropdowns = () => {
+    setIsCurrencyDropdownOpen(false);
+    setIsTaxRateDropdownOpen(false);
+    paymentTermsHook.close();
+    setIsCustomerLanguageDropdownOpen(false);
+    setIsAccountsReceivableDropdownOpen(false);
+  };
   const dropdownRef = useRef(null);
   const modalRef = useRef(null);
   const moreMenuRef = useRef(null);
+  const bulkMoreMenuRef = useRef(null);
   const [isExportCurrentViewModalOpen, setIsExportCurrentViewModalOpen] = useState(false);
   const [isExportCustomersModalOpen, setIsExportCustomersModalOpen] = useState(false);
   const [exportData, setExportData] = useState({
@@ -310,11 +425,55 @@ export default function Customers() {
     showPassword: false
   });
   useEffect(() => {
-    const state = (location.state as { openExportModal?: boolean } | null) || null;
-    if (!state?.openExportModal) return;
+    const state =
+      (location.state as
+        | {
+          openExportModal?: boolean;
+          openBulkUpdateModal?: boolean;
+          openBulkDeleteModal?: boolean;
+          preselectedCustomerIds?: string[];
+        }
+        | null) || null;
 
-    setIsExportCustomersModalOpen(true);
-    navigate(location.pathname, { replace: true, state: null });
+    if (!state) return;
+
+    const preselectedIds = Array.isArray(state.preselectedCustomerIds) ? state.preselectedCustomerIds : [];
+
+    if (state.openExportModal) {
+      setIsExportCustomersModalOpen(true);
+    }
+
+    if (state.openBulkUpdateModal) {
+      if (preselectedIds.length) {
+        setSelectedCustomers(new Set(preselectedIds));
+      }
+      setBulkUpdateData({
+        customerType: "",
+        creditLimit: "",
+        currency: "",
+        taxRate: "",
+        paymentTerms: "",
+        customerLanguage: "",
+        accountsReceivable: "",
+        priceListId: "",
+        reportingTags: {},
+      });
+      setIsBulkUpdateModalOpen(true);
+    }
+
+    if (state.openBulkDeleteModal) {
+      if (preselectedIds.length) {
+        setSelectedCustomers(new Set(preselectedIds));
+        setDeleteCustomerIds(preselectedIds);
+      } else {
+        setDeleteCustomerIds([]);
+      }
+      setIsBulkDeleteModalOpen(true);
+    }
+
+    if (state.openExportModal || state.openBulkUpdateModal || state.openBulkDeleteModal) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
   }, [location.pathname, location.state, navigate]);
 
   const [isDecimalFormatDropdownOpen, setIsDecimalFormatDropdownOpen] = useState(false);
@@ -649,30 +808,24 @@ export default function Customers() {
     });
   };
 
-  const [currencyOptions, setCurrencyOptions] = useState([]);
+  const [currencyOptions, setCurrencyOptions] = useState<Array<{ code: string; name: string }>>([]);
 
-  // Fetch currencies from database
+  // Fetch currencies from settings (used across the app)
   useEffect(() => {
     const fetchCurrencies = async () => {
       try {
-        const response = await fetch('/api/settings/currencies', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.data) {
-            // Format currencies for dropdown: only show code
-            const formatted = data.data.map(curr => ({
-              code: curr.code,
-              name: curr.code  // Only show code, not full name
-            }));
-            setCurrencyOptions(formatted);
-          }
-        }
-      } catch (error) {
-        // Fallback to empty array if fetch fails
+        const response: any = await currenciesAPI.getAll({ limit: 2000 });
+        const rows = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []);
+        const formatted = rows
+          .map((curr: any) => {
+            const code = String(curr?.code || curr?.currencyCode || curr?.isoCode || "").toUpperCase().trim();
+            const title = String(curr?.currencyName || curr?.name || curr?.currency || "").trim();
+            if (!code) return null;
+            return { code, name: title ? `${code} - ${title}` : code };
+          })
+          .filter(Boolean) as Array<{ code: string; name: string }>;
+        setCurrencyOptions(formatted);
+      } catch {
         setCurrencyOptions([]);
       }
     };
@@ -1050,6 +1203,9 @@ export default function Customers() {
       if (moreMenuRef.current && !moreMenuRef.current.contains(event.target)) {
         setIsMoreMenuOpen(false);
       }
+      if (bulkMoreMenuRef.current && !bulkMoreMenuRef.current.contains(event.target)) {
+        setIsBulkMoreMenuOpen(false);
+      }
       if (decimalFormatDropdownRef.current && !decimalFormatDropdownRef.current.contains(event.target)) {
         setIsDecimalFormatDropdownOpen(false);
       }
@@ -1102,26 +1258,14 @@ export default function Customers() {
       }
     };
 
-    if (isDropdownOpen || isMoreMenuOpen || isDecimalFormatDropdownOpen || isModuleDropdownOpen || Object.keys(isFieldDropdownOpen).length > 0 || Object.keys(isComparatorDropdownOpen).length > 0 || isMergeCustomerDropdownOpen || isMoreOptionsDropdownOpen || isSearchTypeDropdownOpen || isFilterDropdownOpen || isStatusDropdownOpen || isCustomerTypeDropdownOpen || openReceivablesDropdownId !== null || isSearchHeaderDropdownOpen || settingsDropdownOpen) {
+    if (isDropdownOpen || isMoreMenuOpen || isDecimalFormatDropdownOpen || isModuleDropdownOpen || Object.keys(isFieldDropdownOpen).length > 0 || Object.keys(isComparatorDropdownOpen).length > 0 || isMergeCustomerDropdownOpen || isMoreOptionsDropdownOpen || isSearchTypeDropdownOpen || isFilterDropdownOpen || isStatusDropdownOpen || isCustomerTypeDropdownOpen || openReceivablesDropdownId !== null || isSearchHeaderDropdownOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isDropdownOpen, isMoreMenuOpen, isDecimalFormatDropdownOpen, isModuleDropdownOpen, isFieldDropdownOpen, isComparatorDropdownOpen, openReceivablesDropdownId, isSearchHeaderDropdownOpen, settingsDropdownOpen]);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      const clickedIcon = settingsDropdownRef.current?.contains(event.target);
-      const clickedMenu = settingsDropdownMenuRef.current?.contains(event.target);
-      if (!clickedIcon && !clickedMenu) {
-        setSettingsDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isDropdownOpen, isMoreMenuOpen, isDecimalFormatDropdownOpen, isModuleDropdownOpen, isFieldDropdownOpen, isComparatorDropdownOpen, openReceivablesDropdownId, isSearchHeaderDropdownOpen]);
 
   const handleViewSelect = (view) => {
     setSelectedView(view);
@@ -1324,6 +1468,19 @@ export default function Customers() {
     loadCustomers();
   }, [currentPage, itemsPerPage, selectedView]);
 
+  const [isNewDropdownOpen, setIsNewDropdownOpen] = useState(false);
+  const newDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close new dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (newDropdownRef.current && !newDropdownRef.current.contains(event.target as Node)) {
+        setIsNewDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   // Close modal when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -1429,28 +1586,10 @@ export default function Customers() {
       toast.error("Please select at least one customer to merge.");
       return;
     }
-
-    // Pre-select merge target depending on selection count:
-    // - If one customer selected, pick the first available other customer as target.
-    // - If multiple customers selected, use the last selected item as the target.
-    const selectedArr = Array.from(selectedCustomers);
-    if (selectedArr.length === 1) {
-      const firstOther = singleSelectionMergeTargets[0];
-      if (!firstOther) {
-        toast.error("No other customer is available to merge.");
-        return;
-      }
-      setMergeTargetCustomer(firstOther || null);
-    } else {
-      const lastSelectedId = selectedArr[selectedArr.length - 1];
-      const lastSelectedCustomer = customers.find(c => c.id === lastSelectedId);
-      if (!lastSelectedCustomer) {
-        toast.error("Please select a customer to merge with.");
-        return;
-      }
-      setMergeTargetCustomer(lastSelectedCustomer || null);
-    }
-
+    // Do not preselect a merge target (Zoho-style: user chooses master profile)
+    setMergeTargetCustomer(null);
+    setIsMergeCustomerDropdownOpen(false);
+    setMergeCustomerSearch("");
     setIsMergeModalOpen(true);
   };
 
@@ -1493,6 +1632,52 @@ export default function Customers() {
     }
 
     setIsAssociateTemplatesModalOpen(true);
+  };
+
+  const handleBulkEnableConsolidatedBilling = async () => {
+    if (selectedCustomers.size === 0) {
+      toast.error("Please select at least one customer.");
+      return;
+    }
+    setBulkConsolidatedAction("enable");
+  };
+
+  const handleBulkDisableConsolidatedBilling = async () => {
+    if (selectedCustomers.size === 0) {
+      toast.error("Please select at least one customer.");
+      return;
+    }
+    setBulkConsolidatedAction("disable");
+  };
+
+  const confirmBulkConsolidatedBilling = async () => {
+    if (!bulkConsolidatedAction) return;
+    if (selectedCustomers.size === 0) {
+      toast.error("Please select at least one customer.");
+      setBulkConsolidatedAction(null);
+      return;
+    }
+
+    const ids = Array.from(selectedCustomers);
+    const count = ids.length;
+    const enabled = bulkConsolidatedAction === "enable";
+
+    setIsBulkConsolidatedUpdating(true);
+    try {
+      await customersAPI.bulkUpdate(ids, {
+        consolidatedBilling: enabled,
+        enableConsolidatedBilling: enabled,
+        isConsolidatedBillingEnabled: enabled,
+      });
+      await loadCustomers();
+      toast.success(`${enabled ? "Enabled" : "Disabled"} consolidated billing for ${count} customer(s).`);
+      setSelectedCustomers(new Set());
+      setBulkConsolidatedAction(null);
+    } catch {
+      toast.error(`Failed to ${enabled ? "enable" : "disable"} consolidated billing. Please try again.`);
+    } finally {
+      setIsBulkConsolidatedUpdating(false);
+    }
   };
 
   const handleSaveTemplates = async () => {
@@ -1675,11 +1860,14 @@ export default function Customers() {
   const handleOpenBulkUpdate = () => {
     setBulkUpdateData({
       customerType: "",
+      creditLimit: "",
       currency: "",
       taxRate: "",
       paymentTerms: "",
       customerLanguage: "",
-      accountsReceivable: ""
+      accountsReceivable: "",
+      priceListId: "",
+      reportingTags: {}
     });
     setIsBulkUpdateModalOpen(true);
   };
@@ -1703,11 +1891,14 @@ export default function Customers() {
     // Check if at least one field has a value
     const hasAtLeastOneField =
       bulkUpdateData.customerType ||
+      String(bulkUpdateData.creditLimit || "").trim() ||
       bulkUpdateData.currency ||
       bulkUpdateData.taxRate ||
       bulkUpdateData.paymentTerms ||
       bulkUpdateData.customerLanguage ||
-      bulkUpdateData.accountsReceivable;
+      bulkUpdateData.accountsReceivable ||
+      bulkUpdateData.priceListId ||
+      Object.values(bulkUpdateData.reportingTags || {}).some((v) => String(v || "").trim() !== "");
 
     if (!hasAtLeastOneField) {
       toast.error("Please fill in at least one field to update.");
@@ -1720,6 +1911,11 @@ export default function Customers() {
       // Only include fields that have values
       if (bulkUpdateData.customerType) {
         updateData.customerType = bulkUpdateData.customerType;
+      }
+      const parsedCreditLimit = parseFloat(String(bulkUpdateData.creditLimit || "").trim());
+      if (!Number.isNaN(parsedCreditLimit)) {
+        updateData.creditLimit = parsedCreditLimit;
+        updateData.credit_limit = parsedCreditLimit;
       }
       if (bulkUpdateData.currency) {
         updateData.currency = bulkUpdateData.currency;
@@ -1735,6 +1931,25 @@ export default function Customers() {
       }
       if (bulkUpdateData.accountsReceivable) {
         updateData.accountsReceivable = bulkUpdateData.accountsReceivable;
+      }
+      if (bulkUpdateData.priceListId) {
+        updateData.priceListId = bulkUpdateData.priceListId;
+      }
+
+      const reportingTagEntries = Object.entries(bulkUpdateData.reportingTags || {})
+        .map(([tagId, value]) => {
+          const matchedTag = availableReportingTags.find((t: any) => String(t?._id || t?.id) === String(tagId));
+          return {
+            tagId,
+            id: tagId,
+            name: matchedTag?.name || "",
+            value: String(value ?? "")
+          };
+        })
+        .filter((entry) => entry.value !== "");
+
+      if (reportingTagEntries.length > 0) {
+        updateData.reportingTags = reportingTagEntries;
       }
 
       // Keep both naming variants for compatibility with existing customer schemas
@@ -1756,11 +1971,14 @@ export default function Customers() {
       // Reset bulk update data
       setBulkUpdateData({
         customerType: "",
+        creditLimit: "",
         currency: "",
         taxRate: "",
         paymentTerms: "",
         customerLanguage: "",
-        accountsReceivable: ""
+        accountsReceivable: "",
+        priceListId: "",
+        reportingTags: {}
       });
     } catch (error) {
       toast.error("Failed to update customers. Please try again.");
@@ -1984,32 +2202,115 @@ export default function Customers() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
+    <div className="flex flex-col h-[calc(100vh-72px)] w-full bg-white font-sans text-gray-800 antialiased relative overflow-hidden">
       {/* Header - Show Bulk Actions Bar when items are selected, otherwise show normal header */}
       {selectedCustomers.size > 0 ? (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white">
+        <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white z-30">
           <div className="flex items-center gap-2">
             <button
-              className="flex items-center gap-1.5 py-1.5 px-4 bg-gradient-to-r from-[#156372] to-[#0D4A52] rounded-md text-sm font-medium text-white cursor-pointer transition-all hover:opacity-90 shadow-sm"
+              className="flex items-center gap-1.5 py-1.5 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50"
               onClick={handleOpenBulkUpdate}
             >
               Bulk Update
             </button>
+
             <button
-              className="flex items-center gap-1.5 py-1.5 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50 flex items-center gap-1"
-              onClick={handleBulkDelete}
+              className={`h-[34px] w-[34px] flex items-center justify-center bg-white border border-gray-200 rounded-md transition-all hover:bg-gray-50 ${isDownloading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+              onClick={handlePrintStatements}
+              title="Download PDF"
+              aria-label="Download PDF"
+              disabled={isDownloading}
             >
-              <Trash2 size={16} /> Delete
+              {isDownloading ? (
+                <Loader2 size={16} className="text-gray-600 animate-spin" />
+              ) : (
+                <FileText size={16} className="text-gray-600" />
+              )}
             </button>
+
+            <div className="mx-2 h-6 w-px bg-gray-200" aria-hidden />
+
+            <button
+              className="flex items-center gap-1.5 py-1.5 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50"
+              onClick={handleBulkMarkActive}
+            >
+              Mark as Active
+            </button>
+            <button
+              className="flex items-center gap-1.5 py-1.5 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50"
+              onClick={handleBulkMarkInactive}
+            >
+              Mark as Inactive
+            </button>
+            <button
+              className="flex items-center gap-1.5 py-1.5 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50"
+              onClick={handleBulkMerge}
+            >
+              Merge
+            </button>
+            <button
+              className="flex items-center gap-1.5 py-1.5 px-4 bg-white border border-gray-200 rounded-md text-sm font-medium text-gray-700 cursor-pointer transition-all hover:bg-gray-50"
+              onClick={() => toast.info("Associate Templates is not set up yet.")}
+            >
+              Associate Templates
+            </button>
+
+            <div className="relative" ref={bulkMoreMenuRef}>
+              <button
+                className="h-[34px] w-[34px] flex items-center justify-center bg-white border border-gray-200 rounded-md cursor-pointer transition-all hover:bg-gray-50"
+                onClick={() => setIsBulkMoreMenuOpen(!isBulkMoreMenuOpen)}
+                aria-label="More"
+                title="More"
+              >
+                <MoreVertical size={16} className="text-gray-600" />
+              </button>
+
+              {isBulkMoreMenuOpen && (
+                <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-[110] py-2">
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      setIsBulkMoreMenuOpen(false);
+                      handleBulkEnableConsolidatedBilling();
+                    }}
+                  >
+                    Enable Consolidated Billing
+                  </button>
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      setIsBulkMoreMenuOpen(false);
+                      handleBulkDisableConsolidatedBilling();
+                    }}
+                  >
+                    Disable Consolidated Billing
+                  </button>
+                  <div className="my-2 h-px bg-gray-200" />
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 cursor-pointer hover:bg-red-50 transition-colors"
+                    onClick={() => {
+                      setIsBulkMoreMenuOpen(false);
+                      handleBulkDelete();
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="flex items-center justify-center min-w-[24px] h-6 px-2 bg-[#156372] rounded text-[13px] font-semibold text-white">{selectedCustomers.size}</span>
               <span className="text-sm text-gray-700">Selected</span>
             </div>
+            <span className="text-xs text-gray-400">Esc</span>
             <button
               onClick={handleClearSelection}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-red-500 hover:text-red-600"
+              aria-label="Clear selection"
+              title="Clear selection"
             >
               <X size={20} />
             </button>
@@ -2017,7 +2318,7 @@ export default function Customers() {
         </div>
       ) : (
         /* Normal Page Header */
-        <div className="flex items-center justify-between px-4 border-b border-gray-100 bg-white relative z-[9999] overflow-visible">
+        <div className="flex-none flex items-center justify-between px-6 py-6 border-b border-gray-100 bg-white z-30">
           <div className="flex items-center gap-6 pl-4">
             {/* Title with Dropdown */}
             <div className="relative" ref={dropdownRef}>
@@ -2119,19 +2420,22 @@ export default function Customers() {
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
             <button
-              className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center gap-1"
-              style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+              className="h-[38px] min-w-[100px] cursor-pointer transition-all text-white px-5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center gap-2"
+              style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
               onClick={() => navigate("/sales/customers/new")}
             >
               <Plus size={16} /> <span className="hidden sm:inline">New</span>
             </button>
+
+
             <div className="relative" ref={moreMenuRef}>
               <button
-                className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors bg-white shadow-sm"
+                className="h-[38px] flex items-center justify-center p-2 bg-white border border-gray-300 border-b-[4px] rounded-lg hover:bg-gray-50 transition-all hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
                 onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
               >
                 <MoreVertical size={18} className="text-gray-500" />
               </button>
+
 
               {isMoreMenuOpen && (
                 <div className="absolute top-full right-0 mt-2 w-60 bg-white border border-gray-100 rounded-lg shadow-xl z-[110] py-2 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -2311,29 +2615,34 @@ export default function Customers() {
         </div>
       )}
 
+
+
+
       {/* Resizing Save Banner */}
-      {hasResized && (
-        <div className="mb-4 flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-md animate-in slide-in-from-top-1 duration-300">
-          <div className="flex items-center gap-3">
-            <Info size={16} className="text-[#156372]" />
-            <span className="text-sm text-[#156372]">You have resized the columns. Would you like to save the changes?</span>
+      {
+        hasResized && (
+          <div className="mb-4 flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-md animate-in slide-in-from-top-1 duration-300">
+            <div className="flex items-center gap-3">
+              <Info size={16} className="text-[#156372]" />
+              <span className="text-sm text-[#156372]">You have resized the columns. Would you like to save the changes?</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSaveLayout}
+                className="px-3 py-1.5 bg-[#10b981] text-white text-xs font-medium rounded hover:bg-[#059669] transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={handleCancelLayout}
+                className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSaveLayout}
-              className="px-3 py-1.5 bg-[#10b981] text-white text-xs font-medium rounded hover:bg-[#059669] transition-colors"
-            >
-              Save
-            </button>
-            <button
-              onClick={handleCancelLayout}
-              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Table Container */}
       {/* Mobile Card View (Mockup Style) */}
@@ -2423,24 +2732,22 @@ export default function Customers() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto bg-white min-h-0">
+      <div className="flex-1 overflow-auto bg-white min-h-0 custom-scrollbar">
         {/* Table */}
         <table
-          className="w-full text-left border-collapse text-[13px]"
+          className="w-full text-left border-collapse text-[13px] table-fixed"
           style={{ minWidth: `${tableMinWidth}px` }}
         >
-          <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
+          <thead className="bg-[#f6f7fb] sticky top-0 z-20 border-b border-[#e6e9f2]">
             <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
               {/* Settings Dropdown Column */}
               <th className="px-4 py-3 w-16 min-w-[64px]">
-                <div className="flex items-center gap-2 relative" ref={settingsDropdownRef}>
+                <div className="flex items-center gap-2 relative">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setSettingsDropdownPosition({ top: rect.bottom + 8, left: rect.left });
-                      setSettingsDropdownOpen(!settingsDropdownOpen);
+                      setIsCustomizeModalOpen(true);
                     }}
                     className="h-6 w-6 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
                     title="Manage columns"
@@ -2480,10 +2787,22 @@ export default function Customers() {
                       )}
                     </div>
                   </div>
+
+                  {/* Column resize handle */}
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    onMouseDown={(e) => startResizing(col.key, e)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/header:opacity-100 transition-opacity"
+                    title="Drag to resize"
+                  >
+                    <div className="absolute left-1/2 top-0 -translate-x-1/2 h-full w-px bg-[#7b8494]/60" />
+                  </div>
                 </th>
               ))}
 
-              <th className="px-4 py-3 w-12 sticky right-0 bg-[#f6f7fb] border-l border-[#e6e9f2]">
+              <th className="px-4 py-3 w-12 sticky right-0 bg-[#f6f7fb]">
                 <div className="flex items-center justify-center">
                   <Search
                     size={14}
@@ -2555,17 +2874,18 @@ export default function Customers() {
                     </td>
 
                     {visibleColumns.map(col => (
-                      <td key={col.key} className={`px-4 py-3 truncate ${col.key !== 'name' && col.key !== 'receivables_bcy' && col.key !== 'companyName' ? 'hidden sm:table-cell' : ''}`} style={{ maxWidth: col.width }}>
+                      <td
+                        key={col.key}
+                        className={`px-4 py-3 truncate ${col.key !== 'name' && col.key !== 'receivables_bcy' && col.key !== 'companyName' ? 'hidden sm:table-cell' : ''}`}
+                        style={{ width: col.width, maxWidth: col.width }}
+                      >
                         {col.key === 'name' ? (
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded bg-gray-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
-                              <ImageIcon size={16} className="text-gray-400" />
-                            </div>
                             <div className="flex flex-col min-w-0">
-                              <span className="text-[#1b5e6a] font-medium hover:underline truncate">
+                              <span className="text-[#1b5e6a] font-medium truncate">
                                 {customer.name || customer.displayName || 'Customer'}
                               </span>
-                              <span className="text-[11px] text-gray-400 truncate">{customer.email || 'No email provided'}</span>
+                              <span className="text-[11px] text-gray-400 truncate md:hidden">{customer.email || 'No email provided'}</span>
                             </div>
                           </div>
                         ) : col.key === 'receivables' || col.key === 'receivables_bcy' ? (
@@ -2578,7 +2898,7 @@ export default function Customers() {
                       </td>
                     ))}
 
-                    <td className="px-4 py-3 sticky right-0 bg-white/95 backdrop-blur-sm border-l border-[#eef1f6] group-hover:bg-[#f8fafc] transition-colors">
+                    <td className="px-4 py-3 sticky right-0 bg-white/95 backdrop-blur-sm group-hover:bg-[#f8fafc] transition-colors">
                       {(hoveredRowId === customer.id || openReceivablesDropdownId === customer.id) && (
                         <div className="flex justify-center">
                           <button
@@ -2611,559 +2931,667 @@ export default function Customers() {
 
 
       {/* Bulk Update Modal */}
-      {isBulkUpdateModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-[560px] my-10">
-            <div className="flex items-center justify-between py-4 px-5 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900 m-0">Bulk Update - Customers</h2>
-              <button
-                className="flex items-center justify-center w-7 h-7 bg-[#156372] border-2 border-white rounded text-white cursor-pointer hover:bg-[#0f4f5a] transition-colors"
-                onClick={() => setIsBulkUpdateModalOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6">
-              {/* Customer Type */}
-              <div className="flex items-center mb-5 last:mb-0">
-                <label className="w-40 flex-shrink-0 text-sm text-gray-700">Customer Type</label>
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="customerType"
-                      value="business"
-                      checked={bulkUpdateData.customerType === "business"}
-                      onChange={(e) => setBulkUpdateData(prev => ({ ...prev, customerType: e.target.value }))}
-                      className="hidden"
-                    />
-                    <span className={`w-[18px] h-[18px] border-2 rounded-full flex items-center justify-center transition-all ${bulkUpdateData.customerType === "business" ? "border-[#156372]" : "border-gray-300"}`}>
-                      {bulkUpdateData.customerType === "business" && <span className="w-2.5 h-2.5 bg-[#156372] rounded-full"></span>}
-                    </span>
-                    Business
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="customerType"
-                      value="individual"
-                      checked={bulkUpdateData.customerType === "individual"}
-                      onChange={(e) => setBulkUpdateData(prev => ({ ...prev, customerType: e.target.value }))}
-                      className="hidden"
-                    />
-                    <span className={`w-[18px] h-[18px] border-2 rounded-full flex items-center justify-center transition-all ${bulkUpdateData.customerType === "individual" ? "border-[#156372]" : "border-gray-300"}`}>
-                      {bulkUpdateData.customerType === "individual" && <span className="w-2.5 h-2.5 bg-[#156372] rounded-full"></span>}
-                    </span>
-                    Individual
-                  </label>
-                </div>
+      {
+        isBulkUpdateModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-[1000] overflow-y-auto pt-10 pb-10">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-[560px] mt-2 mb-2 flex flex-col overflow-visible">
+              <div className="flex items-center justify-between py-4 px-5 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900 m-0">Bulk Update - Customers</h2>
+                <button
+                  className="flex items-center justify-center w-7 h-7 bg-[#156372] border-2 border-white rounded text-white cursor-pointer hover:bg-[#0f4f5a] transition-colors"
+                  onClick={() => setIsBulkUpdateModalOpen(false)}
+                >
+                  <X size={18} />
+                </button>
               </div>
-
-              {/* Currency */}
-              <div className="flex items-center mb-5 last:mb-0">
-                <label className="w-40 flex-shrink-0 text-sm text-gray-700">Currency</label>
-                <div className="flex-1 relative" ref={currencyDropdownRef}>
-                  <div
-                    className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCurrencyDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
-                    onClick={() => {
-                      setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen);
-                      setCurrencySearch("");
-                    }}
-                  >
-                    <span className={bulkUpdateData.currency ? "text-gray-700" : "text-gray-400"}>
-                      {bulkUpdateData.currency ? currencyOptions.find(c => c.code === bulkUpdateData.currency)?.name : ""}
-                    </span>
-                    <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCurrencyDropdownOpen ? "rotate-180" : ""}`} />
+              <div className="p-6 overflow-visible">
+                {/* Customer Type */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Customer Type</label>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="customerType"
+                        value="business"
+                        checked={bulkUpdateData.customerType === "business"}
+                        onChange={(e) => setBulkUpdateData(prev => ({ ...prev, customerType: e.target.value }))}
+                        className="hidden"
+                      />
+                      <span className={`w-[18px] h-[18px] border-2 rounded-full flex items-center justify-center transition-all ${bulkUpdateData.customerType === "business" ? "border-[#156372]" : "border-gray-300"}`}>
+                        {bulkUpdateData.customerType === "business" && <span className="w-2.5 h-2.5 bg-[#156372] rounded-full"></span>}
+                      </span>
+                      Business
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="customerType"
+                        value="individual"
+                        checked={bulkUpdateData.customerType === "individual"}
+                        onChange={(e) => setBulkUpdateData(prev => ({ ...prev, customerType: e.target.value }))}
+                        className="hidden"
+                      />
+                      <span className={`w-[18px] h-[18px] border-2 rounded-full flex items-center justify-center transition-all ${bulkUpdateData.customerType === "individual" ? "border-[#156372]" : "border-gray-300"}`}>
+                        {bulkUpdateData.customerType === "individual" && <span className="w-2.5 h-2.5 bg-[#156372] rounded-full"></span>}
+                      </span>
+                      Individual
+                    </label>
                   </div>
-                  {isCurrencyDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
-                      <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
-                        <Search size={16} className="text-gray-400 flex-shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Search"
-                          value={currencySearch}
-                          onChange={(e) => setCurrencySearch(e.target.value)}
-                          autoFocus
-                          className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
-                        />
-                      </div>
-                      <div className="max-h-[200px] overflow-y-auto">
-                        {filteredCurrencies.map(currency => (
-                          <div
-                            key={currency.code}
-                            className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.currency === currency.code ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
-                            onClick={() => {
-                              setBulkUpdateData(prev => ({ ...prev, currency: currency.code }));
-                              setIsCurrencyDropdownOpen(false);
-                              setCurrencySearch("");
-                            }}
-                          >
-                            {currency.name}
-                          </div>
-                        ))}
-                      </div>
+                </div>
+
+                {/* Credit Limit */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Credit Limit</label>
+                  <div className="flex-1 flex items-center">
+                    <div className="h-[38px] min-w-[52px] px-3 flex items-center justify-center rounded-l-md border border-gray-300 bg-gray-50 text-sm text-gray-700">
+                      {bulkUpdateData.currency || "USD"}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Tax Rate */}
-              <div className="flex items-center mb-5 last:mb-0">
-                <label className="w-40 flex-shrink-0 text-sm text-gray-700">Tax Rate</label>
-                <div className="flex-1 relative" ref={taxRateDropdownRef}>
-                  <div
-                    className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTaxRateDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
-                    onClick={() => {
-                      setIsTaxRateDropdownOpen(!isTaxRateDropdownOpen);
-                    }}
-                  >
-                    <span className={bulkUpdateData.taxRate ? "text-gray-700" : "text-gray-400"}>
-                      {bulkUpdateData.taxRate || "Select a Tax"}
-                    </span>
-                    <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTaxRateDropdownOpen ? "rotate-180" : ""}`} />
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bulkUpdateData.creditLimit}
+                      onChange={(e) => setBulkUpdateData(prev => ({ ...prev, creditLimit: e.target.value }))}
+                      onFocus={closeBulkUpdateDropdowns}
+                      placeholder="0.00"
+                      className="h-[38px] w-full rounded-r-md border border-l-0 border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-[#156372] focus:ring-1 focus:ring-[#156372]"
+                    />
                   </div>
-                  {isTaxRateDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
-                      <div className="max-h-[200px] overflow-y-auto">
-                        {taxRateOptions.map((option, index) => (
-                          option.isHeader ? (
-                            <div key={`header-${index}`} className="px-3.5 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 uppercase tracking-wider sticky top-0 border-y border-gray-100 first:border-t-0">
-                              {option.label}
-                            </div>
-                          ) : (
+                </div>
+
+                {/* Currency */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Currency</label>
+                  <div className="flex-1 relative" ref={currencyDropdownRef}>
+                    <div
+                      className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCurrencyDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
+                      onClick={() => {
+                        const nextOpen = !isCurrencyDropdownOpen;
+                        closeBulkUpdateDropdowns();
+                        setIsCurrencyDropdownOpen(nextOpen);
+                        setCurrencySearch("");
+                      }}
+                    >
+                      <span className={bulkUpdateData.currency ? "text-gray-700" : "text-gray-400"}>
+                        {bulkUpdateData.currency
+                          ? (currencyOptions.find(c => c.code === bulkUpdateData.currency)?.name || bulkUpdateData.currency)
+                          : "Select"}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCurrencyDropdownOpen ? "rotate-180" : ""}`} />
+                    </div>
+                    {isCurrencyDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
+                        <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
+                          <Search size={16} className="text-gray-400 flex-shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Search"
+                            value={currencySearch}
+                            onChange={(e) => setCurrencySearch(e.target.value)}
+                            autoFocus
+                            className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
+                          />
+                        </div>
+                        <div className="max-h-[200px] overflow-y-auto">
+                          {filteredCurrencies.map(currency => (
                             <div
-                              key={option.value}
-                              className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.taxRate === option.value ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
+                              key={currency.code}
+                              className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.currency === currency.code ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
                               onClick={() => {
-                                setBulkUpdateData(prev => ({ ...prev, taxRate: option.value }));
-                                setIsTaxRateDropdownOpen(false);
+                                setBulkUpdateData(prev => ({ ...prev, currency: currency.code }));
+                                setIsCurrencyDropdownOpen(false);
+                                setCurrencySearch("");
                               }}
                             >
-                              {option.label}
+                              {currency.name}
                             </div>
-                          )
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Payment Terms */}
-              <div className="flex items-center mb-5 last:mb-0">
-                <label className="w-40 flex-shrink-0 text-sm text-gray-700">Payment Terms</label>
-                <div className="flex-1 relative" ref={paymentTermsHook.dropdownRef}>
-                  <div
-                    className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${paymentTermsHook.isOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
-                    onClick={paymentTermsHook.handleToggle}
-                  >
-                    <span className={paymentTermsHook.selectedTerm ? "text-gray-700" : "text-gray-400"}>
-                      {paymentTermsHook.selectedTerm || ""}
-                    </span>
-                    <ChevronDown size={16} className={`text-gray-500 transition-transform ${paymentTermsHook.isOpen ? "rotate-180" : ""}`} />
+                    )}
                   </div>
-                  {paymentTermsHook.isOpen && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
-                      <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
-                        <Search size={16} className="text-gray-400 flex-shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Search"
-                          value={paymentTermsHook.searchQuery}
-                          onChange={(e) => paymentTermsHook.setSearchQuery(e.target.value)}
-                          autoFocus
-                          className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
+                </div>
+
+                {/* Tax Rate */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Tax Rate</label>
+                  <div className="flex-1 relative" ref={taxRateDropdownRef}>
+                    <div
+                      className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTaxRateDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
+                      onClick={() => {
+                        const nextOpen = !isTaxRateDropdownOpen;
+                        closeBulkUpdateDropdowns();
+                        setIsTaxRateDropdownOpen(nextOpen);
+                      }}
+                    >
+                      <span className={bulkUpdateData.taxRate ? "text-gray-700" : "text-gray-400"}>
+                        {bulkUpdateData.taxRate || "Select a Tax"}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTaxRateDropdownOpen ? "rotate-180" : ""}`} />
+                    </div>
+                    {isTaxRateDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
+                        <div className="max-h-[200px] overflow-y-auto">
+                          {taxRateOptions.map((option, index) => (
+                            option.isHeader ? (
+                              <div key={`header-${index}`} className="px-3.5 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 uppercase tracking-wider sticky top-0 border-y border-gray-100 first:border-t-0">
+                                {option.label}
+                              </div>
+                            ) : (
+                              <div
+                                key={option.value}
+                                className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.taxRate === option.value ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
+                                onClick={() => {
+                                  setBulkUpdateData(prev => ({ ...prev, taxRate: option.value }));
+                                  setIsTaxRateDropdownOpen(false);
+                                }}
+                              >
+                                {option.label}
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Payment Terms */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Payment Terms</label>
+                  <div className="flex-1 relative" ref={paymentTermsHook.dropdownRef}>
+                    <div
+                      className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${paymentTermsHook.isOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
+                      onClick={() => {
+                        if (paymentTermsHook.isOpen) {
+                          paymentTermsHook.close();
+                          return;
+                        }
+                        closeBulkUpdateDropdowns();
+                        paymentTermsHook.open();
+                      }}
+                    >
+                      <span className={paymentTermsHook.selectedTerm ? "text-gray-700" : "text-gray-400"}>
+                        {paymentTermsHook.selectedTerm || ""}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${paymentTermsHook.isOpen ? "rotate-180" : ""}`} />
+                    </div>
+                    {paymentTermsHook.isOpen && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
+                        <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
+                          <Search size={16} className="text-gray-400 flex-shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Search"
+                            value={paymentTermsHook.searchQuery}
+                            onChange={(e) => paymentTermsHook.setSearchQuery(e.target.value)}
+                            autoFocus
+                            className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
+                          />
+                        </div>
+                        <div className="max-h-[200px] overflow-y-auto">
+                          {paymentTermsHook.filteredTerms.map(term => (
+                            <div
+                              key={term.value}
+                              className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${paymentTermsHook.selectedTerm === term.value ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
+                              onClick={() => paymentTermsHook.handleSelect(term)}
+                            >
+                              {term.label}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Customer Language */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700 flex items-center gap-1.5">
+                    Customer Language
+                    <Info size={14} className="text-gray-400" />
+                  </label>
+                  <div className="flex-1 relative" ref={customerLanguageDropdownRef}>
+                    <div
+                      className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerLanguageDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
+                      onClick={() => {
+                        const nextOpen = !isCustomerLanguageDropdownOpen;
+                        closeBulkUpdateDropdowns();
+                        setIsCustomerLanguageDropdownOpen(nextOpen);
+                        setCustomerLanguageSearch("");
+                      }}
+                    >
+                      <span className={bulkUpdateData.customerLanguage ? "text-gray-700" : "text-gray-400"}>
+                        {bulkUpdateData.customerLanguage || ""}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerLanguageDropdownOpen ? "rotate-180" : ""}`} />
+                    </div>
+                    {isCustomerLanguageDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
+                        <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
+                          <Search size={16} className="text-gray-400 flex-shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Search"
+                            value={customerLanguageSearch}
+                            onChange={(e) => setCustomerLanguageSearch(e.target.value)}
+                            autoFocus
+                            className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
+                          />
+                        </div>
+                        <div className="max-h-[200px] overflow-y-auto">
+                          {filteredCustomerLanguages.map(lang => (
+                            <div
+                              key={lang}
+                              className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.customerLanguage === lang ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
+                              onClick={() => {
+                                setBulkUpdateData(prev => ({ ...prev, customerLanguage: lang }));
+                                setIsCustomerLanguageDropdownOpen(false);
+                                setCustomerLanguageSearch("");
+                              }}
+                            >
+                              {lang}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Price List */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Price List</label>
+                  <div className="flex-1 max-w-md">
+                    <SearchableDropdown
+                      value={bulkUpdateData.priceListId}
+                      options={[
+                        { value: "", label: "None" },
+                        ...priceLists.map((p) => ({ value: p.id, label: p.name || p.id })),
+                      ]}
+                      placeholder="None"
+                      accentColor="#156372"
+                      onOpenChange={(open) => {
+                        if (open) closeBulkUpdateDropdowns();
+                      }}
+                      onChange={(value) => setBulkUpdateData(prev => ({ ...prev, priceListId: value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Accounts Receivable */}
+                <div className="flex items-center mb-5 last:mb-0">
+                  <label className="w-40 flex-shrink-0 text-sm text-gray-700">Accounts Receivable</label>
+                  <div className="flex-1 relative" ref={accountsReceivableDropdownRef}>
+                    <div
+                      className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAccountsReceivableDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
+                      onClick={() => {
+                        const nextOpen = !isAccountsReceivableDropdownOpen;
+                        closeBulkUpdateDropdowns();
+                        setIsAccountsReceivableDropdownOpen(nextOpen);
+                      }}
+                    >
+                      <span className={bulkUpdateData.accountsReceivable ? "text-gray-700" : "text-gray-400"}>
+                        {bulkUpdateData.accountsReceivable || "Select an account"}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAccountsReceivableDropdownOpen ? "rotate-180" : ""}`} />
+                    </div>
+                    {isAccountsReceivableDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
+                        <div className="max-h-[200px] overflow-y-auto">
+                          {accountsReceivableOptions.map(account => (
+                            <div
+                              key={account}
+                              className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.accountsReceivable === account ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
+                              onClick={() => {
+                                setBulkUpdateData(prev => ({ ...prev, accountsReceivable: account }));
+                                setIsAccountsReceivableDropdownOpen(false);
+                              }}
+                            >
+                              {account}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Reporting Tags */}
+                {availableReportingTags.map((tag: any) => {
+                  const tagId = String(tag?._id || tag?.id || "");
+                  if (!tagId) return null;
+                  const selectedVal = bulkUpdateData.reportingTags?.[tagId] ?? "";
+                  const normalizedOptions = Array.isArray(tag?.options) ? tag.options : [];
+                  const options = [
+                    { value: "", label: "None" },
+                    ...normalizedOptions.map((opt: string) => ({ value: opt, label: opt })),
+                  ];
+
+                  return (
+                    <div key={tagId} className="flex items-center mb-5 last:mb-0">
+                      <label className="w-40 flex-shrink-0 text-sm text-gray-700">
+                        {tag.name || "Reporting Tag"}
+                      </label>
+                      <div className="flex-1 max-w-md">
+                        <SearchableDropdown
+                          value={selectedVal}
+                          options={options}
+                          placeholder="None"
+                          accentColor="#156372"
+                          onOpenChange={(open) => {
+                            if (open) closeBulkUpdateDropdowns();
+                          }}
+                          onChange={(value) => {
+                            setBulkUpdateData((prev: any) => {
+                              const existing = prev?.reportingTags || {};
+                              const next = { ...existing };
+                              if (!value) {
+                                delete next[tagId];
+                              } else {
+                                next[tagId] = value;
+                              }
+                              return { ...prev, reportingTags: next };
+                            });
+                          }}
                         />
                       </div>
-                      <div className="max-h-[200px] overflow-y-auto">
-                        {paymentTermsHook.filteredTerms.map(term => (
-                          <div
-                            key={term.value}
-                            className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${paymentTermsHook.selectedTerm === term.value ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
-                            onClick={() => paymentTermsHook.handleSelect(term)}
-                          >
-                            {term.label}
-                          </div>
-                        ))}
-                      </div>
                     </div>
-                  )}
-                </div>
+                  );
+                })}
               </div>
-
-              {/* Customer Language */}
-              <div className="flex items-center mb-5 last:mb-0">
-                <label className="w-40 flex-shrink-0 text-sm text-gray-700 flex items-center gap-1.5">
-                  Customer Language
-                  <Info size={14} className="text-gray-400" />
-                </label>
-                <div className="flex-1 relative" ref={customerLanguageDropdownRef}>
-                  <div
-                    className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerLanguageDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
-                    onClick={() => {
-                      setIsCustomerLanguageDropdownOpen(!isCustomerLanguageDropdownOpen);
-                      setCustomerLanguageSearch("");
-                    }}
-                  >
-                    <span className={bulkUpdateData.customerLanguage ? "text-gray-700" : "text-gray-400"}>
-                      {bulkUpdateData.customerLanguage || ""}
-                    </span>
-                    <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerLanguageDropdownOpen ? "rotate-180" : ""}`} />
-                  </div>
-                  {isCustomerLanguageDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
-                      <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
-                        <Search size={16} className="text-gray-400 flex-shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Search"
-                          value={customerLanguageSearch}
-                          onChange={(e) => setCustomerLanguageSearch(e.target.value)}
-                          autoFocus
-                          className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
-                        />
-                      </div>
-                      <div className="max-h-[200px] overflow-y-auto">
-                        {filteredCustomerLanguages.map(lang => (
-                          <div
-                            key={lang}
-                            className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.customerLanguage === lang ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
-                            onClick={() => {
-                              setBulkUpdateData(prev => ({ ...prev, customerLanguage: lang }));
-                              setIsCustomerLanguageDropdownOpen(false);
-                              setCustomerLanguageSearch("");
-                            }}
-                          >
-                            {lang}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+              <div className="flex items-center gap-3 py-4 px-6 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+                <button
+                  className="py-2.5 px-5 text-sm font-medium text-white bg-[#156372] border-none rounded-md cursor-pointer transition-colors hover:bg-[#0f4f5a]"
+                  onClick={handleBulkUpdateSubmit}
+                >
+                  Update Fields
+                </button>
+                <button
+                  className="py-2.5 px-5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setIsBulkUpdateModalOpen(false)}
+                >
+                  Cancel
+                </button>
               </div>
-
-              {/* Accounts Receivable */}
-              <div className="flex items-center mb-5 last:mb-0">
-                <label className="w-40 flex-shrink-0 text-sm text-gray-700">Accounts Receivable</label>
-                <div className="flex-1 relative" ref={accountsReceivableDropdownRef}>
-                  <div
-                    className={`flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAccountsReceivableDropdownOpen ? "border-[#156372] rounded-b-none" : "border-gray-300 hover:border-gray-400"}`}
-                    onClick={() => {
-                      setIsAccountsReceivableDropdownOpen(!isAccountsReceivableDropdownOpen);
-                    }}
-                  >
-                    <span className={bulkUpdateData.accountsReceivable ? "text-gray-700" : "text-gray-400"}>
-                      {bulkUpdateData.accountsReceivable || "Select an account"}
-                    </span>
-                    <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAccountsReceivableDropdownOpen ? "rotate-180" : ""}`} />
-                  </div>
-                  {isAccountsReceivableDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-[#156372] border-t-0 rounded-b-md shadow-lg z-[1002] overflow-hidden">
-                      <div className="max-h-[200px] overflow-y-auto">
-                        {accountsReceivableOptions.map(account => (
-                          <div
-                            key={account}
-                            className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${bulkUpdateData.accountsReceivable === account ? "bg-[#156372] text-white hover:bg-[#0f4f5a]" : "text-gray-700 hover:bg-gray-100"}`}
-                            onClick={() => {
-                              setBulkUpdateData(prev => ({ ...prev, accountsReceivable: account }));
-                              setIsAccountsReceivableDropdownOpen(false);
-                            }}
-                          >
-                            {account}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 py-4 px-6 bg-gray-50 border-t border-gray-200 rounded-b-lg">
-              <button
-                className="py-2.5 px-5 text-sm font-medium text-white bg-[#156372] border-none rounded-md cursor-pointer transition-colors hover:bg-[#0f4f5a]"
-                onClick={handleBulkUpdateSubmit}
-              >
-                Update Fields
-              </button>
-              <button
-                className="py-2.5 px-5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
-                onClick={() => setIsBulkUpdateModalOpen(false)}
-              >
-                Cancel
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Modal containers removed as download is now automatic */}
 
       {/* Export Current View Modal */}
-      {isExportCurrentViewModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsExportCurrentViewModalOpen(false);
-            }
-          }}
-        >
-          <div className="bg-white rounded-lg w-[90%] max-w-[600px] max-h-[90vh] flex flex-col shadow-xl">
-            <div className="flex items-center justify-between py-5 px-6 border-b border-gray-200">
-              <h2 className="m-0 text-xl font-semibold text-gray-900">Export Current View</h2>
-              <button
-                className="bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-gray-500 transition-colors hover:text-red-500"
-                onClick={() => setIsExportCurrentViewModalOpen(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              {/* Info Box */}
-              <div className="flex items-start gap-3 py-3 px-4 bg-[#15637210] rounded-md mb-6 text-sm text-blue-900">
-                <Info size={16} className="flex-shrink-0 mt-0.5" />
-                <span>Only the current view with its visible columns will be exported from Zoho Books in CSV or XLS format.</span>
+      {
+        isExportCurrentViewModalOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsExportCurrentViewModalOpen(false);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg w-[90%] max-w-[600px] max-h-[90vh] flex flex-col shadow-xl">
+              <div className="flex items-center justify-between py-5 px-6 border-b border-gray-200">
+                <h2 className="m-0 text-xl font-semibold text-gray-900">Export Current View</h2>
+                <button
+                  className="bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-gray-500 transition-colors hover:text-red-500"
+                  onClick={() => setIsExportCurrentViewModalOpen(false)}
+                >
+                  <X size={20} />
+                </button>
               </div>
+              <div className="p-6 overflow-y-auto flex-1">
+                {/* Info Box */}
+                <div className="flex items-start gap-3 py-3 px-4 bg-[#15637210] rounded-md mb-6 text-sm text-blue-900">
+                  <Info size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>Only the current view with its visible columns will be exported from Zoho Books in CSV or XLS format.</span>
+                </div>
 
-              {/* Decimal Format */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Decimal Format<span className="text-red-500 ml-1">*</span>
-                </label>
-                <div className="relative" ref={decimalFormatDropdownRef}>
-                  <div
-                    className="flex items-center justify-between py-2.5 px-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm text-gray-700 transition-colors hover:border-gray-400"
-                    onClick={() => setIsDecimalFormatDropdownOpen(!isDecimalFormatDropdownOpen)}
-                  >
-                    <span>{exportData.decimalFormat}</span>
-                    <ChevronDown size={16} />
-                  </div>
-                  {isDecimalFormatDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1000] max-h-[200px] overflow-y-auto">
-                      {decimalFormatOptions.map((format) => (
-                        <div
-                          key={format}
-                          className="py-2.5 px-3 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                          onClick={() => {
-                            setExportData(prev => ({ ...prev, decimalFormat: format }));
-                            setIsDecimalFormatDropdownOpen(false);
-                          }}
-                        >
-                          {format}
-                        </div>
-                      ))}
+                {/* Decimal Format */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Decimal Format<span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="relative" ref={decimalFormatDropdownRef}>
+                    <div
+                      className="flex items-center justify-between py-2.5 px-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm text-gray-700 transition-colors hover:border-gray-400"
+                      onClick={() => setIsDecimalFormatDropdownOpen(!isDecimalFormatDropdownOpen)}
+                    >
+                      <span>{exportData.decimalFormat}</span>
+                      <ChevronDown size={16} />
                     </div>
-                  )}
+                    {isDecimalFormatDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1000] max-h-[200px] overflow-y-auto">
+                        {decimalFormatOptions.map((format) => (
+                          <div
+                            key={format}
+                            className="py-2.5 px-3 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                            onClick={() => {
+                              setExportData(prev => ({ ...prev, decimalFormat: format }));
+                              setIsDecimalFormatDropdownOpen(false);
+                            }}
+                          >
+                            {format}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Export File Format */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Export File Format<span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="flex flex-col gap-3">
+                    <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="fileFormat"
+                        value="csv"
+                        checked={exportData.fileFormat === "csv"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>CSV (Comma Separated Value)</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="fileFormat"
+                        value="xls"
+                        checked={exportData.fileFormat === "xls"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>XLS (Microsoft Excel 1997-2004 Compatible)</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="fileFormat"
+                        value="xlsx"
+                        checked={exportData.fileFormat === "xlsx"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>XLSX (Microsoft Excel)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* File Protection Password */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    File Protection Password
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={exportData.showPassword ? "text" : "password"}
+                      className="w-full py-2.5 px-3 pr-10 border border-gray-300 rounded-md text-sm text-gray-700 transition-colors focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      value={exportData.password}
+                      onChange={(e) => setExportData(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="Enter password"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-gray-500 transition-colors hover:text-gray-700"
+                      onClick={handleTogglePasswordVisibility}
+                    >
+                      {exportData.showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                    Your password must be at least 12 characters and include one uppercase letter, lowercase letter, number, and special character.
+                  </p>
+                </div>
+
+                {/* Note */}
+                <div className="mt-6 p-4 bg-gray-50 rounded-md text-sm text-gray-700 leading-relaxed">
+                  <strong>Note:</strong> You can export only the first 10,000 rows. If you have more rows, please initiate a backup for the data in your Zoho Books organization, and download it.{" "}
+                  <a href="#" className="text-[#156372] no-underline font-medium hover:underline">Backup Your Data</a>
                 </div>
               </div>
-
-              {/* Export File Format */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Export File Format<span className="text-red-500 ml-1">*</span>
-                </label>
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="fileFormat"
-                      value="csv"
-                      checked={exportData.fileFormat === "csv"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>CSV (Comma Separated Value)</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="fileFormat"
-                      value="xls"
-                      checked={exportData.fileFormat === "xls"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>XLS (Microsoft Excel 1997-2004 Compatible)</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="fileFormat"
-                      value="xlsx"
-                      checked={exportData.fileFormat === "xlsx"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>XLSX (Microsoft Excel)</span>
-                  </label>
-                </div>
+              <div className="flex items-center justify-start gap-3 py-5 px-6 border-t border-gray-200">
+                <button
+                  className="py-2.5 px-5 bg-[#156372] text-white border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-blue-700"
+                  onClick={handleExportSubmit}
+                >
+                  Export
+                </button>
+                <button
+                  className="py-2.5 px-5 bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setIsExportCurrentViewModalOpen(false)}
+                >
+                  Cancel
+                </button>
               </div>
-
-              {/* File Protection Password */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  File Protection Password
-                </label>
-                <div className="relative flex items-center">
-                  <input
-                    type={exportData.showPassword ? "text" : "password"}
-                    className="w-full py-2.5 px-3 pr-10 border border-gray-300 rounded-md text-sm text-gray-700 transition-colors focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                    value={exportData.password}
-                    onChange={(e) => setExportData(prev => ({ ...prev, password: e.target.value }))}
-                    placeholder="Enter password"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-gray-500 transition-colors hover:text-gray-700"
-                    onClick={handleTogglePasswordVisibility}
-                  >
-                    {exportData.showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-gray-600 leading-relaxed">
-                  Your password must be at least 12 characters and include one uppercase letter, lowercase letter, number, and special character.
-                </p>
-              </div>
-
-              {/* Note */}
-              <div className="mt-6 p-4 bg-gray-50 rounded-md text-sm text-gray-700 leading-relaxed">
-                <strong>Note:</strong> You can export only the first 10,000 rows. If you have more rows, please initiate a backup for the data in your Zoho Books organization, and download it.{" "}
-                <a href="#" className="text-[#156372] no-underline font-medium hover:underline">Backup Your Data</a>
-              </div>
-            </div>
-            <div className="flex items-center justify-start gap-3 py-5 px-6 border-t border-gray-200">
-              <button
-                className="py-2.5 px-5 bg-[#156372] text-white border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-blue-700"
-                onClick={handleExportSubmit}
-              >
-                Export
-              </button>
-              <button
-                className="py-2.5 px-5 bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
-                onClick={() => setIsExportCurrentViewModalOpen(false)}
-              >
-                Cancel
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Merge Customers Modal */}
-      {isMergeModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-[500px] mx-4">
-            <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900 m-0">Merge Customers</h2>
-              <button
-                className="flex items-center justify-center w-7 h-7 bg-white border-2 border-blue-600 rounded text-red-500 cursor-pointer hover:bg-red-50"
-                onClick={() => {
-                  setIsMergeModalOpen(false);
-                  setMergeTargetCustomer(null);
-                  setMergeCustomerSearch("");
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-sm text-gray-700 mb-4">
-                Select a customer profile with whom you'd like to merge <strong>{(() => {
-                  const firstSelectedId = Array.from(selectedCustomers)[0];
-                  const firstCustomer = customers.find(c => c.id === firstSelectedId);
-                  return firstCustomer ? firstCustomer.name : '';
-                })()}</strong>. Once merged, the transactions of <strong>{(() => {
-                  const firstSelectedId = Array.from(selectedCustomers)[0];
-                  const firstCustomer = customers.find(c => c.id === firstSelectedId);
-                  return firstCustomer ? firstCustomer.name : '';
-                })()}</strong> will be transferred, and this customer record will be marked as inactive.
-              </p>
-              <p className="text-xs text-gray-500 mb-3">
-                If currencies differ, balances will be converted to the master customer's currency using saved exchange rates.
-              </p>
-              {/* If exactly one customer is selected: show radio list of other customers (exclude the source).
-                  If exactly two customers are selected: show radio list of the two selected customers (pick master).
-                  Otherwise (3+), show the searchable dropdown allowing any customer to be chosen. */}
-              {selectedCustomers.size === 1 ? (
-                <div className="space-y-3">
-                  {singleSelectionMergeTargets.length === 0 ? (
-                    <div className="text-sm text-gray-500">
-                      No customers available for merge.
-                    </div>
-                  ) : (
-                    singleSelectionMergeTargets.map((customer) => (
-                      <label key={customer.id} className={`flex items-center gap-3 p-2 rounded-md cursor-pointer hover:bg-gray-50 ${mergeTargetCustomer?.id === customer.id ? 'bg-[#f1f9f8]' : ''}`}>
-                        <input
-                          type="radio"
-                          name="mergeTarget"
-                          checked={mergeTargetCustomer?.id === customer.id}
-                          onChange={() => setMergeTargetCustomer(customer)}
-                          className="w-4 h-4 text-blue-600"
-                        />
-                        <div className="text-sm text-gray-700">{customer.name} {customer.companyName && `(${customer.companyName})`}</div>
-                      </label>
-                    ))
-                  )}
-                </div>
-              ) : selectedCustomers.size === 2 ? (
-                <div className="space-y-3">
-                  {Array.from(selectedCustomers).map((id) => {
-                    const customer = customers.find(c => c.id === id);
-                    if (!customer) return null;
+      {
+        isMergeModalOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-[2000] flex items-start justify-center pt-16 pb-10 overflow-y-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsMergeModalOpen(false);
+                setMergeTargetCustomer(null);
+                setMergeCustomerSearch("");
+                setIsMergeCustomerDropdownOpen(false);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4 overflow-hidden">
+              <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900 m-0">Merge Customers</h2>
+                <button
+                  className="flex items-center justify-center w-7 h-7 bg-white border-2 border-blue-600 rounded text-red-500 cursor-pointer hover:bg-red-50"
+                  onClick={() => {
+                    setIsMergeModalOpen(false);
+                    setMergeTargetCustomer(null);
+                    setMergeCustomerSearch("");
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6">
+                <p className="text-sm text-gray-700 mb-4">
+                  {(() => {
+                    const selectedArr = Array.from(selectedCustomers);
+                    if (selectedArr.length === 1) {
+                      const source = customers.find((c) => c.id === selectedArr[0]);
+                      const sourceName = source?.name || "";
+                      return (
+                        <>
+                          Select a customer profile with whom you'd like to merge <strong>{sourceName}</strong>. Once merged,
+                          the transactions of <strong>{sourceName}</strong> will be transferred, and this customer record will be marked as inactive.
+                        </>
+                      );
+                    }
+
                     return (
-                      <label key={customer.id} className={`flex items-center gap-3 p-2 rounded-md cursor-pointer hover:bg-gray-50 ${mergeTargetCustomer?.id === customer.id ? 'bg-[#f1f9f8]' : ''}`}>
-                        <input
-                          type="radio"
-                          name="mergeTarget"
-                          checked={mergeTargetCustomer?.id === customer.id}
-                          onChange={() => setMergeTargetCustomer(customer)}
-                          className="w-4 h-4 text-blue-600"
-                        />
-                        <div className="text-sm text-gray-700">{customer.name} {customer.companyName && `(${customer.companyName})`}</div>
-                      </label>
+                      <>
+                        Kindly select the master customer to whom the customer(s) should be merged. Once merged, all the transactions will be listed under the master customer and the other customers will be marked as inactive.
+                      </>
                     );
-                  })}
-                </div>
-              ) : (
-                <div className="relative" ref={mergeCustomerDropdownRef}>
-                  <div
-                    className="flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-colors hover:border-gray-400"
-                    onClick={() => {
-                      setIsMergeCustomerDropdownOpen(!isMergeCustomerDropdownOpen);
-                      setMergeCustomerSearch("");
-                    }}
-                  >
-                    <span className={mergeTargetCustomer ? "text-gray-700" : "text-gray-400"}>
-                      {mergeTargetCustomer ? mergeTargetCustomer.name : "Select Customer"}
-                    </span>
-                    <ChevronDown size={16} className={`text-gray-500 transition-transform ${isMergeCustomerDropdownOpen ? "rotate-180" : ""}`} />
+                  })()}
+                </p>
+
+                {selectedCustomers.size >= 2 ? (
+                  <div className="space-y-3 pt-1">
+                    {Array.from(selectedCustomers).map((selectedId) => {
+                      const row = customers.find((c) => c.id === selectedId);
+                      if (!row) return null;
+                      return (
+                        <label
+                          key={row.id}
+                          className="flex items-center gap-3 text-sm text-gray-800 cursor-pointer select-none"
+                        >
+                          <input
+                            type="radio"
+                            name="mergeTarget"
+                            checked={mergeTargetCustomer?.id === row.id}
+                            onChange={() => setMergeTargetCustomer(row)}
+                            className="w-4 h-4"
+                          />
+                          <span>{row.name}</span>
+                        </label>
+                      );
+                    })}
                   </div>
-                  {isMergeCustomerDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1002] overflow-hidden">
-                      <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
-                        <Search size={16} className="text-gray-400 flex-shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Search"
-                          value={mergeCustomerSearch}
-                          onChange={(e) => setMergeCustomerSearch(e.target.value)}
-                          autoFocus
-                          className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
-                        />
-                      </div>
-                      <div className="max-h-[200px] overflow-y-auto">
-                        {dropdownMergeTargets.length === 0 ? (
-                          <div className="py-2.5 px-3.5 text-sm text-gray-500">
-                            No customers found.
-                          </div>
-                        ) : (
-                          dropdownMergeTargets.map((customer, index) => {
-                            return (
+                ) : (
+                  <div className="relative" ref={mergeCustomerDropdownRef}>
+                    <div
+                      className="flex items-center justify-between w-full py-2.5 px-3.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-colors hover:border-gray-400"
+                      onClick={() => {
+                        setIsMergeCustomerDropdownOpen(!isMergeCustomerDropdownOpen);
+                        setMergeCustomerSearch("");
+                      }}
+                    >
+                      <span className={mergeTargetCustomer ? "text-gray-700" : "text-gray-400"}>
+                        {mergeTargetCustomer ? mergeTargetCustomer.name : "Select Customer"}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isMergeCustomerDropdownOpen ? "rotate-180" : ""}`} />
+                    </div>
+                    {isMergeCustomerDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1002] overflow-hidden">
+                        <div className="flex items-center gap-2 py-2.5 px-3.5 border-b border-gray-200">
+                          <Search size={16} className="text-gray-400 flex-shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Search"
+                            value={mergeCustomerSearch}
+                            onChange={(e) => setMergeCustomerSearch(e.target.value)}
+                            autoFocus
+                            className="flex-1 border-none outline-none text-sm text-gray-900 placeholder:text-gray-400"
+                          />
+                        </div>
+                        <div className="max-h-[200px] overflow-y-auto">
+                          {(() => {
+                            const selectedArr = Array.from(selectedCustomers);
+                            const sourceId = selectedArr.length === 1 ? selectedArr[0] : null;
+                            const options = dropdownMergeTargets.filter((c: any) => (sourceId ? c.id !== sourceId : true));
+
+                            if (options.length === 0) {
+                              return (
+                                <div className="py-2.5 px-3.5 text-sm text-gray-500">
+                                  No customers found.
+                                </div>
+                              );
+                            }
+
+                            return options.map((customer, index) => (
                               <div
                                 key={`${customer.id}-${index}`}
-                                className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${mergeTargetCustomer?.id === customer.id ? "bg-[#156372] text-white hover:bg-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
+                                className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${mergeTargetCustomer?.id === customer.id ? "bg-[#156372] text-white" : "text-gray-700 hover:bg-gray-100"}`}
                                 onClick={() => {
                                   setMergeTargetCustomer(customer);
                                   setIsMergeCustomerDropdownOpen(false);
@@ -3172,1706 +3600,868 @@ export default function Customers() {
                               >
                                 {customer.name} {customer.companyName && `(${customer.companyName})`}
                               </div>
-                            );
-                          })
-                        )}
+                            ));
+                          })()}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-3 py-4 px-6 bg-gray-50 border-t border-gray-200 rounded-b-lg">
-              <button
-                className="py-2.5 px-5 text-sm font-medium text-white bg-red-600 border-none rounded-md cursor-pointer transition-colors hover:bg-red-700"
-                onClick={handleMergeContinue}
-              >
-                Continue
-              </button>
-              <button
-                className="py-2.5 px-5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
-                onClick={() => {
-                  setIsMergeModalOpen(false);
-                  setMergeTargetCustomer(null);
-                  setMergeCustomerSearch("");
-                }}
-              >
-                Cancel
-              </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-start gap-3 py-4 px-6 bg-white border-t border-gray-200 rounded-b-lg">
+                <button
+                  className={`py-2.5 px-5 text-sm font-medium text-white bg-blue-600 border-none rounded-md transition-colors hover:bg-blue-700 ${mergeTargetCustomer ? "cursor-pointer" : "opacity-60 cursor-not-allowed"}`}
+                  onClick={handleMergeContinue}
+                  disabled={!mergeTargetCustomer}
+                >
+                  Continue
+                </button>
+                <button
+                  className="py-2.5 px-5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => {
+                    setIsMergeModalOpen(false);
+                    setMergeTargetCustomer(null);
+                    setMergeCustomerSearch("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Associate Templates Modal */}
-      {isAssociateTemplatesModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] overflow-y-auto py-10">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-[700px] mx-4 my-10">
-            <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 m-0">Associate Templates</h2>
-                <p className="text-sm text-gray-600 mt-1">Associate PDF and notification templates to this customer.</p>
-              </div>
-              <button
-                className="flex items-center justify-center w-7 h-7 bg-white border-2 border-blue-600 rounded text-red-500 cursor-pointer hover:bg-red-50"
-                onClick={() => setIsAssociateTemplatesModalOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              {/* PDF and Email Both Go Option */}
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="pdfAndEmailBothGo"
-                    checked={templateData.pdfAndEmailBothGo}
-                    onChange={(e) => setTemplateData(prev => ({
-                      ...prev,
-                      pdfAndEmailBothGo: e.target.checked
-                    }))}
-                    className="w-4 h-4 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <label htmlFor="pdfAndEmailBothGo" className="text-sm font-medium text-gray-900 cursor-pointer">
-                    PDF and Email both go
-                  </label>
+      {
+        isAssociateTemplatesModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] overflow-y-auto py-10">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-[700px] mx-4 my-10">
+              <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 m-0">Associate Templates</h2>
+                  <p className="text-sm text-gray-600 mt-1">Associate PDF and notification templates to this customer.</p>
                 </div>
-                <p className="text-xs text-gray-600 mt-2 ml-7">
-                  When enabled, both PDF and email will be sent together for all transactions associated with this customer.
-                </p>
+                <button
+                  className="flex items-center justify-center w-7 h-7 bg-white border-2 border-blue-600 rounded text-red-500 cursor-pointer hover:bg-red-50"
+                  onClick={() => setIsAssociateTemplatesModalOpen(false)}
+                >
+                  <X size={18} />
+                </button>
               </div>
+              <div className="p-6 max-h-[60vh] overflow-y-auto">
+                {/* PDF and Email Both Go Option */}
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="pdfAndEmailBothGo"
+                      checked={templateData.pdfAndEmailBothGo}
+                      onChange={(e) => setTemplateData(prev => ({
+                        ...prev,
+                        pdfAndEmailBothGo: e.target.checked
+                      }))}
+                      className="w-4 h-4 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                    />
+                    <label htmlFor="pdfAndEmailBothGo" className="text-sm font-medium text-gray-900 cursor-pointer">
+                      PDF and Email both go
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2 ml-7">
+                    When enabled, both PDF and email will be sent together for all transactions associated with this customer.
+                  </p>
+                </div>
 
-              {/* PDF Templates Section */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-gray-900">PDF Templates</h3>
-                  <button
-                    className="flex items-center gap-1.5 py-1.5 px-3 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
-                    style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                    onClick={() => navigate("/settings/customization/pdf-templates")}
-                  >
-                    <Plus size={14} />
-                    New PDF Template
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  {Object.entries(templateData.pdfTemplates).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <label className="text-sm text-gray-700 capitalize">
-                        {key.replace(/([A-Z])/g, ' $1').trim()}
-                      </label>
-                      <div className="flex-1 max-w-[300px] ml-4 relative">
-                        <select
-                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md appearance-none cursor-pointer transition-colors hover:border-gray-400 focus:outline-none focus:border-blue-600"
-                          value={value}
-                          onChange={(e) => setTemplateData(prev => ({
-                            ...prev,
-                            pdfTemplates: { ...prev.pdfTemplates, [key]: e.target.value }
-                          }))}
-                        >
-                          <option value="Standard Template">Standard Template</option>
-                          <option value="Elite Template">Elite Template</option>
-                          <option value="Professional Template">Professional Template</option>
-                          <option value="Modern Template">Modern Template</option>
-                          <option value="New PDF Template">New PDF Template</option>
-                        </select>
-                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Email Notifications Section */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-gray-900">Email Notifications</h3>
-                  <button
-                    className="flex items-center gap-1.5 py-1.5 px-3 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
-                    style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                    onClick={() => navigate("/settings/customization/email-notifications")}
-                  >
-                    <Plus size={14} />
-                    New Email Template
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  {Object.entries(templateData.emailNotifications).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <label className="text-sm text-gray-700 capitalize">
-                        {key.replace(/([A-Z])/g, ' $1').trim()}
-                      </label>
-                      <div className="flex-1 max-w-[300px] ml-4 relative">
-                        <select
-                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md appearance-none cursor-pointer transition-colors hover:border-gray-400 focus:outline-none focus:border-blue-600"
-                          value={value}
-                          onChange={(e) => {
-                            setTemplateData(prev => ({
+                {/* PDF Templates Section */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-base font-semibold text-gray-900">PDF Templates</h3>
+                    <button
+                      className="flex items-center gap-1.5 py-1.5 px-3 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
+                      style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      onClick={() => navigate("/settings/customization/pdf-templates")}
+                    >
+                      <Plus size={14} />
+                      New PDF Template
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {Object.entries(templateData.pdfTemplates).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between">
+                        <label className="text-sm text-gray-700 capitalize">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </label>
+                        <div className="flex-1 max-w-[300px] ml-4 relative">
+                          <select
+                            className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md appearance-none cursor-pointer transition-colors hover:border-gray-400 focus:outline-none focus:border-blue-600"
+                            value={value}
+                            onChange={(e) => setTemplateData(prev => ({
                               ...prev,
-                              emailNotifications: { ...prev.emailNotifications, [key]: e.target.value }
-                            }));
-                          }}
-                        >
-                          <option value="Default">Default</option>
-                          <option value="Standard">Standard</option>
-                          <option value="Professional">Professional</option>
-                          <option value="Custom">Custom</option>
-                          <option value="New Email Template">New Email Template</option>
-                        </select>
-                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                              pdfTemplates: { ...prev.pdfTemplates, [key]: e.target.value }
+                            }))}
+                          >
+                            <option value="Standard Template">Standard Template</option>
+                            <option value="Elite Template">Elite Template</option>
+                            <option value="Professional Template">Professional Template</option>
+                            <option value="Modern Template">Modern Template</option>
+                            <option value="New PDF Template">New PDF Template</option>
+                          </select>
+                          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Email Notifications Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-base font-semibold text-gray-900">Email Notifications</h3>
+                    <button
+                      className="flex items-center gap-1.5 py-1.5 px-3 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
+                      style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      onClick={() => navigate("/settings/customization/email-notifications")}
+                    >
+                      <Plus size={14} />
+                      New Email Template
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {Object.entries(templateData.emailNotifications).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between">
+                        <label className="text-sm text-gray-700 capitalize">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </label>
+                        <div className="flex-1 max-w-[300px] ml-4 relative">
+                          <select
+                            className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md appearance-none cursor-pointer transition-colors hover:border-gray-400 focus:outline-none focus:border-blue-600"
+                            value={value}
+                            onChange={(e) => {
+                              setTemplateData(prev => ({
+                                ...prev,
+                                emailNotifications: { ...prev.emailNotifications, [key]: e.target.value }
+                              }));
+                            }}
+                          >
+                            <option value="Default">Default</option>
+                            <option value="Standard">Standard</option>
+                            <option value="Professional">Professional</option>
+                            <option value="Custom">Custom</option>
+                            <option value="New Email Template">New Email Template</option>
+                          </select>
+                          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center justify-start gap-3 py-4 px-6 bg-gray-50 border-t border-gray-200 rounded-b-lg">
-              <button
-                className="py-2.5 px-5 text-sm font-medium text-white border-none rounded-md cursor-pointer transition-colors"
-                style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                onClick={handleSaveTemplates}
-              >
-                Save
-              </button>
-              <button
-                className="py-2.5 px-5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
-                onClick={() => setIsAssociateTemplatesModalOpen(false)}
-              >
-                Cancel
-              </button>
+              <div className="flex items-center justify-start gap-3 py-4 px-6 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+                <button
+                  className="py-2.5 px-5 text-sm font-medium text-white border-none rounded-md cursor-pointer transition-colors"
+                  style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                  onClick={handleSaveTemplates}
+                >
+                  Save
+                </button>
+                <button
+                  className="py-2.5 px-5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setIsAssociateTemplatesModalOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Search Modal */}
-      {isSearchModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsSearchModalOpen(false);
-              // Reset search data when closing
-              resetSearchModalData();
-            }
-          }}
-        >
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-[800px] mx-4">
-            {/* Header */}
-            <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
-              <div className="flex items-center gap-6">
-                {/* Search Type Dropdown */}
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Search</label>
-                  <div className="relative" ref={searchTypeDropdownRef}>
-                    <div
-                      className={`flex items-center justify-between w-[140px] py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSearchTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSearchTypeDropdownOpen(!isSearchTypeDropdownOpen);
-                      }}
-                    >
-                      <span>{searchType}</span>
-                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSearchTypeDropdownOpen ? "rotate-180" : ""}`} />
-                    </div>
-                    {isSearchTypeDropdownOpen && (
+      {
+        isSearchModalOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsSearchModalOpen(false);
+                // Reset search data when closing
+                resetSearchModalData();
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-[800px] mx-4">
+              {/* Header */}
+              <div className="flex items-center justify-between py-4 px-6 border-b border-gray-200">
+                <div className="flex items-center gap-6">
+                  {/* Search Type Dropdown */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-gray-700">Search</label>
+                    <div className="relative" ref={searchTypeDropdownRef}>
                       <div
-                        className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002] max-h-[300px] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
+                        className={`flex items-center justify-between w-[140px] py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSearchTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSearchTypeDropdownOpen(!isSearchTypeDropdownOpen);
+                        }}
                       >
-                        {searchTypeOptions.map((option) => (
-                          <div
-                            key={option}
-                            className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${searchType === option
-                              ? "bg-blue-600 text-white hover:bg-blue-700"
-                              : "text-gray-700 hover:bg-gray-100"
-                              }`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSearchType(option);
-                              setIsSearchTypeDropdownOpen(false);
-                              const options = getSearchFilterOptions(option);
-                              setSearchModalFilter((prev) => options.includes(prev) ? prev : options[0]);
-                              // Reset search form data when changing search type
-                              resetSearchModalData();
-                            }}
-                          >
-                            {option}
-                          </div>
-                        ))}
+                        <span>{searchType}</span>
+                        <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSearchTypeDropdownOpen ? "rotate-180" : ""}`} />
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Filter Dropdown */}
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Filter</label>
-                  <div className="relative" ref={filterDropdownRef}>
-                    <div
-                      className={`flex items-center justify-between w-[160px] py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isFilterDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                      onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                    >
-                      <span>{searchModalFilter}</span>
-                      <ChevronDown size={16} className={`text-gray-500 transition-transform ${isFilterDropdownOpen ? "rotate-180" : ""}`} />
+                      {isSearchTypeDropdownOpen && (
+                        <div
+                          className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002] max-h-[300px] overflow-y-auto"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {searchTypeOptions.map((option) => (
+                            <div
+                              key={option}
+                              className={`py-2.5 px-3.5 text-sm cursor-pointer transition-colors ${searchType === option
+                                ? "bg-blue-600 text-white hover:bg-blue-700"
+                                : "text-gray-700 hover:bg-gray-100"
+                                }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSearchType(option);
+                                setIsSearchTypeDropdownOpen(false);
+                                const options = getSearchFilterOptions(option);
+                                setSearchModalFilter((prev) => options.includes(prev) ? prev : options[0]);
+                                // Reset search form data when changing search type
+                                resetSearchModalData();
+                              }}
+                            >
+                              {option}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    {isFilterDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002] max-h-[200px] overflow-y-auto">
-                        {getSearchFilterOptions(searchType).map((view) => (
-                          <div
-                            key={view}
-                            className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                            onClick={() => {
-                              setSearchModalFilter(view);
-                              setIsFilterDropdownOpen(false);
-                            }}
-                          >
-                            {view}
-                          </div>
-                        ))}
+                  </div>
+
+                  {/* Filter Dropdown */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-gray-700">Filter</label>
+                    <div className="relative" ref={filterDropdownRef}>
+                      <div
+                        className={`flex items-center justify-between w-[160px] py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isFilterDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                        onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                      >
+                        <span>{searchModalFilter}</span>
+                        <ChevronDown size={16} className={`text-gray-500 transition-transform ${isFilterDropdownOpen ? "rotate-180" : ""}`} />
                       </div>
-                    )}
+                      {isFilterDropdownOpen && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002] max-h-[200px] overflow-y-auto">
+                          {getSearchFilterOptions(searchType).map((view) => (
+                            <div
+                              key={view}
+                              className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                              onClick={() => {
+                                setSearchModalFilter(view);
+                                setIsFilterDropdownOpen(false);
+                              }}
+                            >
+                              {view}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
+                <button
+                  className="flex items-center justify-center w-7 h-7 bg-transparent border-none cursor-pointer text-gray-500 hover:text-gray-700 transition-colors"
+                  onClick={() => {
+                    setIsSearchModalOpen(false);
+                    // Reset search data when closing
+                    resetSearchModalData();
+                  }}
+                >
+                  <X size={20} />
+                </button>
               </div>
-              <button
-                className="flex items-center justify-center w-7 h-7 bg-transparent border-none cursor-pointer text-gray-500 hover:text-gray-700 transition-colors"
-                onClick={() => {
-                  setIsSearchModalOpen(false);
-                  // Reset search data when closing
-                  resetSearchModalData();
-                }}
-              >
-                <X size={20} />
-              </button>
-            </div>
 
-            {/* Search Criteria Body */}
-            <div className="p-6">
-              {searchType === "Customers" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Display Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Display Name</label>
-                      <input
-                        type="text"
-                        value={searchModalData.displayName}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, displayName: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Company Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Company Name</label>
-                      <input
-                        type="text"
-                        value={searchModalData.companyName}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, companyName: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Last Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name</label>
-                      <input
-                        type="text"
-                        value={searchModalData.lastName}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, lastName: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span>{searchModalData.status}</span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Address */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
-                      <input
-                        type="text"
-                        value={searchModalData.address}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, address: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* Customer Type */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Type</label>
-                      <div className="relative" ref={customerTypeDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsCustomerTypeDropdownOpen(!isCustomerTypeDropdownOpen)}
-                        >
-                          <span className={searchModalData.customerType ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.customerType || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerTypeDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isCustomerTypeDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["Business", "Individual"].map((type) => (
-                              <div
-                                key={type}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, customerType: type }));
-                                  setIsCustomerTypeDropdownOpen(false);
-                                }}
-                              >
-                                {type}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* First Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name</label>
-                      <input
-                        type="text"
-                        value={searchModalData.firstName}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, firstName: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Email */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                      <input
-                        type="email"
-                        value={searchModalData.email}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, email: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Phone */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
-                      <input
-                        type="tel"
-                        value={searchModalData.phone}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, phone: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Notes */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-                      <input
-                        type="text"
-                        value={searchModalData.notes}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, notes: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {searchType === "Items" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Item Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
-                      <input
-                        type="text"
-                        value={searchModalData.itemName}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, itemName: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Description */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-                      <input
-                        type="text"
-                        value={searchModalData.description}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, description: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Purchase Rate */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Rate</label>
-                      <input
-                        type="text"
-                        value={searchModalData.purchaseRate}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, purchaseRate: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Sales Account */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Sales Account</label>
-                      <div className="relative" ref={salesAccountDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSalesAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsSalesAccountDropdownOpen(!isSalesAccountDropdownOpen)}
-                        >
-                          <span className={searchModalData.salesAccount ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.salesAccount || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSalesAccountDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isSalesAccountDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* SKU */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">SKU</label>
-                      <input
-                        type="text"
-                        value={searchModalData.sku}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, sku: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Rate */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Rate</label>
-                      <input
-                        type="text"
-                        value={searchModalData.rate}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, rate: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span>{searchModalData.status || "All"}</span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Purchase Account */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Account</label>
-                      <div className="relative" ref={purchaseAccountDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isPurchaseAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsPurchaseAccountDropdownOpen(!isPurchaseAccountDropdownOpen)}
-                        >
-                          <span className={searchModalData.purchaseAccount ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.purchaseAccount || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isPurchaseAccountDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isPurchaseAccountDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {searchType === "Inventory Adjustments" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Item Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
-                      <input
-                        type="text"
-                        value={searchModalData.itemName}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, itemName: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Reference# */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumber}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Reason */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reason</label>
-                      <input
-                        type="text"
-                        value={searchModalData.reason}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, reason: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* Item Description */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Description</label>
-                      <input
-                        type="text"
-                        value={searchModalData.itemDescription}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, itemDescription: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Adjustment Type */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Adjustment Type</label>
-                      <div className="relative" ref={adjustmentTypeDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAdjustmentTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsAdjustmentTypeDropdownOpen(!isAdjustmentTypeDropdownOpen)}
-                        >
-                          <span>{searchModalData.adjustmentType || "All"}</span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAdjustmentTypeDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isAdjustmentTypeDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Quantity", "Value"].map((type) => (
-                              <div
-                                key={type}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, adjustmentType: type }));
-                                  setIsAdjustmentTypeDropdownOpen(false);
-                                }}
-                              >
-                                {type}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Date Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateFrom}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateTo}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {searchType === "Banking" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Total Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeFrom}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeTo}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span>{searchModalData.status || "All"}</span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Transaction Type */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Transaction Type</label>
-                      <div className="relative" ref={transactionTypeDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTransactionTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsTransactionTypeDropdownOpen(!isTransactionTypeDropdownOpen)}
-                        >
-                          <span className={searchModalData.transactionType ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.transactionType || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTransactionTypeDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isTransactionTypeDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* Date Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeFrom}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeTo}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Reference# */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumber}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {searchType === "Quotes" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Quote# */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Quote#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.quoteNumber}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, quoteNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Date Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeFrom}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeTo}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Item Description */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Description</label>
-                      <input
-                        type="text"
-                        value={searchModalData.itemDescriptionQuote}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, itemDescriptionQuote: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Customer Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name</label>
-                      <div className="relative" ref={customerNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.customerName ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.customerName || "Select customer"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isCustomerNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Salesperson */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Salesperson</label>
-                      <div className="relative" ref={salespersonDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSalespersonDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsSalespersonDropdownOpen(!isSalespersonDropdownOpen)}
-                        >
-                          <span className={searchModalData.salesperson ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.salesperson || "Select a salesperson"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSalespersonDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isSalespersonDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Address */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
-                      <div className="flex items-center gap-3 mb-2">
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="addressType"
-                            value="Billing and Shipping"
-                            checked={searchModalData.addressType === "Billing and Shipping"}
-                            onChange={(e) => setSearchModalData(prev => ({ ...prev, addressType: e.target.value }))}
-                            className="cursor-pointer"
-                          />
-                          <span className="text-sm text-gray-700">Billing and Shipping</span>
-                        </label>
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="addressType"
-                            value="Billing"
-                            checked={searchModalData.addressType === "Billing"}
-                            onChange={(e) => setSearchModalData(prev => ({ ...prev, addressType: e.target.value }))}
-                            className="cursor-pointer"
-                          />
-                          <span className="text-sm text-gray-700">Billing</span>
-                        </label>
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="addressType"
-                            value="Shipping"
-                            checked={searchModalData.addressType === "Shipping"}
-                            onChange={(e) => setSearchModalData(prev => ({ ...prev, addressType: e.target.value }))}
-                            className="cursor-pointer"
-                          />
-                          <span className="text-sm text-gray-700">Shipping</span>
-                        </label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <div
-                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${false ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          >
-                            <span className="text-gray-400">Attention</span>
-                            <ChevronDown size={16} className="text-gray-500" />
-                          </div>
-                        </div>
-                        <button className="text-blue-600 text-sm hover:underline">+ Address Line</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* Reference# */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumberQuote}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumberQuote: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Item Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
-                      <div className="relative" ref={itemNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isItemNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsItemNameDropdownOpen(!isItemNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.itemNameQuote ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.itemNameQuote || "Select an item"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isItemNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isItemNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Total Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeFromQuote}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFromQuote: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeToQuote}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeToQuote: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Project Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Project Name</label>
-                      <div className="relative" ref={projectNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isProjectNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsProjectNameDropdownOpen(!isProjectNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.projectName ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.projectName || "Select a project"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isProjectNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isProjectNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Tax Exemptions */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Tax Exemptions</label>
-                      <div className="relative" ref={taxExemptionsDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTaxExemptionsDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsTaxExemptionsDropdownOpen(!isTaxExemptionsDropdownOpen)}
-                        >
-                          <span className={searchModalData.taxExemptions ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.taxExemptions || "Select a Tax Exemption"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTaxExemptionsDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isTaxExemptionsDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {searchType === "Invoices" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Invoice# */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Invoice#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.invoiceNumber}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, invoiceNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Date Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeFrom}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeTo}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span className={searchModalData.status ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.status || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Item Description */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Description</label>
-                      <input
-                        type="text"
-                        value={searchModalData.itemDescriptionInvoice}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, itemDescriptionInvoice: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Total Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeFromInvoice}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFromInvoice: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeToInvoice}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeToInvoice: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Project Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Project Name</label>
-                      <div className="relative" ref={projectNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isProjectNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsProjectNameDropdownOpen(!isProjectNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.projectNameInvoice ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.projectNameInvoice || "Select a project"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isProjectNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isProjectNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Tax Exemptions */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Tax Exemptions</label>
-                      <div className="relative" ref={taxExemptionsDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTaxExemptionsDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsTaxExemptionsDropdownOpen(!isTaxExemptionsDropdownOpen)}
-                        >
-                          <span className={searchModalData.taxExemptionsInvoice ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.taxExemptionsInvoice || "Select a Tax Exemption"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTaxExemptionsDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isTaxExemptionsDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* Order Number */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Order Number</label>
-                      <input
-                        type="text"
-                        value={searchModalData.orderNumber}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, orderNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Created Between */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Created Between</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.createdBetweenFrom}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, createdBetweenFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.createdBetweenTo}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, createdBetweenTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Item Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
-                      <div className="relative" ref={itemNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isItemNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsItemNameDropdownOpen(!isItemNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.itemNameInvoice ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.itemNameInvoice || "Select an item"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isItemNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isItemNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Account */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Account</label>
-                      <div className="relative" ref={accountDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
-                        >
-                          <span className={searchModalData.account ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.account || "Select an account"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAccountDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isAccountDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Customer Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name</label>
-                      <div className="relative" ref={customerNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.customerNameInvoice ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.customerNameInvoice || "Select customer"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isCustomerNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Salesperson */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Salesperson</label>
-                      <div className="relative" ref={salespersonDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSalespersonDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsSalespersonDropdownOpen(!isSalespersonDropdownOpen)}
-                        >
-                          <span className={searchModalData.salespersonInvoice ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.salespersonInvoice || "Select a salesperson"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSalespersonDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isSalespersonDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Address */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
-                      <div className="flex items-center gap-3 mb-2">
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="addressTypeInvoice"
-                            value="Billing and Shipping"
-                            checked={searchModalData.addressTypeInvoice === "Billing and Shipping"}
-                            onChange={(e) => setSearchModalData(prev => ({ ...prev, addressTypeInvoice: e.target.value }))}
-                            className="cursor-pointer"
-                          />
-                          <span className="text-sm text-gray-700">Billing and Shipping</span>
-                        </label>
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="addressTypeInvoice"
-                            value="Billing"
-                            checked={searchModalData.addressTypeInvoice === "Billing"}
-                            onChange={(e) => setSearchModalData(prev => ({ ...prev, addressTypeInvoice: e.target.value }))}
-                            className="cursor-pointer"
-                          />
-                          <span className="text-sm text-gray-700">Billing</span>
-                        </label>
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="addressTypeInvoice"
-                            value="Shipping"
-                            checked={searchModalData.addressTypeInvoice === "Shipping"}
-                            onChange={(e) => setSearchModalData(prev => ({ ...prev, addressTypeInvoice: e.target.value }))}
-                            className="cursor-pointer"
-                          />
-                          <span className="text-sm text-gray-700">Shipping</span>
-                        </label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <div
-                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${false ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          >
-                            <span className="text-gray-400">Attention</span>
-                            <ChevronDown size={16} className="text-gray-500" />
-                          </div>
-                        </div>
-                        <button className="text-blue-600 text-sm hover:underline">+ Address Line</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {searchType === "Payments Received" && (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-4">
-                    {/* Customer Name */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name</label>
-                      <div className="relative" ref={customerNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.customerName ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.customerName || "Select customer"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isCustomerNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Reference# */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumberPayment}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumberPayment: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Total Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeFromPayment}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFromPayment: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeToPayment}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeToPayment: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Payment Method */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Payment Method</label>
-                      <div className="relative" ref={paymentMethodDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isPaymentMethodDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsPaymentMethodDropdownOpen(!isPaymentMethodDropdownOpen)}
-                        >
-                          <span className={searchModalData.paymentMethod ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.paymentMethod || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isPaymentMethodDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isPaymentMethodDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-4">
-                    {/* Payment # */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Payment #</label>
-                      <input
-                        type="text"
-                        value={searchModalData.paymentNumber}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, paymentNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-
-                    {/* Date Range */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeFromPayment}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFromPayment: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeToPayment}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeToPayment: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span className={searchModalData.statusPayment ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.statusPayment || "Select"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, statusPayment: status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-                      <input
-                        type="text"
-                        value={searchModalData.notesPayment}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, notesPayment: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Expenses Form */}
-              {searchType === "Expenses" && (
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Expense#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.expenseNumber || ""}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, expenseNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeFrom || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeTo || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Vendor Name</label>
-                      <div className="relative" ref={customerNameDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
-                        >
-                          <span className={searchModalData.vendorName ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.vendorName || "Select vendor"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isCustomerNameDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeFrom || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeTo || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumber || ""}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span>{searchModalData.status || "All"}</span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Account</label>
-                      <div className="relative" ref={accountDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
-                        >
-                          <span className={searchModalData.account ? "text-gray-700" : "text-gray-400"}>
-                            {searchModalData.account || "Select an account"}
-                          </span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAccountDropdownOpen ? "rotate-180" : ""}`} />
-                        </div>
-                        {isAccountDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-                      <input
-                        type="text"
-                        value={searchModalData.notes || ""}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, notes: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Recurring Invoices, Credit Notes, Vendors, Recurring Expenses, Purchase Orders, Bills, Payments Made, Recurring Bills, Vendor Credits, Projects, Timesheet, Journals, Chart of Accounts, Documents, Task - Using similar structure */}
-              {["Recurring Invoices", "Credit Notes", "Vendors", "Recurring Expenses", "Purchase Orders", "Bills", "Payments Made", "Recurring Bills", "Vendor Credits", "Projects", "Timesheet", "Journals", "Chart of Accounts", "Documents", "Task"].includes(searchType) && (
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{searchType === "Vendors" ? "Vendor Name" : searchType === "Projects" ? "Project Name" : searchType === "Chart of Accounts" ? "Account Name" : searchType === "Documents" ? "Document Name" : searchType === "Task" ? "Task Name" : `${searchType} Number`}</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumber || ""}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeFrom || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          placeholder="dd/MM/yyyy"
-                          value={searchModalData.dateRangeTo || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
-                      </div>
-                    </div>
-                    {searchType !== "Vendors" && searchType !== "Chart of Accounts" && searchType !== "Documents" && searchType !== "Task" && (
+              {/* Search Criteria Body */}
+              <div className="p-6">
+                {searchType === "Customers" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Display Name */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">{searchType.includes("Payment") ? "Customer Name" : searchType.includes("Bill") || searchType.includes("Expense") || searchType === "Purchase Orders" ? "Vendor Name" : "Customer Name"}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Display Name</label>
+                        <input
+                          type="text"
+                          value={searchModalData.displayName}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, displayName: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Company Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Company Name</label>
+                        <input
+                          type="text"
+                          value={searchModalData.companyName}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, companyName: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Last Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name</label>
+                        <input
+                          type="text"
+                          value={searchModalData.lastName}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, lastName: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span>{searchModalData.status}</span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
+                        <input
+                          type="text"
+                          value={searchModalData.address}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, address: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Customer Type */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Type</label>
+                        <div className="relative" ref={customerTypeDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsCustomerTypeDropdownOpen(!isCustomerTypeDropdownOpen)}
+                          >
+                            <span className={searchModalData.customerType ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.customerType || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerTypeDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isCustomerTypeDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["Business", "Individual"].map((type) => (
+                                <div
+                                  key={type}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, customerType: type }));
+                                    setIsCustomerTypeDropdownOpen(false);
+                                  }}
+                                >
+                                  {type}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* First Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name</label>
+                        <input
+                          type="text"
+                          value={searchModalData.firstName}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, firstName: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Email */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                        <input
+                          type="email"
+                          value={searchModalData.email}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, email: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Phone */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
+                        <input
+                          type="tel"
+                          value={searchModalData.phone}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, phone: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+                        <input
+                          type="text"
+                          value={searchModalData.notes}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, notes: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {searchType === "Items" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Item Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
+                        <input
+                          type="text"
+                          value={searchModalData.itemName}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, itemName: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Description */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
+                        <input
+                          type="text"
+                          value={searchModalData.description}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, description: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Purchase Rate */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Rate</label>
+                        <input
+                          type="text"
+                          value={searchModalData.purchaseRate}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, purchaseRate: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Sales Account */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Sales Account</label>
+                        <div className="relative" ref={salesAccountDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSalesAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsSalesAccountDropdownOpen(!isSalesAccountDropdownOpen)}
+                          >
+                            <span className={searchModalData.salesAccount ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.salesAccount || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSalesAccountDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isSalesAccountDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* SKU */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">SKU</label>
+                        <input
+                          type="text"
+                          value={searchModalData.sku}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, sku: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Rate */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Rate</label>
+                        <input
+                          type="text"
+                          value={searchModalData.rate}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, rate: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span>{searchModalData.status || "All"}</span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Purchase Account */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Account</label>
+                        <div className="relative" ref={purchaseAccountDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isPurchaseAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsPurchaseAccountDropdownOpen(!isPurchaseAccountDropdownOpen)}
+                          >
+                            <span className={searchModalData.purchaseAccount ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.purchaseAccount || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isPurchaseAccountDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isPurchaseAccountDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {searchType === "Inventory Adjustments" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Item Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
+                        <input
+                          type="text"
+                          value={searchModalData.itemName}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, itemName: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Reference# */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.referenceNumber}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Reason */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reason</label>
+                        <input
+                          type="text"
+                          value={searchModalData.reason}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, reason: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Item Description */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Description</label>
+                        <input
+                          type="text"
+                          value={searchModalData.itemDescription}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, itemDescription: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Adjustment Type */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Adjustment Type</label>
+                        <div className="relative" ref={adjustmentTypeDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAdjustmentTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsAdjustmentTypeDropdownOpen(!isAdjustmentTypeDropdownOpen)}
+                          >
+                            <span>{searchModalData.adjustmentType || "All"}</span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAdjustmentTypeDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isAdjustmentTypeDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Quantity", "Value"].map((type) => (
+                                <div
+                                  key={type}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, adjustmentType: type }));
+                                    setIsAdjustmentTypeDropdownOpen(false);
+                                  }}
+                                >
+                                  {type}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Date Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateFrom}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateTo}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {searchType === "Banking" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Total Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeFrom}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeTo}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span>{searchModalData.status || "All"}</span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Transaction Type */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Transaction Type</label>
+                        <div className="relative" ref={transactionTypeDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTransactionTypeDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsTransactionTypeDropdownOpen(!isTransactionTypeDropdownOpen)}
+                          >
+                            <span className={searchModalData.transactionType ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.transactionType || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTransactionTypeDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isTransactionTypeDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Date Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeFrom}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeTo}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Reference# */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.referenceNumber}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {searchType === "Quotes" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Quote# */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Quote#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.quoteNumber}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, quoteNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Date Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeFrom}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeTo}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Item Description */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Description</label>
+                        <input
+                          type="text"
+                          value={searchModalData.itemDescriptionQuote}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, itemDescriptionQuote: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Customer Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name</label>
                         <div className="relative" ref={customerNameDropdownRef}>
                           <div
                             className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
                             onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
                           >
                             <span className={searchModalData.customerName ? "text-gray-700" : "text-gray-400"}>
-                              {searchModalData.customerName || `Select ${searchType.includes("Payment") ? "customer" : searchType.includes("Bill") || searchType.includes("Expense") || searchType === "Purchase Orders" ? "vendor" : "customer"}`}
+                              {searchModalData.customerName || "Select customer"}
                             </span>
                             <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
                           </div>
@@ -4882,65 +4472,379 @@ export default function Customers() {
                           )}
                         </div>
                       </div>
-                    )}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
-                      <div className="flex items-center gap-2">
+
+                      {/* Salesperson */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Salesperson</label>
+                        <div className="relative" ref={salespersonDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSalespersonDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsSalespersonDropdownOpen(!isSalespersonDropdownOpen)}
+                          >
+                            <span className={searchModalData.salesperson ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.salesperson || "Select a salesperson"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSalespersonDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isSalespersonDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
+                        <div className="flex items-center gap-3 mb-2">
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="addressType"
+                              value="Billing and Shipping"
+                              checked={searchModalData.addressType === "Billing and Shipping"}
+                              onChange={(e) => setSearchModalData(prev => ({ ...prev, addressType: e.target.value }))}
+                              className="cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700">Billing and Shipping</span>
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="addressType"
+                              value="Billing"
+                              checked={searchModalData.addressType === "Billing"}
+                              onChange={(e) => setSearchModalData(prev => ({ ...prev, addressType: e.target.value }))}
+                              className="cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700">Billing</span>
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="addressType"
+                              value="Shipping"
+                              checked={searchModalData.addressType === "Shipping"}
+                              onChange={(e) => setSearchModalData(prev => ({ ...prev, addressType: e.target.value }))}
+                              className="cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700">Shipping</span>
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <div
+                              className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${false ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            >
+                              <span className="text-gray-400">Attention</span>
+                              <ChevronDown size={16} className="text-gray-500" />
+                            </div>
+                          </div>
+                          <button className="text-blue-600 text-sm hover:underline">+ Address Line</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Reference# */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
                         <input
                           type="text"
-                          value={searchModalData.totalRangeFrom || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFrom: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          value={searchModalData.referenceNumberQuote}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumberQuote: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
                         />
-                        <span className="text-gray-500">-</span>
-                        <input
-                          type="text"
-                          value={searchModalData.totalRangeTo || ""}
-                          onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeTo: e.target.value }))}
-                          className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                        />
+                      </div>
+
+                      {/* Item Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
+                        <div className="relative" ref={itemNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isItemNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsItemNameDropdownOpen(!isItemNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.itemNameQuote ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.itemNameQuote || "Select an item"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isItemNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isItemNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Total Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeFromQuote}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFromQuote: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeToQuote}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeToQuote: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Project Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Project Name</label>
+                        <div className="relative" ref={projectNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isProjectNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsProjectNameDropdownOpen(!isProjectNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.projectName ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.projectName || "Select a project"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isProjectNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isProjectNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Tax Exemptions */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Tax Exemptions</label>
+                        <div className="relative" ref={taxExemptionsDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTaxExemptionsDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsTaxExemptionsDropdownOpen(!isTaxExemptionsDropdownOpen)}
+                          >
+                            <span className={searchModalData.taxExemptions ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.taxExemptions || "Select a Tax Exemption"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTaxExemptionsDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isTaxExemptionsDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
-                      <input
-                        type="text"
-                        value={searchModalData.referenceNumber || ""}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                      <div className="relative" ref={statusDropdownRef}>
-                        <div
-                          className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
-                          onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                        >
-                          <span>{searchModalData.status || "All"}</span>
-                          <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                )}
+
+                {searchType === "Invoices" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Invoice# */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Invoice#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.invoiceNumber}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, invoiceNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Date Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeFrom}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeTo}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
                         </div>
-                        {isStatusDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
-                            {["All", "Active", "Inactive"].map((status) => (
-                              <div
-                                key={status}
-                                className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                                onClick={() => {
-                                  setSearchModalData(prev => ({ ...prev, status }));
-                                  setIsStatusDropdownOpen(false);
-                                }}
-                              >
-                                {status}
-                              </div>
-                            ))}
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span className={searchModalData.status ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.status || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
                           </div>
-                        )}
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Item Description */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Description</label>
+                        <input
+                          type="text"
+                          value={searchModalData.itemDescriptionInvoice}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, itemDescriptionInvoice: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Total Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeFromInvoice}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFromInvoice: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeToInvoice}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeToInvoice: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Project Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Project Name</label>
+                        <div className="relative" ref={projectNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isProjectNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsProjectNameDropdownOpen(!isProjectNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.projectNameInvoice ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.projectNameInvoice || "Select a project"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isProjectNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isProjectNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Tax Exemptions */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Tax Exemptions</label>
+                        <div className="relative" ref={taxExemptionsDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isTaxExemptionsDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsTaxExemptionsDropdownOpen(!isTaxExemptionsDropdownOpen)}
+                          >
+                            <span className={searchModalData.taxExemptionsInvoice ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.taxExemptionsInvoice || "Select a Tax Exemption"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isTaxExemptionsDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isTaxExemptionsDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    {searchType !== "Vendors" && searchType !== "Chart of Accounts" && searchType !== "Documents" && searchType !== "Task" && (
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Order Number */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Order Number</label>
+                        <input
+                          type="text"
+                          value={searchModalData.orderNumber}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, orderNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Created Between */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Created Between</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.createdBetweenFrom}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, createdBetweenFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.createdBetweenTo}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, createdBetweenTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Item Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name</label>
+                        <div className="relative" ref={itemNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isItemNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsItemNameDropdownOpen(!isItemNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.itemNameInvoice ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.itemNameInvoice || "Select an item"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isItemNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isItemNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Account */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1.5">Account</label>
                         <div className="relative" ref={accountDropdownRef}>
@@ -4960,897 +4864,1477 @@ export default function Customers() {
                           )}
                         </div>
                       </div>
-                    )}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-                      <input
-                        type="text"
-                        value={searchModalData.notes || ""}
-                        onChange={(e) => setSearchModalData(prev => ({ ...prev, notes: e.target.value }))}
-                        className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
 
-            {/* Footer Actions */}
-            <div className="flex items-center justify-center gap-3 py-4 px-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
-              <button
-                className="py-2.5 px-6 bg-red-600 text-white border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-red-700"
-                onClick={() => {
-                  // TODO: Implement search functionality
-                  setIsSearchModalOpen(false);
-                }}
-              >
-                Search
-              </button>
-              <button
-                className="py-2.5 px-6 bg-gray-200 text-gray-700 border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-300"
-                onClick={() => {
-                  setIsSearchModalOpen(false);
-                  // Reset search data when canceling
-                  resetSearchModalData();
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Customers Modal */}
-      {isExportCustomersModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsExportCustomersModalOpen(false);
-            }
-          }}
-        >
-          <div className="bg-white rounded-lg w-[90%] max-w-[600px] max-h-[90vh] flex flex-col shadow-xl">
-            <div className="flex items-center justify-between py-5 px-6 border-b border-gray-200">
-              <h2 className="m-0 text-xl font-semibold text-gray-900">Export Customers</h2>
-              <button
-                className="bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-blue-600 transition-colors hover:text-red-500"
-                onClick={() => setIsExportCustomersModalOpen(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              {/* Info Box */}
-              <div className="flex items-start gap-3 py-3 px-4 bg-blue-50 rounded-md mb-6 text-sm text-blue-900">
-                <Info size={16} className="flex-shrink-0 mt-0.5" />
-                <span>You can export your data from Zoho Books in CSV, XLS or XLSX format.</span>
-              </div>
-
-              {/* Module */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Module<span className="text-red-500 ml-1">*</span>
-                </label>
-                <div className="relative mb-3" ref={moduleDropdownRef}>
-                  <div
-                    className="flex items-center justify-between py-2.5 px-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm text-gray-700 transition-colors hover:border-gray-400"
-                    onClick={() => setIsModuleDropdownOpen(!isModuleDropdownOpen)}
-                  >
-                    <span>{exportData.module}</span>
-                    <ChevronDown size={16} />
-                  </div>
-                  {isModuleDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1000] max-h-[300px] overflow-y-auto">
-                      {moduleOptions.map((option) => (
-                        <div
-                          key={option}
-                          className="py-2.5 px-3 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                          onClick={() => {
-                            setExportData(prev => ({
-                              ...prev,
-                              module: option,
-                              dataScope: `All ${option}`, // Update data scope when module changes
-                              moduleType: option === "Customers" ? "Customers" : prev.moduleType // Reset module type if not Customers
-                            }));
-                            setIsModuleDropdownOpen(false);
-                          }}
-                        >
-                          {option}
+                      {/* Customer Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name</label>
+                        <div className="relative" ref={customerNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.customerNameInvoice ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.customerNameInvoice || "Select customer"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isCustomerNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      </div>
+
+                      {/* Salesperson */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Salesperson</label>
+                        <div className="relative" ref={salespersonDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isSalespersonDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsSalespersonDropdownOpen(!isSalespersonDropdownOpen)}
+                          >
+                            <span className={searchModalData.salespersonInvoice ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.salespersonInvoice || "Select a salesperson"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isSalespersonDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isSalespersonDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Address</label>
+                        <div className="flex items-center gap-3 mb-2">
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="addressTypeInvoice"
+                              value="Billing and Shipping"
+                              checked={searchModalData.addressTypeInvoice === "Billing and Shipping"}
+                              onChange={(e) => setSearchModalData(prev => ({ ...prev, addressTypeInvoice: e.target.value }))}
+                              className="cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700">Billing and Shipping</span>
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="addressTypeInvoice"
+                              value="Billing"
+                              checked={searchModalData.addressTypeInvoice === "Billing"}
+                              onChange={(e) => setSearchModalData(prev => ({ ...prev, addressTypeInvoice: e.target.value }))}
+                              className="cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700">Billing</span>
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="addressTypeInvoice"
+                              value="Shipping"
+                              checked={searchModalData.addressTypeInvoice === "Shipping"}
+                              onChange={(e) => setSearchModalData(prev => ({ ...prev, addressTypeInvoice: e.target.value }))}
+                              className="cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700">Shipping</span>
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <div
+                              className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${false ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            >
+                              <span className="text-gray-400">Attention</span>
+                              <ChevronDown size={16} className="text-gray-500" />
+                            </div>
+                          </div>
+                          <button className="text-blue-600 text-sm hover:underline">+ Address Line</button>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-                {/* Module Type Radio Buttons - Only show for Customers module */}
-                {exportData.module === "Customers" && (
-                  <div className="flex flex-col gap-2 mt-2">
-                    <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                      <input
-                        type="radio"
-                        name="moduleType"
-                        value="Customers"
-                        checked={exportData.moduleType === "Customers"}
-                        onChange={(e) => setExportData(prev => ({ ...prev, moduleType: e.target.value }))}
-                        className="m-0 cursor-pointer accent-blue-600"
-                      />
-                      <span>Customers</span>
-                    </label>
-                    <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                      <input
-                        type="radio"
-                        name="moduleType"
-                        value="Customer's Contact Persons"
-                        checked={exportData.moduleType === "Customer's Contact Persons"}
-                        onChange={(e) => setExportData(prev => ({ ...prev, moduleType: e.target.value }))}
-                        className="m-0 cursor-pointer accent-blue-600"
-                      />
-                      <span>Customer's Contact Persons</span>
-                    </label>
-                    <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                      <input
-                        type="radio"
-                        name="moduleType"
-                        value="Customer's Addresses"
-                        checked={exportData.moduleType === "Customer's Addresses"}
-                        onChange={(e) => setExportData(prev => ({ ...prev, moduleType: e.target.value }))}
-                        className="m-0 cursor-pointer accent-blue-600"
-                      />
-                      <span>Customer's Addresses</span>
-                    </label>
+                  </div>
+                )}
+
+                {searchType === "Payments Received" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Customer Name */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name</label>
+                        <div className="relative" ref={customerNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.customerName ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.customerName || "Select customer"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isCustomerNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Reference# */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.referenceNumberPayment}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumberPayment: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Total Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeFromPayment}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFromPayment: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeToPayment}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeToPayment: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Payment Method */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Payment Method</label>
+                        <div className="relative" ref={paymentMethodDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isPaymentMethodDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsPaymentMethodDropdownOpen(!isPaymentMethodDropdownOpen)}
+                          >
+                            <span className={searchModalData.paymentMethod ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.paymentMethod || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isPaymentMethodDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isPaymentMethodDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Payment # */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Payment #</label>
+                        <input
+                          type="text"
+                          value={searchModalData.paymentNumber}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, paymentNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+
+                      {/* Date Range */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeFromPayment}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFromPayment: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeToPayment}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeToPayment: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span className={searchModalData.statusPayment ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.statusPayment || "Select"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, statusPayment: status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+                        <input
+                          type="text"
+                          value={searchModalData.notesPayment}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, notesPayment: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Expenses Form */}
+                {searchType === "Expenses" && (
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Expense#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.expenseNumber || ""}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, expenseNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeFrom || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeTo || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Vendor Name</label>
+                        <div className="relative" ref={customerNameDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
+                          >
+                            <span className={searchModalData.vendorName ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.vendorName || "Select vendor"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isCustomerNameDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeFrom || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeTo || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.referenceNumber || ""}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span>{searchModalData.status || "All"}</span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Account</label>
+                        <div className="relative" ref={accountDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+                          >
+                            <span className={searchModalData.account ? "text-gray-700" : "text-gray-400"}>
+                              {searchModalData.account || "Select an account"}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAccountDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isAccountDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+                        <input
+                          type="text"
+                          value={searchModalData.notes || ""}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, notes: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Recurring Invoices, Credit Notes, Vendors, Recurring Expenses, Purchase Orders, Bills, Payments Made, Recurring Bills, Vendor Credits, Projects, Timesheet, Journals, Chart of Accounts, Documents, Task - Using similar structure */}
+                {["Recurring Invoices", "Credit Notes", "Vendors", "Recurring Expenses", "Purchase Orders", "Bills", "Payments Made", "Recurring Bills", "Vendor Credits", "Projects", "Timesheet", "Journals", "Chart of Accounts", "Documents", "Task"].includes(searchType) && (
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">{searchType === "Vendors" ? "Vendor Name" : searchType === "Projects" ? "Project Name" : searchType === "Chart of Accounts" ? "Account Name" : searchType === "Documents" ? "Document Name" : searchType === "Task" ? "Task Name" : `${searchType} Number`}</label>
+                        <input
+                          type="text"
+                          value={searchModalData.referenceNumber || ""}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeFrom || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            placeholder="dd/MM/yyyy"
+                            value={searchModalData.dateRangeTo || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, dateRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+                      {searchType !== "Vendors" && searchType !== "Chart of Accounts" && searchType !== "Documents" && searchType !== "Task" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1.5">{searchType.includes("Payment") ? "Customer Name" : searchType.includes("Bill") || searchType.includes("Expense") || searchType === "Purchase Orders" ? "Vendor Name" : "Customer Name"}</label>
+                          <div className="relative" ref={customerNameDropdownRef}>
+                            <div
+                              className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isCustomerNameDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                              onClick={() => setIsCustomerNameDropdownOpen(!isCustomerNameDropdownOpen)}
+                            >
+                              <span className={searchModalData.customerName ? "text-gray-700" : "text-gray-400"}>
+                                {searchModalData.customerName || `Select ${searchType.includes("Payment") ? "customer" : searchType.includes("Bill") || searchType.includes("Expense") || searchType === "Purchase Orders" ? "vendor" : "customer"}`}
+                              </span>
+                              <ChevronDown size={16} className={`text-gray-500 transition-transform ${isCustomerNameDropdownOpen ? "rotate-180" : ""}`} />
+                            </div>
+                            {isCustomerNameDropdownOpen && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                                <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Total Range</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeFrom || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeFrom: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-gray-500">-</span>
+                          <input
+                            type="text"
+                            value={searchModalData.totalRangeTo || ""}
+                            onChange={(e) => setSearchModalData(prev => ({ ...prev, totalRangeTo: e.target.value }))}
+                            className="flex-1 py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference#</label>
+                        <input
+                          type="text"
+                          value={searchModalData.referenceNumber || ""}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <div className="relative" ref={statusDropdownRef}>
+                          <div
+                            className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isStatusDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                            onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                          >
+                            <span>{searchModalData.status || "All"}</span>
+                            <ChevronDown size={16} className={`text-gray-500 transition-transform ${isStatusDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                          {isStatusDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                              {["All", "Active", "Inactive"].map((status) => (
+                                <div
+                                  key={status}
+                                  className="py-2.5 px-3.5 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                                  onClick={() => {
+                                    setSearchModalData(prev => ({ ...prev, status }));
+                                    setIsStatusDropdownOpen(false);
+                                  }}
+                                >
+                                  {status}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {searchType !== "Vendors" && searchType !== "Chart of Accounts" && searchType !== "Documents" && searchType !== "Task" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1.5">Account</label>
+                          <div className="relative" ref={accountDropdownRef}>
+                            <div
+                              className={`flex items-center justify-between w-full py-2 px-3 text-sm text-gray-700 bg-white border rounded-md cursor-pointer transition-colors ${isAccountDropdownOpen ? "border-blue-600" : "border-gray-300 hover:border-gray-400"}`}
+                              onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+                            >
+                              <span className={searchModalData.account ? "text-gray-700" : "text-gray-400"}>
+                                {searchModalData.account || "Select an account"}
+                              </span>
+                              <ChevronDown size={16} className={`text-gray-500 transition-transform ${isAccountDropdownOpen ? "rotate-180" : ""}`} />
+                            </div>
+                            {isAccountDropdownOpen && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-600 border-t-0 rounded-b-md shadow-lg z-[1002]">
+                                <div className="py-2.5 px-3.5 text-sm text-gray-500">No options available</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+                        <input
+                          type="text"
+                          value={searchModalData.notes || ""}
+                          onChange={(e) => setSearchModalData(prev => ({ ...prev, notes: e.target.value }))}
+                          className="w-full py-2 px-3 text-sm text-gray-700 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Data Scope */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Data Scope
-                </label>
-                <div className="flex flex-col gap-2">
-                  <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="dataScope"
-                      value={`All ${exportData.module}`}
-                      checked={exportData.dataScope === `All ${exportData.module}`}
-                      onChange={(e) => setExportData(prev => ({ ...prev, dataScope: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>All {exportData.module}</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="dataScope"
-                      value="Specific Period"
-                      checked={exportData.dataScope === "Specific Period"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, dataScope: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>Specific Period</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Decimal Format */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Decimal Format<span className="text-red-500 ml-1">*</span>
-                </label>
-                <div className="relative" ref={decimalFormatDropdownRef}>
-                  <div
-                    className="flex items-center justify-between py-2.5 px-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm text-gray-700 transition-colors hover:border-gray-400"
-                    onClick={() => setIsDecimalFormatDropdownOpen(!isDecimalFormatDropdownOpen)}
-                  >
-                    <span>{exportData.decimalFormat}</span>
-                    <ChevronDown size={16} />
-                  </div>
-                  {isDecimalFormatDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1000] max-h-[200px] overflow-y-auto">
-                      {decimalFormatOptions.map((format) => (
-                        <div
-                          key={format}
-                          className="py-2.5 px-3 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
-                          onClick={() => {
-                            setExportData(prev => ({ ...prev, decimalFormat: format }));
-                            setIsDecimalFormatDropdownOpen(false);
-                          }}
-                        >
-                          {format}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Export File Format */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Export File Format<span className="text-red-500 ml-1">*</span>
-                </label>
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="fileFormat"
-                      value="csv"
-                      checked={exportData.fileFormat === "csv"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>CSV (Comma Separated Value)</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="fileFormat"
-                      value="xls"
-                      checked={exportData.fileFormat === "xls"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>XLS (Microsoft Excel 1997-2004 Compatible)</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
-                    <input
-                      type="radio"
-                      name="fileFormat"
-                      value="xlsx"
-                      checked={exportData.fileFormat === "xlsx"}
-                      onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span>XLSX (Microsoft Excel)</span>
-                  </label>
-                </div>
-                {/* Include PII Checkbox */}
-                <div className="mt-3">
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={exportData.includePII}
-                      onChange={(e) => setExportData(prev => ({ ...prev, includePII: e.target.checked }))}
-                      className="m-0 cursor-pointer accent-blue-600"
-                    />
-                    <span className="text-sm text-gray-700">Include Sensitive Personally Identifiable Information (PII) while exporting.</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* File Protection Password */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  File Protection Password
-                </label>
-                <div className="relative flex items-center">
-                  <input
-                    type={exportData.showPassword ? "text" : "password"}
-                    className="w-full py-2.5 px-3 pr-10 border border-gray-300 rounded-md text-sm text-gray-700 transition-colors focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                    value={exportData.password}
-                    onChange={(e) => setExportData(prev => ({ ...prev, password: e.target.value }))}
-                    placeholder="Enter password"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-gray-500 transition-colors hover:text-gray-700"
-                    onClick={handleTogglePasswordVisibility}
-                  >
-                    {exportData.showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-gray-600 leading-relaxed">
-                  Your password must be at least 12 characters and include one uppercase letter, lowercase letter, number, and special character.
-                </p>
-              </div>
-
-              {/* Note */}
-              <div className="mt-6 p-4 bg-gray-50 rounded-md text-sm text-gray-700 leading-relaxed">
-                <strong>Note:</strong> You can export only the first 25,000 rows. If you have more rows, please initiate a backup for the data in your Zoho Books organization, and download it.{" "}
-                <a href="#" className="text-blue-600 no-underline font-medium hover:underline">Backup Your Data</a>
+              {/* Footer Actions */}
+              <div className="flex items-center justify-center gap-3 py-4 px-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+                <button
+                  className="py-2.5 px-6 bg-red-600 text-white border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-red-700"
+                  onClick={() => {
+                    // TODO: Implement search functionality
+                    setIsSearchModalOpen(false);
+                  }}
+                >
+                  Search
+                </button>
+                <button
+                  className="py-2.5 px-6 bg-gray-200 text-gray-700 border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-300"
+                  onClick={() => {
+                    setIsSearchModalOpen(false);
+                    // Reset search data when canceling
+                    resetSearchModalData();
+                  }}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
-            <div className="flex items-center justify-start gap-3 py-5 px-6 border-t border-gray-200">
-              <button
-                className="py-2.5 px-5 bg-[#156372] text-white border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-[#0f4f5a]"
-                onClick={handleExportCustomers}
-              >
-                Export
-              </button>
-              <button
-                className="py-2.5 px-5 bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
-                onClick={() => setIsExportCustomersModalOpen(false)}
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {/* Settings Dropdown Overlay - Rendered outside table to avoid clipping */}
-      {settingsDropdownOpen && (
-        <>
+      {/* Export Customers Modal */}
+      {
+        isExportCustomersModalOpen && (
           <div
-            className="fixed inset-0 z-[999]"
-            onClick={() => setSettingsDropdownOpen(false)}
-          ></div>
-          <div
-            ref={settingsDropdownMenuRef}
-            className="fixed bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] py-2 animate-in fade-in zoom-in-95 duration-200 font-normal w-56"
-            style={{
-              top: `${settingsDropdownPosition.top}px`,
-              left: `${settingsDropdownPosition.left}px`
-            }}
-          >
-            <button
-              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-              onClick={() => { setIsCustomizeModalOpen(true); setSettingsDropdownOpen(false); }}
-            >
-              <Layout size={16} className="text-[#156372]" />
-              <span>Customize Columns</span>
-            </button>
-
-          </div>
-        </>
-      )}
-
-      {/* Receivables Dropdown Overlay - Rendered outside table to avoid clipping */}
-      {openReceivablesDropdownId && displayedCustomers.find(c => c.id === openReceivablesDropdownId) && (
-        <div
-          ref={receivablesDropdownRef}
-          className="fixed bg-transparent z-[10000]"
-          style={{
-            top: `${receivablesDropdownPosition.top}px`,
-            left: `${receivablesDropdownPosition.left}px`
-          }}
-          onMouseEnter={() => {
-            const customer = displayedCustomers.find(c => c.id === openReceivablesDropdownId);
-            if (customer) setHoveredRowId(customer.id);
-          }}
-          onMouseLeave={() => {
-            setOpenReceivablesDropdownId(null);
-            setHoveredRowId(null);
-          }}
-        >
-          <button
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]"
             onClick={(e) => {
-              e.stopPropagation();
-              if (openReceivablesDropdownId) {
-                navigate(`/sales/customers/${openReceivablesDropdownId}/edit`);
+              if (e.target === e.currentTarget) {
+                setIsExportCustomersModalOpen(false);
               }
-              setOpenReceivablesDropdownId(null);
-              setHoveredRowId(null);
             }}
-            className="flex items-center gap-2 py-2 px-4 bg-[#156372] text-white border border-white rounded-md text-sm font-medium cursor-pointer transition-all hover:bg-[#0f4f5a] shadow-lg"
           >
-            <Edit size={16} className="text-white" />
-            Edit
-          </button>
-        </div>
-      )}
-
-      {/* Delete Customer Confirmation Modal */}
-      {isDeleteModalOpen && (
-        <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-[2000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsDeleteModalOpen(false);
-              setDeleteCustomerId(null);
-            }
-          }}
-        >
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-            <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Delete Customer</h2>
-              <p className="text-gray-700 mb-6">
-                Are you sure you want to delete this customer? This action cannot be undone.
-              </p>
-              <div className="flex items-center justify-end gap-3">
+            <div className="bg-white rounded-lg w-[90%] max-w-[600px] max-h-[90vh] flex flex-col shadow-xl">
+              <div className="flex items-center justify-between py-5 px-6 border-b border-gray-200">
+                <h2 className="m-0 text-xl font-semibold text-gray-900">Export Customers</h2>
                 <button
-                  onClick={() => {
-                    setIsDeleteModalOpen(false);
-                    setDeleteCustomerId(null);
-                  }}
-                  disabled={isDeletingCustomer}
-                  className={`px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-300 ${isDeletingCustomer ? "opacity-70 cursor-not-allowed" : ""}`}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteCustomer}
-                  disabled={isDeletingCustomer}
-                  className={`px-6 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-red-700 flex items-center gap-2 ${isDeletingCustomer ? "opacity-70 cursor-not-allowed" : ""}`}
-                >
-                  {isDeletingCustomer && <Loader2 size={14} className="animate-spin" />}
-                  {isDeletingCustomer ? "Deleting..." : "Delete"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Delete Confirmation Modal */}
-      {isBulkDeleteModalOpen && (
-        <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-[2000]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsBulkDeleteModalOpen(false);
-              setDeleteCustomerIds([]);
-            }
-          }}
-        >
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-            <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Delete Customers</h2>
-              <p className="text-gray-700 mb-6">
-                Are you sure you want to delete {deleteCustomerIds.length} customer(s)? This action cannot be undone.
-              </p>
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  onClick={() => {
-                    setIsBulkDeleteModalOpen(false);
-                    setDeleteCustomerIds([]);
-                  }}
-                  disabled={isBulkDeletingCustomers}
-                  className={`px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-300 ${isBulkDeletingCustomers ? "opacity-70 cursor-not-allowed" : ""}`}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmBulkDelete}
-                  disabled={isBulkDeletingCustomers}
-                  className={`px-6 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-red-700 flex items-center gap-2 ${isBulkDeletingCustomers ? "opacity-70 cursor-not-allowed" : ""}`}
-                >
-                  {isBulkDeletingCustomers && <Loader2 size={14} className="animate-spin" />}
-                  {isBulkDeletingCustomers ? "Deleting..." : `Delete ${deleteCustomerIds.length} Customer(s)`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Preferences Sidebar */}
-      {(isPreferencesOpen || isFieldCustomizationOpen) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
-          <div className="w-full max-w-2xl bg-white h-full overflow-y-auto shadow-xl">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white sticky top-0 z-10">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setActivePreferencesTab("preferences")}
-                  className={`px-4 py-2 text-sm font-medium ${activePreferencesTab === "preferences"
-                    ? "text-blue-600 border-b-2 border-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
-                    }`}
-                >
-                  Preferences
-                </button>
-                <button
-                  onClick={() => setActivePreferencesTab("field-customization")}
-                  className={`px-4 py-2 text-sm font-medium ${activePreferencesTab === "field-customization"
-                    ? "text-blue-600 border-b-2 border-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
-                    }`}
-                >
-                  Field Customization
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="text-sm text-blue-600 hover:text-blue-700">All Preferences</button>
-                <button
-                  onClick={() => {
-                    setIsPreferencesOpen(false);
-                    setIsFieldCustomizationOpen(false);
-                  }}
-                  className="p-2 text-gray-500 hover:text-gray-700 cursor-pointer"
+                  className="bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-blue-600 transition-colors hover:text-red-500"
+                  onClick={() => setIsExportCustomersModalOpen(false)}
                 >
                   <X size={20} />
                 </button>
               </div>
-            </div>
+              <div className="p-6 overflow-y-auto flex-1">
+                {/* Info Box */}
+                <div className="flex items-start gap-3 py-3 px-4 bg-blue-50 rounded-md mb-6 text-sm text-blue-900">
+                  <Info size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>You can export your data from Zoho Books in CSV, XLS or XLSX format.</span>
+                </div>
 
-            {/* Preferences Tab Content */}
-            {activePreferencesTab === "preferences" && (
-              <div className="p-6">
-                {/* General Settings */}
+                {/* Module */}
                 <div className="mb-6">
-                  <div className="mb-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={preferences.allowEditingSentInvoice}
-                        onChange={(e) => setPreferences(prev => ({ ...prev, allowEditingSentInvoice: e.target.checked }))}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-700">Allow editing of Sent Invoice?</span>
-                    </label>
-                  </div>
-                  <div className="mb-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={preferences.associateExpenseReceipts}
-                        onChange={(e) => setPreferences(prev => ({ ...prev, associateExpenseReceipts: e.target.checked }))}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-700">Associate and display expense receipts in Invoice PDF</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Payments Section */}
-                <div className="mb-6 pb-6 border-b border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Payments</h3>
-                  <div className="space-y-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={preferences.notifyOnOnlinePayment}
-                        onChange={(e) => setPreferences(prev => ({ ...prev, notifyOnOnlinePayment: e.target.checked }))}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-700">Get notified when customers pay online</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={preferences.includePaymentReceipt}
-                        onChange={(e) => setPreferences(prev => ({ ...prev, includePaymentReceipt: e.target.checked }))}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-700">Do you want to include the payment receipt along with the Thank You note?</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={preferences.automateThankYouNote}
-                        onChange={(e) => setPreferences(prev => ({ ...prev, automateThankYouNote: e.target.checked }))}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-700">Automate thank you note to customer on receipt of online payment</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Invoice QR Code Section */}
-                <div className="mb-6 pb-6 border-b border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-gray-900">Invoice QR Code</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">{preferences.invoiceQRCodeEnabled ? "Enabled" : "Disabled"}</span>
-                      <button
-                        onClick={() => setPreferences(prev => ({ ...prev, invoiceQRCodeEnabled: !prev.invoiceQRCodeEnabled }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${preferences.invoiceQRCodeEnabled ? "bg-blue-600" : "bg-gray-300"
-                          }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${preferences.invoiceQRCodeEnabled ? "translate-x-6" : "translate-x-1"
-                            }`}
-                        />
-                      </button>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Module<span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="relative mb-3" ref={moduleDropdownRef}>
+                    <div
+                      className="flex items-center justify-between py-2.5 px-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm text-gray-700 transition-colors hover:border-gray-400"
+                      onClick={() => setIsModuleDropdownOpen(!isModuleDropdownOpen)}
+                    >
+                      <span>{exportData.module}</span>
+                      <ChevronDown size={16} />
                     </div>
+                    {isModuleDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1000] max-h-[300px] overflow-y-auto">
+                        {moduleOptions.map((option) => (
+                          <div
+                            key={option}
+                            className="py-2.5 px-3 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                            onClick={() => {
+                              setExportData(prev => ({
+                                ...prev,
+                                module: option,
+                                dataScope: `All ${option}`, // Update data scope when module changes
+                                moduleType: option === "Customers" ? "Customers" : prev.moduleType // Reset module type if not Customers
+                              }));
+                              setIsModuleDropdownOpen(false);
+                            }}
+                          >
+                            {option}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-sm text-gray-600">
-                    Enable and configure the QR code you want to display on the PDF copy of an Invoice. Your customers can scan the QR code using their device to access the URL or other information that you configure.
+                  {/* Module Type Radio Buttons - Only show for Customers module */}
+                  {exportData.module === "Customers" && (
+                    <div className="flex flex-col gap-2 mt-2">
+                      <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                        <input
+                          type="radio"
+                          name="moduleType"
+                          value="Customers"
+                          checked={exportData.moduleType === "Customers"}
+                          onChange={(e) => setExportData(prev => ({ ...prev, moduleType: e.target.value }))}
+                          className="m-0 cursor-pointer accent-blue-600"
+                        />
+                        <span>Customers</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                        <input
+                          type="radio"
+                          name="moduleType"
+                          value="Customer's Contact Persons"
+                          checked={exportData.moduleType === "Customer's Contact Persons"}
+                          onChange={(e) => setExportData(prev => ({ ...prev, moduleType: e.target.value }))}
+                          className="m-0 cursor-pointer accent-blue-600"
+                        />
+                        <span>Customer's Contact Persons</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                        <input
+                          type="radio"
+                          name="moduleType"
+                          value="Customer's Addresses"
+                          checked={exportData.moduleType === "Customer's Addresses"}
+                          onChange={(e) => setExportData(prev => ({ ...prev, moduleType: e.target.value }))}
+                          className="m-0 cursor-pointer accent-blue-600"
+                        />
+                        <span>Customer's Addresses</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Data Scope */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data Scope
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="dataScope"
+                        value={`All ${exportData.module}`}
+                        checked={exportData.dataScope === `All ${exportData.module}`}
+                        onChange={(e) => setExportData(prev => ({ ...prev, dataScope: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>All {exportData.module}</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 py-2 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="dataScope"
+                        value="Specific Period"
+                        checked={exportData.dataScope === "Specific Period"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, dataScope: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>Specific Period</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Decimal Format */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Decimal Format<span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="relative" ref={decimalFormatDropdownRef}>
+                    <div
+                      className="flex items-center justify-between py-2.5 px-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm text-gray-700 transition-colors hover:border-gray-400"
+                      onClick={() => setIsDecimalFormatDropdownOpen(!isDecimalFormatDropdownOpen)}
+                    >
+                      <span>{exportData.decimalFormat}</span>
+                      <ChevronDown size={16} />
+                    </div>
+                    {isDecimalFormatDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-[1000] max-h-[200px] overflow-y-auto">
+                        {decimalFormatOptions.map((format) => (
+                          <div
+                            key={format}
+                            className="py-2.5 px-3 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-gray-100"
+                            onClick={() => {
+                              setExportData(prev => ({ ...prev, decimalFormat: format }));
+                              setIsDecimalFormatDropdownOpen(false);
+                            }}
+                          >
+                            {format}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Export File Format */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Export File Format<span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="flex flex-col gap-3">
+                    <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="fileFormat"
+                        value="csv"
+                        checked={exportData.fileFormat === "csv"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>CSV (Comma Separated Value)</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="fileFormat"
+                        value="xls"
+                        checked={exportData.fileFormat === "xls"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>XLS (Microsoft Excel 1997-2004 Compatible)</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 py-3 px-3 border border-gray-200 rounded-md cursor-pointer transition-all text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300">
+                      <input
+                        type="radio"
+                        name="fileFormat"
+                        value="xlsx"
+                        checked={exportData.fileFormat === "xlsx"}
+                        onChange={(e) => setExportData(prev => ({ ...prev, fileFormat: e.target.value }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span>XLSX (Microsoft Excel)</span>
+                    </label>
+                  </div>
+                  {/* Include PII Checkbox */}
+                  <div className="mt-3">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={exportData.includePII}
+                        onChange={(e) => setExportData(prev => ({ ...prev, includePII: e.target.checked }))}
+                        className="m-0 cursor-pointer accent-blue-600"
+                      />
+                      <span className="text-sm text-gray-700">Include Sensitive Personally Identifiable Information (PII) while exporting.</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* File Protection Password */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    File Protection Password
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={exportData.showPassword ? "text" : "password"}
+                      className="w-full py-2.5 px-3 pr-10 border border-gray-300 rounded-md text-sm text-gray-700 transition-colors focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      value={exportData.password}
+                      onChange={(e) => setExportData(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="Enter password"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 bg-transparent border-none cursor-pointer p-1 flex items-center justify-center text-gray-500 transition-colors hover:text-gray-700"
+                      onClick={handleTogglePasswordVisibility}
+                    >
+                      {exportData.showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                    Your password must be at least 12 characters and include one uppercase letter, lowercase letter, number, and special character.
                   </p>
                 </div>
 
-                {/* Zero-Value Line Items Section */}
-                <div className="mb-6 pb-6 border-b border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Zero-Value Line Items</h3>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={preferences.hideZeroValueLineItems}
-                      onChange={(e) => setPreferences(prev => ({ ...prev, hideZeroValueLineItems: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer mt-0.5"
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm text-gray-700">Hide zero-value line items</span>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Choose whether you want to hide zero-value line items in an invoice's PDF and the Customer Portal. They will still be visible while editing an invoice. This setting will not apply to invoices whose total is zero.
-                      </p>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Terms & Conditions Section */}
-                <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Terms & Conditions</h3>
-                  <textarea
-                    value={preferences.termsAndConditions}
-                    onChange={(e) => setPreferences(prev => ({ ...prev, termsAndConditions: e.target.value }))}
-                    className="w-full px-4 py-3 border border-blue-200 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[200px]"
-                    placeholder="Enter terms and conditions..."
-                  />
-                </div>
-
-                {/* Customer Notes Section */}
-                <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Customer Notes</h3>
-                  <textarea
-                    value={preferences.customerNotes}
-                    onChange={(e) => setPreferences(prev => ({ ...prev, customerNotes: e.target.value }))}
-                    className="w-full px-4 py-3 border border-blue-200 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[200px]"
-                    placeholder="Enter customer notes..."
-                  />
-                </div>
-
-                {/* Save Button */}
-                <div className="flex items-center justify-start pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => {
-                      // TODO: Save preferences to localStorage or backend
-                      toast.success("Preferences saved successfully!");
-                      setIsPreferencesOpen(false);
-                    }}
-                    className="px-6 py-2 bg-[#156372] text-white rounded-md text-sm font-medium cursor-pointer hover:bg-[#0f4f5a]"
-                  >
-                    Save
-                  </button>
+                {/* Note */}
+                <div className="mt-6 p-4 bg-gray-50 rounded-md text-sm text-gray-700 leading-relaxed">
+                  <strong>Note:</strong> You can export only the first 25,000 rows. If you have more rows, please initiate a backup for the data in your Zoho Books organization, and download it.{" "}
+                  <a href="#" className="text-blue-600 no-underline font-medium hover:underline">Backup Your Data</a>
                 </div>
               </div>
-            )}
-
-            {/* Field Customization Tab Content */}
-            {activePreferencesTab === "field-customization" && (
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900">Custom Fields</h2>
-                  <button className="flex items-center gap-2 px-4 py-2 bg-[#156372] text-white rounded-md text-sm font-medium cursor-pointer hover:bg-[#0f4f5a]">
-                    <Plus size={16} />
-                    New
-                  </button>
-                </div>
-
-                {/* Table */}
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">FIELD NAME</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">DATA TYPE</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">MANDATORY</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">SHOW IN ALL PDFS</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customFields.map((field) => (
-                        <tr
-                          key={field.id}
-                          className={`border-b border-gray-200 hover:bg-gray-50 ${field.name === "Reference" ? "cursor-pointer" : ""
-                            }`}
-                          onClick={() => {
-                            if (field.name === "Reference") {
-                              setIsPreferencesOpen(true);
-                              setActivePreferencesTab("preferences");
-                            }
-                          }}
-                        >
-                          <td className="px-4 py-3 text-gray-900">
-                            <div className="flex items-center gap-2">
-                              {field.isLocked && <Lock size={14} className="text-gray-400" />}
-                              <span>{field.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">{field.dataType}</td>
-                          <td className="px-4 py-3 text-gray-700">{field.mandatory ? "Yes" : "No"}</td>
-                          <td className="px-4 py-3 text-gray-700">{field.showInPDF ? "Yes" : "No"}</td>
-                          <td className="px-4 py-3">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
-                              {field.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Import Customers Modal */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]" onClick={() => {
-          setIsImportContinueLoading(false);
-          setIsImportModalOpen(false);
-        }}>
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Import Customers</h2>
-              <button
-                onClick={() => {
-                  setIsImportContinueLoading(false);
-                  setIsImportModalOpen(false);
-                }}
-                disabled={isImportContinueLoading}
-                className={`text-red-500 hover:text-red-600 transition-colors ${isImportContinueLoading ? "opacity-70 cursor-not-allowed" : ""}`}
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6">
-              <p className="text-sm text-gray-700 mb-6">
-                You can import contacts into Zoho Books from a .CSV or .TSV or .XLS file.
-              </p>
-
-              {/* Radio Buttons */}
-              <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="importType"
-                    value="customers"
-                    checked={importType === "customers"}
-                    onChange={(e) => setImportType(e.target.value)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-900">Customers</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="importType"
-                    value="contactPersons"
-                    checked={importType === "contactPersons"}
-                    onChange={(e) => setImportType(e.target.value)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-900">Customer's Contact Persons</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setIsImportContinueLoading(false);
-                  setIsImportModalOpen(false);
-                }}
-                disabled={isImportContinueLoading}
-                className={`px-6 py-2 bg-white border border-gray-200 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors ${isImportContinueLoading ? "opacity-70 cursor-not-allowed" : ""}`}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setIsImportContinueLoading(true);
-                  setIsImportModalOpen(false);
-                  navigate("/sales/customers/import");
-                }}
-                disabled={isImportContinueLoading}
-                className={`px-6 py-2 bg-[#156372] text-white rounded-md text-sm font-medium hover:bg-[#0f4f5a] transition-colors flex items-center gap-2 ${isImportContinueLoading ? "opacity-70 cursor-not-allowed" : ""}`}
-              >
-                {isImportContinueLoading && <Loader2 size={14} className="animate-spin" />}
-                {isImportContinueLoading ? "Loading..." : "Continue"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {isCustomizeModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded shadow-2xl w-[500px] max-h-[85vh] flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal size={18} className="text-gray-600" />
-                <h3 className="text-[15px] font-medium text-[#313131]">Customize Columns</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500 mr-1">
-                  {columns.filter(c => c.visible).length} of {columns.length} Selected
-                </span>
-                <div className="h-4 w-px bg-gray-300 mx-1"></div>
+              <div className="flex items-center justify-start gap-3 py-5 px-6 border-t border-gray-200">
                 <button
-                  onClick={() => setIsCustomizeModalOpen(false)}
-                  className="p-0.5 border border-red-400 rounded-sm hover:bg-red-50 transition-colors"
+                  className="py-2.5 px-5 bg-[#156372] text-white border-none rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-[#0f4f5a]"
+                  onClick={handleExportCustomers}
                 >
-                  <X size={16} className="text-blue-500" strokeWidth={2.5} />
+                  Export
+                </button>
+                <button
+                  className="py-2.5 px-5 bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium cursor-pointer transition-all hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setIsExportCustomersModalOpen(false)}
+                >
+                  Cancel
                 </button>
               </div>
             </div>
+          </div>
+        )
+      }
 
-            {/* Search */}
-            <div className="p-4 border-b border-gray-50">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search"
-                  className="w-full bg-white border border-gray-200 rounded py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-blue-400 transition-all placeholder:text-gray-400 text-gray-700"
-                  value={columnSearch}
-                  onChange={(e) => setColumnSearch(e.target.value)}
-                />
+      {/* Receivables Dropdown Overlay - Rendered outside table to avoid clipping */}
+      {
+        openReceivablesDropdownId && displayedCustomers.find(c => c.id === openReceivablesDropdownId) && (
+          <div
+            ref={receivablesDropdownRef}
+            className="fixed bg-transparent z-[10000]"
+            style={{
+              top: `${receivablesDropdownPosition.top}px`,
+              left: `${receivablesDropdownPosition.left}px`
+            }}
+            onMouseEnter={() => {
+              const customer = displayedCustomers.find(c => c.id === openReceivablesDropdownId);
+              if (customer) setHoveredRowId(customer.id);
+            }}
+            onMouseLeave={() => {
+              setOpenReceivablesDropdownId(null);
+              setHoveredRowId(null);
+            }}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (openReceivablesDropdownId) {
+                  navigate(`/sales/customers/${openReceivablesDropdownId}/edit`);
+                }
+                setOpenReceivablesDropdownId(null);
+                setHoveredRowId(null);
+              }}
+              className="flex items-center gap-2 py-2 px-4 bg-[#156372] text-white border border-white rounded-md text-sm font-medium cursor-pointer transition-all hover:bg-[#0f4f5a] shadow-lg"
+            >
+              <Edit size={16} className="text-white" />
+              Edit
+            </button>
+          </div>
+        )
+      }
+
+      {/* Delete Customer Confirmation Modal */}
+      {
+        isDeleteModalOpen && (
+          <div
+            className="fixed inset-0 bg-transparent flex items-center justify-center z-[2000]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsDeleteModalOpen(false);
+                setDeleteCustomerId(null);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+              <div className="p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Delete Customer</h2>
+                <p className="text-gray-700 mb-6">
+                  Are you sure you want to delete this customer? This action cannot be undone.
+                </p>
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setIsDeleteModalOpen(false);
+                      setDeleteCustomerId(null);
+                    }}
+                    disabled={isDeletingCustomer}
+                    className={`px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-300 ${isDeletingCustomer ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeleteCustomer}
+                    disabled={isDeletingCustomer}
+                    className={`px-6 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-red-700 flex items-center gap-2 ${isDeletingCustomer ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    {isDeletingCustomer && <Loader2 size={14} className="animate-spin" />}
+                    {isDeletingCustomer ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
               </div>
-            </div>
-
-            {/* Columns List */}
-            <div className="flex-1 overflow-y-auto px-4 py-2 bg-[#fcfcfc] scrollbar-thin scrollbar-thumb-gray-200">
-              <div className="space-y-1.5">
-                {columns
-                  .filter(c => c.label.toLowerCase().includes(columnSearch.toLowerCase()))
-                  .map((col, index) => (
-                    <div
-                      key={col.key}
-                      draggable={col.key !== 'name'}
-                      onDragStart={(e) => e.dataTransfer.setData('text/plain', index.toString())}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
-                        handleReorder(dragIndex, index);
-                      }}
-                      className={`flex items-center gap-3 p-2 rounded transition-all ${col.key === 'name' ? 'bg-[#f4f4f4] border-transparent cursor-default py-3' : 'bg-[#fff] border border-transparent hover:border-gray-200 hover:bg-gray-50/50'}`}
-                    >
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className={`cursor-grab active:cursor-grabbing text-gray-400 flex-shrink-0 ${col.key === 'name' ? 'invisible' : ''}`}>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <circle cx="2" cy="2" r="1" fill="currentColor" />
-                            <circle cx="2" cy="6" r="1" fill="currentColor" />
-                            <circle cx="2" cy="10" r="1" fill="currentColor" />
-                            <circle cx="6" cy="2" r="1" fill="currentColor" />
-                            <circle cx="6" cy="6" r="1" fill="currentColor" />
-                            <circle cx="6" cy="10" r="1" fill="currentColor" />
-                          </svg>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          {col.key === 'name' ? (
-                            <Lock size={14} className="text-gray-400" />
-                          ) : (
-                            <input
-                              type="checkbox"
-                              checked={col.visible}
-                              onChange={() => handleToggleColumn(col.key)}
-                              className="cursor-pointer h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
-                            />
-                          )}
-                          <span className={`text-sm ${col.key === 'name' ? 'text-gray-500' : 'text-gray-700'}`}>
-                            {col.label}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-gray-100 flex items-center justify-start gap-2 bg-white sticky bottom-0">
-              <button
-                onClick={() => {
-                  handleSaveLayout();
-                  setIsCustomizeModalOpen(false);
-                }}
-                className="px-5 py-2 bg-[#156372] text-white rounded text-sm font-medium hover:bg-[#0f4f5a] transition-colors"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setIsCustomizeModalOpen(false)}
-                className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-50 transition-all"
-              >
-                Cancel
-              </button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+
+      {/* Bulk Delete Confirmation Modal */}
+      {
+        isBulkDeleteModalOpen && (
+          <div
+            className="fixed inset-0 bg-transparent flex items-center justify-center z-[2000]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsBulkDeleteModalOpen(false);
+                setDeleteCustomerIds([]);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+              <div className="p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Delete Customers</h2>
+                <p className="text-gray-700 mb-6">
+                  Are you sure you want to delete {deleteCustomerIds.length} customer(s)? This action cannot be undone.
+                </p>
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setIsBulkDeleteModalOpen(false);
+                      setDeleteCustomerIds([]);
+                    }}
+                    disabled={isBulkDeletingCustomers}
+                    className={`px-6 py-2.5 bg-gray-200 text-gray-700 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-300 ${isBulkDeletingCustomers ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmBulkDelete}
+                    disabled={isBulkDeletingCustomers}
+                    className={`px-6 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-red-700 flex items-center gap-2 ${isBulkDeletingCustomers ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    {isBulkDeletingCustomers && <Loader2 size={14} className="animate-spin" />}
+                    {isBulkDeletingCustomers ? "Deleting..." : `Delete ${deleteCustomerIds.length} Customer(s)`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Bulk Consolidated Billing Confirmation Modal */}
+      {
+        bulkConsolidatedAction && (
+          <div
+            className="fixed inset-0 bg-black/50 z-[2000] flex items-start justify-center pt-16 pb-10 overflow-y-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isBulkConsolidatedUpdating) {
+                setBulkConsolidatedAction(null);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
+              <div className="flex items-start justify-between gap-4 p-6 border-b border-gray-200">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900">
+                      {bulkConsolidatedAction === "enable" ? "Enable Consolidated Billing?" : "Disable Consolidated Billing?"}
+                    </h2>
+                  </div>
+                </div>
+                <button
+                  className="p-2 text-gray-500 hover:text-gray-700 cursor-pointer"
+                  onClick={() => setBulkConsolidatedAction(null)}
+                  disabled={isBulkConsolidatedUpdating}
+                  aria-label="Close"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  Invoices will be {bulkConsolidatedAction === "enable" ? "consolidated" : "separated"} for the selected customers. Any invoices that were generated already will not be affected.
+                </p>
+
+                <div className="mt-8 flex items-center justify-start gap-3">
+                  <button
+                    onClick={confirmBulkConsolidatedBilling}
+                    disabled={isBulkConsolidatedUpdating}
+                    className={`px-5 py-2.5 bg-blue-600 text-white rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-blue-700 flex items-center gap-2 ${isBulkConsolidatedUpdating ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    {isBulkConsolidatedUpdating && <Loader2 size={14} className="animate-spin" />}
+                    {bulkConsolidatedAction === "enable" ? "Enable Now" : "Disable Now"}
+                  </button>
+                  <button
+                    onClick={() => setBulkConsolidatedAction(null)}
+                    disabled={isBulkConsolidatedUpdating}
+                    className={`px-5 py-2.5 bg-gray-100 text-gray-700 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-200 ${isBulkConsolidatedUpdating ? "opacity-70 cursor-not-allowed" : ""}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Preferences Sidebar */}
+      {
+        (isPreferencesOpen || isFieldCustomizationOpen) && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+            <div className="w-full max-w-2xl bg-white h-full overflow-y-auto shadow-xl">
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white sticky top-0 z-10">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setActivePreferencesTab("preferences")}
+                    className={`px-4 py-2 text-sm font-medium ${activePreferencesTab === "preferences"
+                      ? "text-blue-600 border-b-2 border-blue-600"
+                      : "text-gray-600 hover:text-gray-900"
+                      }`}
+                  >
+                    Preferences
+                  </button>
+                  <button
+                    onClick={() => setActivePreferencesTab("field-customization")}
+                    className={`px-4 py-2 text-sm font-medium ${activePreferencesTab === "field-customization"
+                      ? "text-blue-600 border-b-2 border-blue-600"
+                      : "text-gray-600 hover:text-gray-900"
+                      }`}
+                  >
+                    Field Customization
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button className="text-sm text-blue-600 hover:text-blue-700">All Preferences</button>
+                  <button
+                    onClick={() => {
+                      setIsPreferencesOpen(false);
+                      setIsFieldCustomizationOpen(false);
+                    }}
+                    className="p-2 text-gray-500 hover:text-gray-700 cursor-pointer"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Preferences Tab Content */}
+              {activePreferencesTab === "preferences" && (
+                <div className="p-6">
+                  {/* General Settings */}
+                  <div className="mb-6">
+                    <div className="mb-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={preferences.allowEditingSentInvoice}
+                          onChange={(e) => setPreferences(prev => ({ ...prev, allowEditingSentInvoice: e.target.checked }))}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700">Allow editing of Sent Invoice?</span>
+                      </label>
+                    </div>
+                    <div className="mb-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={preferences.associateExpenseReceipts}
+                          onChange={(e) => setPreferences(prev => ({ ...prev, associateExpenseReceipts: e.target.checked }))}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700">Associate and display expense receipts in Invoice PDF</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Payments Section */}
+                  <div className="mb-6 pb-6 border-b border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-4">Payments</h3>
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={preferences.notifyOnOnlinePayment}
+                          onChange={(e) => setPreferences(prev => ({ ...prev, notifyOnOnlinePayment: e.target.checked }))}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700">Get notified when customers pay online</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={preferences.includePaymentReceipt}
+                          onChange={(e) => setPreferences(prev => ({ ...prev, includePaymentReceipt: e.target.checked }))}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700">Do you want to include the payment receipt along with the Thank You note?</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={preferences.automateThankYouNote}
+                          onChange={(e) => setPreferences(prev => ({ ...prev, automateThankYouNote: e.target.checked }))}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700">Automate thank you note to customer on receipt of online payment</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Invoice QR Code Section */}
+                  <div className="mb-6 pb-6 border-b border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-semibold text-gray-900">Invoice QR Code</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">{preferences.invoiceQRCodeEnabled ? "Enabled" : "Disabled"}</span>
+                        <button
+                          onClick={() => setPreferences(prev => ({ ...prev, invoiceQRCodeEnabled: !prev.invoiceQRCodeEnabled }))}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${preferences.invoiceQRCodeEnabled ? "bg-blue-600" : "bg-gray-300"
+                            }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${preferences.invoiceQRCodeEnabled ? "translate-x-6" : "translate-x-1"
+                              }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Enable and configure the QR code you want to display on the PDF copy of an Invoice. Your customers can scan the QR code using their device to access the URL or other information that you configure.
+                    </p>
+                  </div>
+
+                  {/* Zero-Value Line Items Section */}
+                  <div className="mb-6 pb-6 border-b border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-4">Zero-Value Line Items</h3>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={preferences.hideZeroValueLineItems}
+                        onChange={(e) => setPreferences(prev => ({ ...prev, hideZeroValueLineItems: e.target.checked }))}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer mt-0.5"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm text-gray-700">Hide zero-value line items</span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Choose whether you want to hide zero-value line items in an invoice's PDF and the Customer Portal. They will still be visible while editing an invoice. This setting will not apply to invoices whose total is zero.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Terms & Conditions Section */}
+                  <div className="mb-6">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-2">Terms & Conditions</h3>
+                    <textarea
+                      value={preferences.termsAndConditions}
+                      onChange={(e) => setPreferences(prev => ({ ...prev, termsAndConditions: e.target.value }))}
+                      className="w-full px-4 py-3 border border-blue-200 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[200px]"
+                      placeholder="Enter terms and conditions..."
+                    />
+                  </div>
+
+                  {/* Customer Notes Section */}
+                  <div className="mb-6">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-2">Customer Notes</h3>
+                    <textarea
+                      value={preferences.customerNotes}
+                      onChange={(e) => setPreferences(prev => ({ ...prev, customerNotes: e.target.value }))}
+                      className="w-full px-4 py-3 border border-blue-200 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[200px]"
+                      placeholder="Enter customer notes..."
+                    />
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="flex items-center justify-start pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => {
+                        // TODO: Save preferences to localStorage or backend
+                        toast.success("Preferences saved successfully!");
+                        setIsPreferencesOpen(false);
+                      }}
+                      className="px-6 py-2 bg-[#156372] text-white rounded-md text-sm font-medium cursor-pointer hover:bg-[#0f4f5a]"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Field Customization Tab Content */}
+              {activePreferencesTab === "field-customization" && (
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-lg font-semibold text-gray-900">Custom Fields</h2>
+                    <button className="flex items-center gap-2 px-4 py-2 bg-[#156372] text-white rounded-md text-sm font-medium cursor-pointer hover:bg-[#0f4f5a]">
+                      <Plus size={16} />
+                      New
+                    </button>
+                  </div>
+
+                  {/* Table */}
+                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">FIELD NAME</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">DATA TYPE</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">MANDATORY</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">SHOW IN ALL PDFS</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {customFields.map((field) => (
+                          <tr
+                            key={field.id}
+                            className={`border-b border-gray-200 hover:bg-gray-50 ${field.name === "Reference" ? "cursor-pointer" : ""
+                              }`}
+                            onClick={() => {
+                              if (field.name === "Reference") {
+                                setIsPreferencesOpen(true);
+                                setActivePreferencesTab("preferences");
+                              }
+                            }}
+                          >
+                            <td className="px-4 py-3 text-gray-900">
+                              <div className="flex items-center gap-2">
+                                {field.isLocked && <Lock size={14} className="text-gray-400" />}
+                                <span>{field.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-gray-700">{field.dataType}</td>
+                            <td className="px-4 py-3 text-gray-700">{field.mandatory ? "Yes" : "No"}</td>
+                            <td className="px-4 py-3 text-gray-700">{field.showInPDF ? "Yes" : "No"}</td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                                {field.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {/* Import Customers Modal */}
+      {
+        isImportModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]" onClick={() => {
+            setIsImportContinueLoading(false);
+            setIsImportModalOpen(false);
+          }}>
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Import Customers</h2>
+                <button
+                  onClick={() => {
+                    setIsImportContinueLoading(false);
+                    setIsImportModalOpen(false);
+                  }}
+                  disabled={isImportContinueLoading}
+                  className={`text-red-500 hover:text-red-600 transition-colors ${isImportContinueLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6">
+                <p className="text-sm text-gray-700 mb-6">
+                  You can import contacts into Zoho Books from a .CSV or .TSV or .XLS file.
+                </p>
+
+                {/* Radio Buttons */}
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="importType"
+                      value="customers"
+                      checked={importType === "customers"}
+                      onChange={(e) => setImportType(e.target.value)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-gray-900">Customers</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="importType"
+                      value="contactPersons"
+                      checked={importType === "contactPersons"}
+                      onChange={(e) => setImportType(e.target.value)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-gray-900">Customer's Contact Persons</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setIsImportContinueLoading(false);
+                    setIsImportModalOpen(false);
+                  }}
+                  disabled={isImportContinueLoading}
+                  className={`px-6 py-2 bg-white border border-gray-200 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors ${isImportContinueLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setIsImportContinueLoading(true);
+                    setIsImportModalOpen(false);
+                    navigate("/sales/customers/import");
+                  }}
+                  disabled={isImportContinueLoading}
+                  className={`px-6 py-2 bg-[#156372] text-white rounded-md text-sm font-medium hover:bg-[#0f4f5a] transition-colors flex items-center gap-2 ${isImportContinueLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+                >
+                  {isImportContinueLoading && <Loader2 size={14} className="animate-spin" />}
+                  {isImportContinueLoading ? "Loading..." : "Continue"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+      {
+        isCustomizeModalOpen && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+              <div className="bg-white rounded shadow-2xl w-[500px] max-h-[85vh] flex flex-col overflow-hidden">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between px-5 py-3 bg-[#f6f7fb] border-b border-[#e6e9f2]">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal size={16} className="text-[#1b5e6a]" />
+                    <h3 className="text-[15px] font-medium text-[#313131]">Customize Columns</h3>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[13px] text-gray-600">
+                      {columns.filter((c) => c.visible).length} of {columns.length} Selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomizeModalOpen(false)}
+                      className="h-6 w-6 flex items-center justify-center text-red-500 hover:bg-red-50 rounded transition-colors"
+                      aria-label="Close"
+                      title="Close"
+                    >
+                      <X size={16} className="text-red-500" strokeWidth={2.5} />
+                    </button>
+                  </div>
+                </div>
+
+              {/* Search */}
+              <div className="p-4 border-b border-gray-50">
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search"
+                    className="w-full bg-white border border-gray-200 rounded py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-blue-400 transition-all placeholder:text-gray-400 text-gray-700"
+                    value={columnSearch}
+                    onChange={(e) => setColumnSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Columns List */}
+              <div className="flex-1 overflow-y-auto px-4 py-2 bg-[#fcfcfc] scrollbar-thin scrollbar-thumb-gray-200">
+                <div className="space-y-1.5">
+                  {columns
+                    .filter(c => c.label.toLowerCase().includes(columnSearch.toLowerCase()))
+                    .map((col, index) => (
+                      <div
+                        key={col.key}
+                        draggable={col.key !== 'name'}
+                        onDragStart={(e) => e.dataTransfer.setData('text/plain', index.toString())}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                          handleReorder(dragIndex, index);
+                        }}
+                        className={`flex items-center gap-3 p-2 rounded transition-all ${col.key === 'name' ? 'bg-[#f4f4f4] border-transparent cursor-default py-3' : 'bg-[#fff] border border-transparent hover:border-gray-200 hover:bg-gray-50/50'}`}
+                      >
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className={`cursor-grab active:cursor-grabbing text-gray-400 flex-shrink-0 ${col.key === 'name' ? 'invisible' : ''}`}>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <circle cx="2" cy="2" r="1" fill="currentColor" />
+                              <circle cx="2" cy="6" r="1" fill="currentColor" />
+                              <circle cx="2" cy="10" r="1" fill="currentColor" />
+                              <circle cx="6" cy="2" r="1" fill="currentColor" />
+                              <circle cx="6" cy="6" r="1" fill="currentColor" />
+                              <circle cx="6" cy="10" r="1" fill="currentColor" />
+                            </svg>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {col.key === 'name' ? (
+                              <Lock size={14} className="text-gray-400" />
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={col.visible}
+                                onChange={() => handleToggleColumn(col.key)}
+                                className="cursor-pointer h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                              />
+                            )}
+                            <span className={`text-sm ${col.key === 'name' ? 'text-gray-500' : 'text-gray-700'}`}>
+                              {col.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-gray-100 flex items-center justify-start gap-2 bg-white sticky bottom-0">
+                <button
+                  onClick={() => {
+                    handleSaveLayout();
+                    setIsCustomizeModalOpen(false);
+                  }}
+                  className="px-5 py-2 bg-[#156372] text-white rounded text-sm font-medium hover:bg-[#0f4f5a] transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => setIsCustomizeModalOpen(false)}
+                  className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded text-sm font-medium hover:bg-gray-50 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 }

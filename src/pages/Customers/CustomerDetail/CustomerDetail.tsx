@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { toast } from "react-toastify";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import { customersAPI, vendorsAPI, currenciesAPI, invoicesAPI, paymentsReceivedAPI, creditNotesAPI, quotesAPI, recurringInvoicesAPI, expensesAPI, recurringExpensesAPI, projectsAPI, billsAPI, salesReceiptsAPI, journalEntriesAPI, paymentsMadeAPI, purchaseOrdersAPI, vendorCreditsAPI, documentsAPI } from "../../../services/api";
+import { customersAPI, vendorsAPI, currenciesAPI, invoicesAPI, paymentsReceivedAPI, creditNotesAPI, quotesAPI, recurringInvoicesAPI, expensesAPI, recurringExpensesAPI, projectsAPI, billsAPI, salesReceiptsAPI, journalEntriesAPI, paymentsMadeAPI, purchaseOrdersAPI, vendorCreditsAPI, documentsAPI, reportingTagsAPI } from "../../../services/api";
+import SearchableDropdown from "../../../components/ui/SearchableDropdown";
 import {
     X, Edit, Paperclip, ChevronDown, Plus, MoreVertical,
     Settings, User, Mail, Phone, MapPin, Globe,
     DollarSign, TrendingUp, Calendar, UserPlus,
     ChevronUp, ChevronRight, Sparkles, Bold, Italic, Underline, ChevronRight as ChevronRightIcon,
-    Filter, ArrowUpDown, Search, ChevronLeft, Link2, FileText, Monitor, Check, Upload, Trash2, Loader2
+    Filter, ArrowUpDown, Search, ChevronLeft, Link2, FileText, Monitor, Check, Upload, Trash2, Loader2, Download, RefreshCw, AlertTriangle, Smartphone
 } from "lucide-react";
 import { Customer, Invoice, CreditNote, AttachedFile, Quote, RecurringInvoice, Expense, RecurringExpense, Project, Bill, SalesReceipt } from "../../salesModel";
 
@@ -64,7 +65,7 @@ interface Comment {
 }
 
 interface Mail {
-    id: number;
+    id: string | number;
     to: string;
     subject: string;
     description: string;
@@ -96,6 +97,7 @@ export default function CustomerDetail() {
         address: true,
         otherDetails: true,
         contactPersons: true,
+        associateTags: true,
         recordInfo: false
     });
     const [expandedTransactions, setExpandedTransactions] = useState({
@@ -189,6 +191,8 @@ export default function CustomerDetail() {
     // Sidebar selection state
     const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
     const [isBulkActionsDropdownOpen, setIsBulkActionsDropdownOpen] = useState(false);
+    const [bulkConsolidatedAction, setBulkConsolidatedAction] = useState<null | "enable" | "disable">(null);
+    const [isBulkConsolidatedUpdating, setIsBulkConsolidatedUpdating] = useState(false);
 
     const bulkActionsDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -329,6 +333,27 @@ export default function CustomerDetail() {
     const [isSidebarMoreMenuOpen, setIsSidebarMoreMenuOpen] = useState(false);
 
     const sidebarMoreMenuRef = useRef<HTMLDivElement>(null);
+    const [sidebarSort, setSidebarSort] = useState<"name_asc" | "name_desc" | "receivables_desc">("name_asc");
+
+    const sidebarSortedCustomers = useMemo(() => {
+        const list = Array.isArray(customers) ? [...customers] : [];
+        const getName = (cust: any) => String(cust?.name || cust?.displayName || cust?.companyName || "").toLowerCase().trim();
+        const getReceivables = (cust: any) => parseFloat(String(cust?.receivables ?? cust?.receivablesBaseCurrency ?? cust?.receivablesBCY ?? 0)) || 0;
+
+        list.sort((a: any, b: any) => {
+            switch (sidebarSort) {
+                case "name_desc":
+                    return getName(b).localeCompare(getName(a));
+                case "receivables_desc":
+                    return getReceivables(b) - getReceivables(a);
+                case "name_asc":
+                default:
+                    return getName(a).localeCompare(getName(b));
+            }
+        });
+
+        return list;
+    }, [customers, sidebarSort]);
 
     // Settings dropdown state (for customer name settings icon)
     const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(false);
@@ -365,6 +390,8 @@ export default function CustomerDetail() {
 
     // Add Contact Person modal state
     const [isAddContactPersonModalOpen, setIsAddContactPersonModalOpen] = useState(false);
+    const [editingContactPersonIndex, setEditingContactPersonIndex] = useState<number | null>(null);
+    const [openContactPersonSettingsIndex, setOpenContactPersonSettingsIndex] = useState<number | null>(null);
     const [newContactPerson, setNewContactPerson] = useState({
         salutation: "Mr",
         firstName: "",
@@ -377,6 +404,17 @@ export default function CustomerDetail() {
         department: "",
         enablePortalAccess: true
     });
+    const [contactPersonProfilePreview, setContactPersonProfilePreview] = useState<string | null>(null);
+    const contactPersonProfileInputRef = useRef<HTMLInputElement>(null);
+    const [contactPersonWorkPhoneCode, setContactPersonWorkPhoneCode] = useState("+355");
+    const [contactPersonMobilePhoneCode, setContactPersonMobilePhoneCode] = useState("+355");
+
+    // Associate Tags modal state
+    const [isAssociateTagsModalOpen, setIsAssociateTagsModalOpen] = useState(false);
+    const [availableReportingTags, setAvailableReportingTags] = useState<any[]>([]);
+    const [associateTagsSeed, setAssociateTagsSeed] = useState<any[]>([]);
+    const [associateTagsValues, setAssociateTagsValues] = useState<Record<string, string>>({});
+    const [isSavingAssociateTags, setIsSavingAssociateTags] = useState(false);
 
     // Clone modal state
     const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
@@ -698,34 +736,7 @@ export default function CustomerDetail() {
                 // Load attachments from customer documents
                 setAttachments(mapDocumentsToAttachments(customerData.documents || []));
 
-                // Load sample mails for this customer
-                const customerEmail = mappedCustomer.email || "";
-                const sampleMails = [];
-
-                if (customerEmail) {
-                    sampleMails.push({
-                        id: 1,
-                        to: customerEmail,
-                        subject: "Payment Acknowledgment",
-                        description: "Payment Received by taban",
-                        date: "11 Dec 2025 01:30 PM",
-                        type: "payment",
-                        initial: customerEmail.charAt(0).toUpperCase()
-                    });
-                }
-
-                const secondaryEmail = mappedCustomer.contactPersons?.[0]?.email || "maxamed9885m@gmail.com";
-                sampleMails.push({
-                    id: 2,
-                    to: secondaryEmail,
-                    subject: "Draft Notification",
-                    description: "New auto-generated invoice for the recurring profile: taban profile",
-                    date: "11 Dec 2025 12:09 PM",
-                    type: "invoice",
-                    initial: secondaryEmail.charAt(0).toUpperCase()
-                });
-
-                setMails(sampleMails);
+                // Mails are derived from local mail log + transactions for this customer
             } else {
                 navigate("/sales/customers");
                 return;
@@ -961,36 +972,7 @@ export default function CustomerDetail() {
                     setComments(normalizedComments);
                     setAttachments(mapDocumentsToAttachments(customerData.documents || []));
 
-                    // Load sample mails for this customer
-                    const customerEmail = mappedCustomer.email || "";
-                    const sampleMails = [];
-
-                    // Add sample mails based on customer email
-                    if (customerEmail) {
-                        sampleMails.push({
-                            id: 1,
-                            to: customerEmail,
-                            subject: "Payment Acknowledgment",
-                            description: "Payment Received by taban",
-                            date: "11 Dec 2025 01:30 PM",
-                            type: "payment",
-                            initial: customerEmail.charAt(0).toUpperCase()
-                        });
-                    }
-
-                    // Add a second sample mail with different email
-                    const secondaryEmail = mappedCustomer.contactPersons?.[0]?.email || "maxamed9885m@gmail.com";
-                    sampleMails.push({
-                        id: 2,
-                        to: secondaryEmail,
-                        subject: "Draft Notification",
-                        description: "New auto-generated invoice for the recurring profile: taban profile",
-                        date: "11 Dec 2025 12:09 PM",
-                        type: "invoice",
-                        initial: secondaryEmail.charAt(0).toUpperCase()
-                    });
-
-                    setMails(sampleMails);
+                    // Mails are derived from local mail log + transactions for this customer
                 } else {
                     navigate("/sales/customers");
                     return;
@@ -1162,7 +1144,7 @@ export default function CustomerDetail() {
                 loadSupplementaryData();
             } catch (error: any) {
                 if (!isActive) return;
-                alert('Error loading customer: ' + (error.message || 'Unknown error'));
+                toast.error('Error loading customer: ' + (error.message || 'Unknown error'));
                 navigate("/sales/customers");
             }
         };
@@ -1556,7 +1538,570 @@ export default function CustomerDetail() {
     const handlePrintStatementsSubmit = () => {
         // TODO: Implement actual print functionality
         setIsPrintStatementsModalOpen(false);
-        alert(`Printing statements for ${selectedCustomers.length} customer(s)`);
+        toast.info(`Printing statements for ${selectedCustomers.length} customer(s)`);
+    };
+
+    const resetContactPersonModal = () => {
+        setNewContactPerson({
+            salutation: "Mr",
+            firstName: "",
+            lastName: "",
+            email: "",
+            workPhone: "",
+            mobile: "",
+            skype: "",
+            designation: "",
+            department: "",
+            enablePortalAccess: true
+        });
+        setContactPersonWorkPhoneCode("+355");
+        setContactPersonMobilePhoneCode("+355");
+        setContactPersonProfilePreview(null);
+        setEditingContactPersonIndex(null);
+    };
+
+    const formatPhoneWithCode = (code: string, value: string) => {
+        const trimmed = String(value || "").trim();
+        if (!trimmed) return "";
+        if (trimmed.startsWith("+")) return trimmed;
+        const normalizedCode = String(code || "").trim();
+        if (!normalizedCode) return trimmed;
+        return `${normalizedCode} ${trimmed}`.trim();
+    };
+
+    const splitPhoneCode = (raw: any) => {
+        const value = String(raw || "").trim();
+        const fallback = { code: "+355", number: "" };
+        if (!value) return fallback;
+        const match = value.match(/^(\+\d+)\s*(.*)$/);
+        if (!match) return { ...fallback, number: value };
+        return { code: match[1], number: String(match[2] || "").trim() };
+    };
+
+    const openEditContactPerson = (contact: any, index: number) => {
+        const work = splitPhoneCode(contact?.workPhone || contact?.phone || "");
+        const mobile = splitPhoneCode(contact?.mobile || contact?.mobilePhone || "");
+
+        setEditingContactPersonIndex(index);
+        setNewContactPerson({
+            salutation: String(contact?.salutation || "Mr"),
+            firstName: String(contact?.firstName || ""),
+            lastName: String(contact?.lastName || ""),
+            email: String(contact?.email || ""),
+            workPhone: work.number,
+            mobile: mobile.number,
+            skype: String(contact?.skype || ""),
+            designation: String(contact?.designation || ""),
+            department: String(contact?.department || ""),
+            enablePortalAccess: Boolean(contact?.hasPortalAccess ?? contact?.enablePortal ?? true),
+        });
+        setContactPersonWorkPhoneCode(work.code || "+355");
+        setContactPersonMobilePhoneCode(mobile.code || "+355");
+        setContactPersonProfilePreview(String(contact?.profileImage || contact?.image || "") || null);
+        setIsAddContactPersonModalOpen(true);
+    };
+
+    const saveContactPerson = async () => {
+        if (!customer || !id) return;
+
+        const existingContactPersons = Array.isArray(customer.contactPersons) ? [...customer.contactPersons] : [];
+        const existing = editingContactPersonIndex !== null ? existingContactPersons[editingContactPersonIndex] : null;
+
+        const contactPerson = {
+            ...(existing && typeof existing === "object" ? existing : {}),
+            id: (existing as any)?.id ?? Date.now(),
+            salutation: newContactPerson.salutation,
+            firstName: newContactPerson.firstName,
+            lastName: newContactPerson.lastName,
+            email: newContactPerson.email,
+            workPhone: formatPhoneWithCode(contactPersonWorkPhoneCode, newContactPerson.workPhone),
+            mobile: formatPhoneWithCode(contactPersonMobilePhoneCode, newContactPerson.mobile),
+            skype: newContactPerson.skype,
+            designation: newContactPerson.designation,
+            department: newContactPerson.department,
+            hasPortalAccess: newContactPerson.enablePortalAccess,
+            enablePortal: newContactPerson.enablePortalAccess,
+            profileImage: contactPersonProfilePreview,
+        };
+
+        const updatedContactPersons =
+            editingContactPersonIndex !== null
+                ? existingContactPersons.map((cp, idx) => (idx === editingContactPersonIndex ? contactPerson : cp))
+                : [...existingContactPersons, { ...contactPerson, isPrimary: existingContactPersons.length === 0 }];
+
+        const updatedCustomer = {
+            ...customer,
+            contactPersons: updatedContactPersons,
+        };
+
+        try {
+            await customersAPI.update(id, updatedCustomer);
+            setCustomer(updatedCustomer);
+            await refreshData();
+            toast.success(editingContactPersonIndex !== null ? "Contact person updated." : "Contact person added.");
+        } catch (error: any) {
+            toast.error(error?.message || "Failed to update contact person.");
+            return;
+        }
+
+        setIsAddContactPersonModalOpen(false);
+        resetContactPersonModal();
+    };
+
+    const markContactPersonAsPrimary = async (index: number) => {
+        if (!customer || !id) return;
+        const current = Array.isArray(customer.contactPersons) ? customer.contactPersons : [];
+        if (!current.length) return;
+
+        const updatedContactPersons = current.map((cp: any, idx: number) => ({
+            ...(cp && typeof cp === "object" ? cp : {}),
+            isPrimary: idx === index,
+        }));
+
+        const updatedCustomer = { ...customer, contactPersons: updatedContactPersons };
+        try {
+            await customersAPI.update(id, updatedCustomer);
+            setCustomer(updatedCustomer);
+            await refreshData();
+            toast.success("Marked as primary contact.");
+        } catch (error: any) {
+            toast.error(error?.message || "Failed to mark as primary.");
+        }
+    };
+
+    const deleteContactPerson = async (index: number) => {
+        if (!customer || !id) return;
+        const current = Array.isArray(customer.contactPersons) ? customer.contactPersons : [];
+        if (!current.length) return;
+
+        const remaining = current.filter((_: any, idx: number) => idx !== index);
+        if (remaining.length > 0 && !remaining.some((cp: any) => Boolean(cp?.isPrimary))) {
+            remaining[0] = { ...(remaining[0] || {}), isPrimary: true };
+        }
+
+        const updatedCustomer = { ...customer, contactPersons: remaining };
+        try {
+            await customersAPI.update(id, updatedCustomer);
+            setCustomer(updatedCustomer);
+            await refreshData();
+            toast.success("Contact person deleted.");
+        } catch (error: any) {
+            toast.error(error?.message || "Failed to delete contact person.");
+        }
+    };
+
+    useEffect(() => {
+        if (openContactPersonSettingsIndex === null) return;
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target) return;
+            if (target.closest?.('[data-contact-person-menu-root="true"]')) return;
+            setOpenContactPersonSettingsIndex(null);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [openContactPersonSettingsIndex]);
+
+    const buildCustomerSystemMails = useCallback((customerRow: any) => {
+        const customerId = String(id || customerRow?._id || customerRow?.id || "").trim();
+        if (!customerId) return [];
+
+        const emails = Array.from(new Set([
+            String(customerRow?.email || "").trim(),
+            ...(Array.isArray(customerRow?.contactPersons)
+                ? customerRow.contactPersons.map((p: any) => String(p?.email || "").trim())
+                : []),
+        ].filter(Boolean))).filter(Boolean);
+
+        const defaultTo = emails[0] || "";
+
+        const rows: Array<Mail & { sortTime: number }> = [];
+
+        // 1) Local mail log (created via customersAPI.sendInvitation/sendReviewRequest/sendStatement)
+        try {
+            const raw = localStorage.getItem("taban_customer_mail_log");
+            const parsed = raw ? JSON.parse(raw) : [];
+            const list = Array.isArray(parsed) ? parsed : [];
+            list
+                .filter((entry: any) => String(entry?.customerId || "").trim() === customerId)
+                .forEach((entry: any, idx: number) => {
+                    const type = String(entry?.type || "system").trim();
+                    const payload = entry?.payload || {};
+                    const createdAt = entry?.createdAt || entry?.timestamp || entry?.date || "";
+                    const to =
+                        String(payload?.to || payload?.email || payload?.recipient || defaultTo || "").trim() ||
+                        defaultTo ||
+                        "";
+
+                    const subjectAndDesc = (() => {
+                        if (type === "send-invitation") {
+                            return { subject: "Invite to Portal", description: "Sent" };
+                        }
+                        if (type === "request-review") {
+                            return { subject: "Request Review", description: "Sent" };
+                        }
+                        if (type === "send-statement") {
+                            return { subject: "Customer Statement", description: "Sent" };
+                        }
+                        return { subject: type.replace(/-/g, " "), description: "Sent" };
+                    })();
+
+                    rows.push({
+                        id: String(entry?.id || `mail-log-${idx}`),
+                        to,
+                        subject: subjectAndDesc.subject,
+                        description: subjectAndDesc.description,
+                        date: formatMailDateTime(createdAt),
+                        type,
+                        initial: (to?.[0] || "M").toUpperCase(),
+                        sortTime: Number.isFinite(new Date(createdAt).getTime()) ? new Date(createdAt).getTime() : Date.now() - idx,
+                    });
+                });
+        } catch {
+            // ignore local storage errors
+        }
+
+        // 2) Payments → Payment Acknowledgment
+        const paymentTo = defaultTo;
+        if (paymentTo && Array.isArray(payments) && payments.length) {
+            payments.forEach((payment: any, idx: number) => {
+                const createdAt = payment?.date || payment?.paymentDate || payment?.createdAt || payment?.created_on || "";
+                const amount = Number(payment?.amount ?? payment?.total ?? payment?.amountPaid ?? 0) || 0;
+                const currency = String(payment?.currency || customerRow?.currency || "USD");
+                rows.push({
+                    id: String(payment?.id || payment?._id || `payment-mail-${idx}`),
+                    to: paymentTo,
+                    subject: "Payment Acknowledgment - Thank you, We have received your payment.",
+                    description: amount ? `${formatCurrency(amount, currency)} - Sent` : "Sent",
+                    date: formatMailDateTime(createdAt) || formatMailDateTime(new Date()),
+                    type: "payment",
+                    initial: (paymentTo?.[0] || "P").toUpperCase(),
+                    sortTime: Number.isFinite(new Date(createdAt).getTime()) ? new Date(createdAt).getTime() : Date.now() - 1000 - idx,
+                });
+            });
+        }
+
+        // 3) Unpaid/Overdue invoices → Payment Reminder
+        const reminderTo = defaultTo;
+        if (reminderTo && Array.isArray(invoices) && invoices.length) {
+            invoices.forEach((inv: any, idx: number) => {
+                const status = String(inv?.status || inv?.invoiceStatus || "").toLowerCase();
+                if (!status.includes("overdue") && !status.includes("unpaid") && !status.includes("due")) return;
+                const number = String(inv?.invoiceNumber || inv?.invoiceNo || inv?.invoice_number || inv?.number || "INV").trim();
+                const createdAt = inv?.date || inv?.invoiceDate || inv?.createdAt || inv?.created_on || "";
+                const total = Number(inv?.total ?? inv?.amount ?? inv?.balance ?? 0) || 0;
+                const currency = String(inv?.currency || customerRow?.currency || "USD");
+                rows.push({
+                    id: String(inv?.id || inv?._id || `invoice-reminder-${idx}`),
+                    to: reminderTo,
+                    subject: `Payment Reminder - Payment of ${formatCurrency(total, currency)} is outstanding for ${number}`,
+                    description: "",
+                    date: formatMailDateTime(createdAt) || formatMailDateTime(new Date()),
+                    type: "reminder",
+                    initial: (reminderTo?.[0] || "R").toUpperCase(),
+                    sortTime: Number.isFinite(new Date(createdAt).getTime()) ? new Date(createdAt).getTime() : Date.now() - 2000 - idx,
+                });
+            });
+        }
+
+        // Sort newest first and limit (keep UI fast)
+        return rows
+            .filter((m) => Boolean(String(m.to || "").trim()))
+            .sort((a, b) => b.sortTime - a.sortTime)
+            .slice(0, 50)
+            .map(({ sortTime, ...mail }) => mail);
+    }, [id, payments, invoices]);
+
+    useEffect(() => {
+        if (!customer || !id) return;
+        // keep mails always in sync with selected customer + latest local logs
+        setMails(buildCustomerSystemMails(customer));
+    }, [customer, id, buildCustomerSystemMails, activeTab]);
+
+    const handleContactPersonProfileFile = (file: File | null | undefined) => {
+        if (!file) return;
+        if (!file.type?.startsWith("image/")) {
+            toast.error("Please select an image file.");
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error("Maximum file size is 5MB.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            setContactPersonProfilePreview(String(reader.result || ""));
+        };
+        reader.onerror = () => {
+            toast.error("Failed to read image. Please try again.");
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const openAssociateTagsModal = () => {
+        if (!customer) return;
+        const reportingTags = Array.isArray((customer as any)?.reportingTags) ? (customer as any).reportingTags : [];
+        const legacyTags = Array.isArray((customer as any)?.tags) ? (customer as any).tags : [];
+        setAssociateTagsSeed([...(reportingTags || []), ...(legacyTags || [])]);
+        setAssociateTagsValues({});
+        setIsAssociateTagsModalOpen(true);
+    };
+
+    const closeAssociateTagsModal = () => {
+        setIsAssociateTagsModalOpen(false);
+        setAssociateTagsSeed([]);
+        setAssociateTagsValues({});
+        setIsSavingAssociateTags(false);
+    };
+
+    useEffect(() => {
+        if (!isAssociateTagsModalOpen) return;
+
+        const normalizeText = (value: any) => String(value ?? "").trim();
+        const getEntryName = (entry: any) => normalizeText(entry?.name || entry?.tagName || entry?.label || entry?.title);
+        const getEntryValue = (entry: any) =>
+            normalizeText(entry?.value ?? entry?.option ?? entry?.selectedValue ?? entry?.selected ?? entry?.tagValue);
+
+        const loadTags = async () => {
+            try {
+                const response: any = await reportingTagsAPI.getAll({ limit: 10000 });
+                const list = Array.isArray(response?.data) ? response.data : [];
+                setAvailableReportingTags(list);
+
+                setAssociateTagsValues((prev) => {
+                    if (prev && Object.keys(prev).length > 0) return prev;
+
+                    const next: Record<string, string> = {};
+                    list.forEach((tag: any) => {
+                        const tagId = String(tag?._id || tag?.id || "").trim();
+                        if (!tagId) return;
+                        const tagName = normalizeText(tag?.name);
+                        const match = (associateTagsSeed || []).find((entry: any) => {
+                            if (!entry) return false;
+                            if (typeof entry === "string") {
+                                const raw = normalizeText(entry);
+                                if (!raw || !tagName) return false;
+                                return raw.toLowerCase().startsWith(tagName.toLowerCase());
+                            }
+                            if (typeof entry !== "object") return false;
+                            const entryId = normalizeText(entry?.tagId || entry?.id || entry?._id);
+                            if (entryId && entryId === tagId) return true;
+                            const entryName = getEntryName(entry);
+                            return Boolean(tagName && entryName && entryName.toLowerCase() === tagName.toLowerCase());
+                        });
+
+                        if (!match) return;
+                        if (typeof match === "string") {
+                            const raw = normalizeText(match);
+                            const rest = tagName ? raw.slice(tagName.length).trim() : "";
+                            if (rest) next[tagId] = rest;
+                            return;
+                        }
+                        const val = getEntryValue(match);
+                        if (val) next[tagId] = val;
+                    });
+
+                    return next;
+                });
+            } catch {
+                toast.error("Failed to load reporting tags.");
+            }
+        };
+
+        if (availableReportingTags.length === 0) {
+            loadTags();
+        } else if (Object.keys(associateTagsValues || {}).length === 0) {
+            const list = availableReportingTags;
+            const next: Record<string, string> = {};
+            list.forEach((tag: any) => {
+                const tagId = String(tag?._id || tag?.id || "").trim();
+                if (!tagId) return;
+                const tagName = normalizeText(tag?.name);
+                const match = (associateTagsSeed || []).find((entry: any) => {
+                    if (!entry) return false;
+                    if (typeof entry === "string") {
+                        const raw = normalizeText(entry);
+                        if (!raw || !tagName) return false;
+                        return raw.toLowerCase().startsWith(tagName.toLowerCase());
+                    }
+                    if (typeof entry !== "object") return false;
+                    const entryId = normalizeText(entry?.tagId || entry?.id || entry?._id);
+                    if (entryId && entryId === tagId) return true;
+                    const entryName = getEntryName(entry);
+                    return Boolean(tagName && entryName && entryName.toLowerCase() === tagName.toLowerCase());
+                });
+
+                if (!match) return;
+                if (typeof match === "string") {
+                    const raw = normalizeText(match);
+                    const rest = tagName ? raw.slice(tagName.length).trim() : "";
+                    if (rest) next[tagId] = rest;
+                    return;
+                }
+                const val = getEntryValue(match);
+                if (val) next[tagId] = val;
+            });
+            setAssociateTagsValues(next);
+        }
+    }, [isAssociateTagsModalOpen, availableReportingTags, associateTagsSeed, associateTagsValues]);
+
+    const handleSaveAssociateTags = async () => {
+        if (!customer || !id) return;
+        if (!Array.isArray(availableReportingTags) || availableReportingTags.length === 0) {
+            toast.error("No reporting tags found.");
+            return;
+        }
+
+        const requiredMissing = availableReportingTags.find((tag: any) => {
+            const isRequired = Boolean(tag?.isRequired || tag?.required);
+            if (!isRequired) return false;
+            const tagId = String(tag?._id || tag?.id || "").trim();
+            if (!tagId) return false;
+            const val = String(associateTagsValues?.[tagId] || "").trim();
+            return !val;
+        });
+        if (requiredMissing) {
+            toast.error("Please fill all required tags.");
+            return;
+        }
+
+        const nextReportingTags = availableReportingTags
+            .map((tag: any) => {
+                const tagId = String(tag?._id || tag?.id || "").trim();
+                if (!tagId) return null;
+                const val = String(associateTagsValues?.[tagId] || "").trim();
+                if (!val) return null;
+                return {
+                    tagId,
+                    name: tag?.name || "Tag",
+                    value: val,
+                };
+            })
+            .filter(Boolean);
+
+        setIsSavingAssociateTags(true);
+        try {
+            const updatedCustomer = {
+                ...customer,
+                reportingTags: nextReportingTags,
+            };
+            await customersAPI.update(id, updatedCustomer);
+            setCustomer(updatedCustomer as any);
+            setCustomers((prev: any) =>
+                prev.map((c: any) => (String(c?.id || c?._id || "") === String(id) ? { ...c, reportingTags: nextReportingTags } : c))
+            );
+            toast.success("Tags updated successfully.");
+            closeAssociateTagsModal();
+        } catch (error: any) {
+            toast.error("Failed to update tags: " + (error?.message || "Unknown error"));
+        } finally {
+            setIsSavingAssociateTags(false);
+        }
+    };
+
+    const reloadSidebarCustomerList = async () => {
+        try {
+            const response = await customersAPI.getAll();
+            if (response && response.data) {
+                setCustomers(response.data);
+            }
+        } catch {
+            // no-op
+        }
+    };
+
+    const handleSidebarBulkUpdate = () => {
+        setIsBulkActionsDropdownOpen(false);
+        navigate("/sales/customers", { state: { openBulkUpdateModal: true, preselectedCustomerIds: selectedCustomers } });
+    };
+
+    const handleSidebarBulkDelete = () => {
+        setIsBulkActionsDropdownOpen(false);
+        navigate("/sales/customers", { state: { openBulkDeleteModal: true, preselectedCustomerIds: selectedCustomers } });
+    };
+
+    const handleSidebarBulkMarkActive = async () => {
+        if (selectedCustomers.length === 0) {
+            toast.error("Please select at least one customer.");
+            return;
+        }
+        setIsBulkActionsDropdownOpen(false);
+        try {
+            await customersAPI.bulkUpdate(selectedCustomers, { status: "active" });
+            await reloadSidebarCustomerList();
+            await refreshData();
+            toast.success(`Marked ${selectedCustomers.length} customer(s) as active`);
+            setSelectedCustomers([]);
+        } catch {
+            toast.error("Failed to mark customers as active. Please try again.");
+        }
+    };
+
+    const handleSidebarBulkMarkInactive = async () => {
+        if (selectedCustomers.length === 0) {
+            toast.error("Please select at least one customer.");
+            return;
+        }
+        setIsBulkActionsDropdownOpen(false);
+        try {
+            await customersAPI.bulkUpdate(selectedCustomers, { status: "inactive" });
+            await reloadSidebarCustomerList();
+            await refreshData();
+            toast.success(`Marked ${selectedCustomers.length} customer(s) as inactive`);
+            setSelectedCustomers([]);
+        } catch {
+            toast.error("Failed to mark customers as inactive. Please try again.");
+        }
+    };
+
+    const handleSidebarBulkEnableConsolidatedBilling = async () => {
+        if (selectedCustomers.length === 0) {
+            toast.error("Please select at least one customer.");
+            return;
+        }
+        setIsBulkActionsDropdownOpen(false);
+        setBulkConsolidatedAction("enable");
+    };
+
+    const handleSidebarBulkDisableConsolidatedBilling = async () => {
+        if (selectedCustomers.length === 0) {
+            toast.error("Please select at least one customer.");
+            return;
+        }
+        setIsBulkActionsDropdownOpen(false);
+        setBulkConsolidatedAction("disable");
+    };
+
+    const confirmSidebarBulkConsolidatedBilling = async () => {
+        if (!bulkConsolidatedAction) return;
+        if (selectedCustomers.length === 0) {
+            toast.error("Please select at least one customer.");
+            setBulkConsolidatedAction(null);
+            return;
+        }
+
+        const enabled = bulkConsolidatedAction === "enable";
+        const ids = [...selectedCustomers];
+        const count = ids.length;
+
+        setIsBulkConsolidatedUpdating(true);
+        try {
+            await customersAPI.bulkUpdate(ids, {
+                consolidatedBilling: enabled,
+                enableConsolidatedBilling: enabled,
+                isConsolidatedBillingEnabled: enabled,
+            });
+            await reloadSidebarCustomerList();
+            await refreshData();
+            toast.success(`${enabled ? "Enabled" : "Disabled"} consolidated billing for ${count} customer(s).`);
+            setSelectedCustomers([]);
+            setBulkConsolidatedAction(null);
+        } catch {
+            toast.error(`Failed to ${enabled ? "enable" : "disable"} consolidated billing. Please try again.`);
+        } finally {
+            setIsBulkConsolidatedUpdating(false);
+        }
     };
 
     const handleUnlinkVendor = async () => {
@@ -2018,11 +2563,11 @@ export default function CustomerDetail() {
 
     const handleMergeSubmit = async () => {
         if (!mergeTargetCustomer) {
-            alert("Please select a customer to merge with.");
+            toast.error("Please select a customer to merge with.");
             return;
         }
         if (!customer) {
-            alert("Customer data not available.");
+            toast.error("Customer data not available.");
             return;
         }
 
@@ -2032,12 +2577,12 @@ export default function CustomerDetail() {
         const targetCustomerId = String(targetCustomer.id || targetCustomer._id || "").trim();
 
         if (!sourceCustomerId || !targetCustomerId) {
-            alert("Unable to determine customer IDs for merge.");
+            toast.error("Unable to determine customer IDs for merge.");
             return;
         }
 
         if (sourceCustomerId === targetCustomerId) {
-            alert("Please select a different customer to merge with.");
+            toast.error("Please select a different customer to merge with.");
             return;
         }
 
@@ -2205,8 +2750,8 @@ export default function CustomerDetail() {
             const clonedData = {
                 ...customer,
                 id: undefined,
-                name: `${customer.name} (Copy)`,
-                displayName: customer.displayName ? `${customer.displayName} (Copy)` : undefined
+                name: `${customer.name} (Clone)`,
+                displayName: customer.displayName ? `${customer.displayName} (Clone)` : undefined
             };
             setIsCloneModalOpen(false);
             navigate("/purchases/vendors/new", { state: { clonedData } });
@@ -2216,8 +2761,7 @@ export default function CustomerDetail() {
         setIsCloning(true);
         try {
             const source: any = customer;
-            const copySuffix = " (Copy)";
-            const uniqueSuffix = Date.now().toString().slice(-4);
+            const copySuffix = " (Clone)";
 
             const billingAddress = source.billingAddress || {
                 attention: source.billingAttention || "",
@@ -2261,7 +2805,7 @@ export default function CustomerDetail() {
                 xHandle: source.xHandle || "",
                 skypeName: source.skypeName || "",
                 facebook: source.facebook || "",
-                customerNumber: source.customerNumber ? `${source.customerNumber}-C${uniqueSuffix}` : "",
+                customerNumber: "",
                 customerLanguage: source.customerLanguage || source.portalLanguage || "english",
                 taxRate: source.taxRate || "",
                 exchangeRate: parseFloat(String(source.exchangeRate || "1")) || 1,
@@ -2307,6 +2851,7 @@ export default function CustomerDetail() {
 
             setIsCloneModalOpen(false);
             toast.success("Customer cloned successfully.");
+            await reloadSidebarCustomerList();
             // Stay on the current customer after cloning.
         } catch (error: any) {
             toast.error(error?.message || "Failed to clone customer");
@@ -2319,6 +2864,15 @@ export default function CustomerDetail() {
         if (!date) return "";
         const dateObj = typeof date === 'string' ? new Date(date) : date;
         return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
+    const formatMailDateTime = (date: any) => {
+        if (!date) return "";
+        const dateObj = typeof date === "string" ? new Date(date) : date;
+        if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return "";
+        const datePart = dateObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+        const timePart = dateObj.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true });
+        return `${datePart} ${timePart}`;
     };
 
     // Calendar helper functions
@@ -2623,8 +3177,10 @@ export default function CustomerDetail() {
         }
     };
 
-    const isCustomerActive = (c: any) =>
-        (c?.status || "").toLowerCase() === "active" || c?.isActive === true;
+    const isCustomerActive = (c: any) => {
+        const status = String(c?.status ?? "").toLowerCase().trim();
+        return status === "active" || c?.isActive === true || (!status && c?.isInactive !== true);
+    };
 
     const setActiveStatus = async (makeActive: boolean) => {
         const targetId = String((customer as any)?._id || (customer as any)?.id || id || "").trim();
@@ -2671,7 +3227,16 @@ export default function CustomerDetail() {
         return null;
     }
 
-    const primaryContact = customer.contactPersons?.[0] || null;
+    const contactPersonsList = Array.isArray(customer.contactPersons) ? customer.contactPersons : [];
+    const primaryContactIndex = contactPersonsList.findIndex((p: any) => Boolean(p?.isPrimary));
+    const primaryContact =
+        primaryContactIndex >= 0
+            ? contactPersonsList[primaryContactIndex]
+            : contactPersonsList[0] || null;
+    const resolvedPrimaryContactIndex =
+        primaryContact
+            ? (primaryContactIndex >= 0 ? primaryContactIndex : 0)
+            : -1;
     const displayName = customer.displayName || customer.name || `${customer.firstName} ${customer.lastName}`.trim() || customer.companyName;
     const associatedTagLabels = (() => {
         const normalizeText = (value: any) => String(value ?? "").trim();
@@ -2713,15 +3278,93 @@ export default function CustomerDetail() {
             : [];
         if (fromCustomer.length) return fromCustomer;
         try {
-            const raw = localStorage.getItem("subscriptions");
-            if (!raw) return [];
-            const parsed = JSON.parse(raw);
-            if (!Array.isArray(parsed)) return [];
-            const customerId = String((customer as any)?._id || (customer as any)?.id || "").trim();
-            if (!customerId) return [];
+            const readList = (key: string) => {
+                try {
+                    const raw = localStorage.getItem(key);
+                    const parsed = raw ? JSON.parse(raw) : [];
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [];
+                }
+            };
+
+            const merged = [
+                ...readList("taban_subscriptions_v1"),
+                ...readList("taban_subscriptions"),
+                ...readList("subscriptions"),
+            ];
+            if (!merged.length) return [];
+
+            const unique = new Map<string, any>();
+            merged.forEach((row: any, idx: number) => {
+                const key = String(row?.id || row?._id || row?.subscriptionId || row?.subscriptionNumber || `row-${idx}`);
+                if (!unique.has(key)) unique.set(key, row);
+            });
+            const parsed = Array.from(unique.values());
+
+            const normalizeText = (value: any) => String(value ?? "").trim();
+            const normalizeKey = (value: any) => normalizeText(value).toLowerCase();
+            const getFirstValue = (...values: any[]) => values.find((v) => normalizeText(v));
+
+            const customerIds = new Set(
+                [
+                    id,
+                    (customer as any)?._id,
+                    (customer as any)?.id,
+                    (customer as any)?.customerId,
+                    (customer as any)?.customer_id,
+                    (customer as any)?.contactId,
+                    (customer as any)?.contact_id,
+                    (customer as any)?.booksCustomerId,
+                    (customer as any)?.zohoCustomerId,
+                ]
+                    .map((v) => normalizeText(v))
+                    .filter(Boolean)
+            );
+            if (!customerIds.size) return [];
+
+            const customerName = normalizeKey(
+                getFirstValue((customer as any)?.name, (customer as any)?.displayName, (customer as any)?.companyName, "")
+            );
+            const customerEmail = normalizeKey(
+                getFirstValue(
+                    (customer as any)?.email,
+                    (customer as any)?.contactEmail,
+                    (customer as any)?.contactPersons?.find?.((p: any) => p?.isPrimary)?.email,
+                    ""
+                )
+            );
+
             return parsed.filter((sub: any) => {
-                const subCustomerId = String(sub?.customerId || sub?.customer?._id || sub?.customer || "").trim();
-                return subCustomerId === customerId;
+                const subCustomerId = normalizeText(
+                    getFirstValue(
+                        sub?.customerId,
+                        sub?.customer_id,
+                        sub?.contactId,
+                        sub?.contact_id,
+                        sub?.customer?._id,
+                        sub?.customer?.id,
+                        typeof sub?.customer === "string" ? sub.customer : "",
+                        ""
+                    )
+                );
+                if (subCustomerId && customerIds.has(subCustomerId)) return true;
+
+                const subEmail = normalizeKey(
+                    getFirstValue(
+                        sub?.customerEmail,
+                        sub?.email,
+                        sub?.customer?.email,
+                        sub?.contactPersons?.[0]?.email,
+                        ""
+                    )
+                );
+                if (customerEmail && subEmail && subEmail === customerEmail) return true;
+
+                const subName = normalizeKey(getFirstValue(sub?.customerName, sub?.customer?.name, sub?.customer?.displayName, ""));
+                if (customerName && subName && subName === customerName) return true;
+
+                return false;
             });
         } catch {
             return [];
@@ -2729,9 +3372,9 @@ export default function CustomerDetail() {
     })();
 
     return (
-        <div className="w-full h-screen flex bg-white overflow-hidden" style={{ margin: 0, padding: 0, maxWidth: "100%" }}>
+        <div className="w-full h-[calc(100vh-72px)] flex bg-white overflow-hidden" style={{ margin: 0, padding: 0, maxWidth: "100%" }}>
             {/* Left Sidebar */}
-            <div className="w-80 border-r border-gray-200 bg-white flex flex-col h-screen overflow-hidden min-h-0">
+            <div className="w-80 border-r border-gray-200 bg-white flex flex-col h-full overflow-visible min-h-0">
                 {selectedCustomers.length > 0 ? (
                     /* Bulk Selection Header */
                     <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
@@ -2750,9 +3393,12 @@ export default function CustomerDetail() {
                                     Bulk Actions
                                     <ChevronDown size={14} />
                                 </button>
-                                {isBulkActionsDropdownOpen && (
-                                    <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[200px]">
-                                        <div className="px-4 py-2 text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50">
+                                 {isBulkActionsDropdownOpen && (
+                                     <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[200px]">
+                                        <div
+                                            className="px-4 py-2 text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50"
+                                            onClick={handleSidebarBulkUpdate}
+                                        >
                                             Bulk Update
                                         </div>
                                         <div
@@ -2762,10 +3408,16 @@ export default function CustomerDetail() {
                                             Print Customer Statements
                                         </div>
                                         <div className="h-px bg-gray-200 my-1"></div>
-                                        <div className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
+                                        <div
+                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50"
+                                            onClick={handleSidebarBulkMarkActive}
+                                        >
                                             Mark as Active
                                         </div>
-                                        <div className="px-4 py-2 text-sm text-blue-600 font-medium cursor-pointer hover:bg-blue-50">
+                                        <div
+                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50"
+                                            onClick={handleSidebarBulkMarkInactive}
+                                        >
                                             Mark as Inactive
                                         </div>
                                         <div
@@ -2774,14 +3426,30 @@ export default function CustomerDetail() {
                                         >
                                             Merge
                                         </div>
-                                        <div className="h-px bg-gray-200 my-1"></div>
                                         <div
                                             className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-[#156372] hover:text-white transition-colors"
                                             onClick={handleAssociateTemplates}
                                         >
                                             Associate Templates
                                         </div>
-                                        <div className="px-4 py-2 text-sm text-red-600 cursor-pointer hover:bg-red-50">
+                                        <div className="h-px bg-gray-200 my-1"></div>
+                                        <div
+                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50"
+                                            onClick={handleSidebarBulkEnableConsolidatedBilling}
+                                        >
+                                            Enable Consolidated Billing
+                                        </div>
+                                        <div
+                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50"
+                                            onClick={handleSidebarBulkDisableConsolidatedBilling}
+                                        >
+                                            Disable Consolidated Billing
+                                        </div>
+                                        <div className="h-px bg-gray-200 my-1"></div>
+                                        <div
+                                            className="px-4 py-2 text-sm text-red-600 cursor-pointer hover:bg-red-50"
+                                            onClick={handleSidebarBulkDelete}
+                                        >
                                             Delete
                                         </div>
                                     </div>
@@ -2808,7 +3476,7 @@ export default function CustomerDetail() {
                         </button>
                         <div className="flex items-center gap-2">
                             <button
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#1b5e6a] text-white shadow-sm transition-all hover:brightness-110"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#1b5e6a] border-[#0D4A52] border-b-[3px] text-white shadow-sm transition-all hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[4px] active:border-b-[1px] active:translate-y-[1px]"
                                 onClick={() => navigate("/sales/customers/new")}
                             >
                                 <Plus size={16} />
@@ -2821,68 +3489,105 @@ export default function CustomerDetail() {
                                     <MoreVertical size={16} />
                                 </button>
                                 {isSidebarMoreMenuOpen && (
-                                    <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px]">
+                                    <div className="absolute top-full right-0 mt-2 w-60 bg-white border border-gray-100 rounded-lg shadow-xl z-[110] py-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                        <div className="relative flex items-center gap-3 py-2.5 px-4 cursor-pointer transition-all text-sm text-gray-700 group hover:bg-[#156372] hover:text-white">
+                                            <ArrowUpDown size={16} className="text-[#156372] flex-shrink-0 group-hover:text-white" />
+                                            <span className="flex-1">Sort by</span>
+                                            <ChevronRight size={16} className="text-gray-400 flex-shrink-0 group-hover:text-white" />
+
+                                            {/* Sort by Submenu */}
+                                            <div className="absolute top-0 left-full ml-1.5 w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-[99999] pointer-events-none opacity-0 translate-x-2.5 transition-all group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-x-0">
+                                                <div
+                                                    className="flex items-center justify-between py-2.5 px-4 text-sm text-gray-700 cursor-pointer transition-all hover:bg-[#156372] hover:text-white"
+                                                    onClick={() => {
+                                                        setSidebarSort("name_asc");
+                                                        setIsSidebarMoreMenuOpen(false);
+                                                    }}
+                                                >
+                                                    <span>Customer Name (A-Z)</span>
+                                                    {sidebarSort === "name_asc" && <Check size={16} className="text-[#156372]" />}
+                                                </div>
+                                                <div
+                                                    className="flex items-center justify-between py-2.5 px-4 text-sm text-gray-700 cursor-pointer transition-all hover:bg-[#156372] hover:text-white"
+                                                    onClick={() => {
+                                                        setSidebarSort("name_desc");
+                                                        setIsSidebarMoreMenuOpen(false);
+                                                    }}
+                                                >
+                                                    <span>Customer Name (Z-A)</span>
+                                                    {sidebarSort === "name_desc" && <Check size={16} className="text-[#156372]" />}
+                                                </div>
+                                                <div
+                                                    className="flex items-center justify-between py-2.5 px-4 text-sm text-gray-700 cursor-pointer transition-all hover:bg-[#156372] hover:text-white"
+                                                    onClick={() => {
+                                                        setSidebarSort("receivables_desc");
+                                                        setIsSidebarMoreMenuOpen(false);
+                                                    }}
+                                                >
+                                                    <span>Receivables (High-Low)</span>
+                                                    {sidebarSort === "receivables_desc" && <Check size={16} className="text-[#156372]" />}
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <div
-                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-[#156372] hover:text-white"
+                                            className="group flex items-center gap-3 py-2.5 px-4 cursor-pointer transition-colors text-sm text-gray-700 hover:bg-[#156372] hover:text-white"
                                             onClick={() => {
                                                 setIsSidebarMoreMenuOpen(false);
                                                 navigate("/sales/customers/import");
                                             }}
                                         >
-                                            Import Customers
+                                            <Download size={16} className="text-[#156372] group-hover:text-white flex-shrink-0" />
+                                            <span className="flex-1">Import</span>
                                         </div>
+
                                         <div
-                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-[#156372] hover:text-white"
+                                            className="group flex items-center gap-3 py-2.5 px-4 cursor-pointer transition-colors text-sm text-gray-700 hover:bg-[#156372] hover:text-white"
                                             onClick={() => {
                                                 setIsSidebarMoreMenuOpen(false);
                                                 navigate("/sales/customers", { state: { openExportModal: true } });
                                             }}
                                         >
-                                            Export Customers
+                                            <Upload size={16} className="text-[#156372] group-hover:text-white flex-shrink-0" />
+                                            <span className="flex-1">Export</span>
                                         </div>
+
                                         <div
-                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-[#156372] hover:text-white"
+                                            className="group flex items-center gap-3 py-2.5 px-4 cursor-pointer transition-colors text-sm text-gray-700 hover:bg-[#156372] hover:text-white"
                                             onClick={() => {
                                                 setIsSidebarMoreMenuOpen(false);
                                                 navigate("/settings/customers-vendors");
                                             }}
                                         >
-                                            Preferences
+                                            <Settings size={16} className="text-[#156372] group-hover:text-white flex-shrink-0" />
+                                            <span className="flex-1">Preferences</span>
                                         </div>
+
                                         <div
-                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-[#156372] hover:text-white"
-                                            onClick={() => {
-                                                setIsSidebarMoreMenuOpen(false);
-                                                alert("Manage Custom Fields - Feature coming soon");
-                                            }}
-                                        >
-                                            Manage Custom Fields
-                                        </div>
-                                        <div
-                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-[#156372] hover:text-white"
+                                            className="group flex items-center gap-3 py-2.5 px-4 cursor-pointer transition-colors text-sm text-gray-700 hover:bg-[#156372] hover:text-white"
                                             onClick={async () => {
                                                 setIsSidebarMoreMenuOpen(false);
                                                 try {
-                                                    const response = await customersAPI.getAll();
-                                                    if (response && response.data) {
-                                                        setCustomers(response.data);
-                                                        toast.success('Customer list refreshed');
-                                                    }
-                                                } catch (error) {
-                                                    toast.error('Failed to refresh customer list');
+                                                    await reloadSidebarCustomerList();
+                                                    toast.success("Customer list refreshed");
+                                                } catch {
+                                                    toast.error("Failed to refresh customer list");
                                                 }
                                             }}
                                         >
-                                            Refresh List
+                                            <RefreshCw size={16} className="text-[#156372] group-hover:text-white flex-shrink-0" />
+                                            <span className="flex-1">Refresh List</span>
                                         </div>
+
                                         <div
-                                            className="px-4 py-2 text-sm text-gray-700 cursor-pointer transition-colors hover:bg-[#156372] hover:text-white"
+                                            className="group flex items-center gap-3 py-2.5 px-4 cursor-pointer transition-colors text-sm text-gray-700 hover:bg-[#156372] hover:text-white"
                                             onClick={() => {
                                                 setIsSidebarMoreMenuOpen(false);
-                                                alert("Column widths reset to default");
+                                                toast.info("Column widths reset to default");
                                             }}
                                         >
-                                            Reset Column Width
+                                            <RefreshCw size={16} className="text-[#156372] group-hover:text-white flex-shrink-0" />
+                                            <span className="flex-1">Reset Column Width</span>
                                         </div>
                                     </div>
                                 )}
@@ -2891,11 +3596,11 @@ export default function CustomerDetail() {
                     </div>
                 )}
                 <div className="flex-1 min-h-0 overflow-y-auto">
-                    {customers.map((cust, index) => (
+                    {sidebarSortedCustomers.map((cust, index) => (
                         <div
                             key={`${cust.id}-${index}`}
                             className={`flex items-center gap-3 p-3 cursor-pointer border-b border-gray-100 hover:bg-gray-50 ${cust.id === id ? "bg-blue-50 border-l-4 border-l-blue-600" : ""
-                                } ${selectedCustomers.includes(cust.id) ? "bg-gray-100" : ""}`}
+                                } ${selectedCustomers.includes(cust.id) ? "bg-[#f5f6ff]" : ""}`}
                             onClick={() => navigate(`/sales/customers/${cust.id}`, { state: { customer: cust } })}
                         >
                             <input
@@ -2917,7 +3622,7 @@ export default function CustomerDetail() {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden" style={{ marginRight: 0, paddingRight: 0 }}>
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden min-h-0" style={{ marginRight: 0, paddingRight: 0 }}>
                 {/* Header - Show action header when showActionHeader is true, otherwise show normal header */}
                 {!isCustomerActive(customer) ? (
                     /* Action Header Bar */
@@ -2960,7 +3665,7 @@ export default function CustomerDetail() {
                     </div>
                 ) : (
                     /* Normal Header */
-                    <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white ${selectedCustomers.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
                         <div className="flex items-center gap-4">
                             <h1 className="text-xl font-semibold text-gray-900">
                                 {customer?.name || customer?.displayName || customer?.companyName || `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || 'Customer'}
@@ -2969,18 +3674,15 @@ export default function CustomerDetail() {
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={() => navigate(`/sales/customers/${id}/edit`)}
-                                className="flex items-center gap-2 px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer"
-                                style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                                onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget as HTMLElement).style.opacity = "0.9"}
-                                onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget as HTMLElement).style.opacity = "1"}
-                                disabled={selectedCustomers.length > 0}
+                                className="h-[38px] flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-semibold cursor-pointer transition-all border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
+                                style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
                             >
                                 <Edit size={16} />
                                 Edit
                             </button>
                             <div className="relative" ref={attachmentsDropdownRef}>
                                 <button
-                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium cursor-pointer hover:bg-gray-50"
+                                    className="h-[38px] flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 border-b-[4px] text-gray-700 rounded-lg text-sm font-semibold cursor-pointer transition-all hover:bg-gray-50 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
                                     onClick={() => setIsAttachmentsDropdownOpen(!isAttachmentsDropdownOpen)}
                                 >
                                     <Paperclip size={16} />
@@ -3043,17 +3745,24 @@ export default function CustomerDetail() {
                                     </div>
                                 )}
                             </div>
-                            <div className="relative" ref={newTransactionDropdownRef}>
-                                <button
-                                    className="flex items-center gap-2 px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer"
-                                    style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                                    onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget as HTMLElement).style.opacity = "0.9"}
-                                    onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget as HTMLElement).style.opacity = "1"}
-                                    onClick={() => setIsNewTransactionDropdownOpen(!isNewTransactionDropdownOpen)}
-                                >
-                                    New Transaction
-                                    <ChevronDown size={16} />
-                                </button>
+                            <div className="relative inline-flex" ref={newTransactionDropdownRef}>
+                                <div className="flex items-center">
+                                    <button
+                                        className="h-[38px] min-w-[140px] cursor-pointer transition-all text-white px-4 rounded-l-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center gap-2"
+                                        style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
+                                        onClick={() => setIsNewTransactionDropdownOpen(!isNewTransactionDropdownOpen)}
+                                    >
+                                        <Plus size={16} />
+                                        New Transaction
+                                    </button>
+                                    <button
+                                        className="h-[38px] w-10 cursor-pointer transition-all text-white rounded-r-lg border-[#0B3A41] border-b-[4px] border-l border-white/20 hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center"
+                                        style={{ background: "#0D4A52" }}
+                                        onClick={() => setIsNewTransactionDropdownOpen(!isNewTransactionDropdownOpen)}
+                                    >
+                                        <ChevronDown size={14} />
+                                    </button>
+                                </div>
                                 {isNewTransactionDropdownOpen && (
                                     <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                                         <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">SALES</div>
@@ -3144,11 +3853,11 @@ export default function CustomerDetail() {
                             </div>
                             <div className="relative" ref={moreDropdownRef}>
                                 <button
-                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium cursor-pointer hover:bg-gray-50"
+                                    className="h-[38px] flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 border-b-[4px] text-gray-700 rounded-lg text-sm font-semibold cursor-pointer transition-all hover:bg-gray-50 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
                                     onClick={() => setIsMoreDropdownOpen(!isMoreDropdownOpen)}
                                 >
                                     More
-                                    <ChevronDown size={16} />
+                                    <ChevronDown size={14} />
                                 </button>
                                 {isMoreDropdownOpen && (
                                     <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
@@ -3194,10 +3903,10 @@ export default function CustomerDetail() {
                                                 setAreRemindersStopped(!areRemindersStopped);
                                                 if (!areRemindersStopped) {
                                                     // Reminders are being stopped
-                                                    alert("All reminders stopped for this customer");
+                                                    toast.success("All reminders stopped for this customer");
                                                 } else {
                                                     // Reminders are being enabled
-                                                    alert("All reminders enabled for this customer");
+                                                    toast.success("All reminders enabled for this customer");
                                                 }
                                             }}
                                         >
@@ -3224,7 +3933,7 @@ export default function CustomerDetail() {
                                                 setShowActionHeader(true);
                                             }}
                                         >
-                                            {customer?.status?.toLowerCase() === "active" || customer?.isActive ? "Mark as Inactive" : "Mark as Active"}
+                                            {isCustomerActive(customer) ? "Mark as Inactive" : "Mark as Active"}
                                         </button>
                                         <button
                                             className="w-full text-left px-4 py-2 text-sm text-red-600 cursor-pointer hover:bg-red-50 transition-colors"
@@ -3240,7 +3949,7 @@ export default function CustomerDetail() {
                             </div>
                             <button
                                 onClick={() => navigate("/sales/customers")}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium cursor-pointer hover:bg-gray-50"
+                                className="h-[38px] flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 border-b-[4px] text-gray-700 rounded-lg text-sm font-semibold cursor-pointer transition-all hover:bg-gray-50 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
                             >
                                 <X size={16} />
                             </button>
@@ -3249,29 +3958,29 @@ export default function CustomerDetail() {
                 )}
 
                 {/* Tabs */}
-                <div className="flex gap-1 mb-0 border-b border-gray-200">
+                <div className="flex gap-6 mb-0 border-b border-gray-200 bg-white px-1">
                     <button
-                        className={`px-2.5 py-1.75 text-[13px] rounded-t-md border border-transparent border-b-0 cursor-pointer transition-colors ${activeTab === "overview"
-                            ? "text-gray-900 bg-white border-gray-200"
-                            : "text-gray-600 hover:text-gray-900"
+                        className={`-mb-px px-2.5 py-2 text-[13px] font-medium cursor-pointer transition-colors border-b-2 ${activeTab === "overview"
+                            ? "text-gray-900 border-blue-600"
+                            : "text-gray-600 hover:text-gray-900 border-transparent"
                             }`}
                         onClick={() => setActiveTab("overview")}
                     >
                         Overview
                     </button>
                     <button
-                        className={`px-2.5 py-1.75 text-[13px] rounded-t-md border border-transparent border-b-0 cursor-pointer transition-colors ${activeTab === "comments"
-                            ? "text-gray-900 bg-white border-gray-200"
-                            : "text-gray-600 hover:text-gray-900"
+                        className={`-mb-px px-2.5 py-2 text-[13px] font-medium cursor-pointer transition-colors border-b-2 ${activeTab === "comments"
+                            ? "text-gray-900 border-blue-600"
+                            : "text-gray-600 hover:text-gray-900 border-transparent"
                             }`}
                         onClick={() => setActiveTab("comments")}
                     >
                         Comments
                     </button>
                     <button
-                        className={`px-2.5 py-1.75 text-[13px] rounded-t-md border border-transparent border-b-0 cursor-pointer transition-colors ${activeTab === "transactions"
-                            ? "text-gray-900 bg-white border-gray-200"
-                            : "text-gray-600 hover:text-gray-900"
+                        className={`-mb-px px-2.5 py-2 text-[13px] font-medium cursor-pointer transition-colors border-b-2 ${activeTab === "transactions"
+                            ? "text-gray-900 border-blue-600"
+                            : "text-gray-600 hover:text-gray-900 border-transparent"
                             }`}
                         onClick={() => {
                             setActiveTab("transactions");
@@ -3284,9 +3993,9 @@ export default function CustomerDetail() {
                     </button>
                     {customer?.linkedVendorId && (
                         <button
-                            className={`px-2.5 py-1.75 text-[13px] rounded-t-md border border-transparent border-b-0 cursor-pointer transition-colors ${activeTab === "purchases"
-                                ? "text-gray-900 bg-white border-gray-200"
-                                : "text-gray-600 hover:text-gray-900"
+                            className={`-mb-px px-2.5 py-2 text-[13px] font-medium cursor-pointer transition-colors border-b-2 ${activeTab === "purchases"
+                                ? "text-gray-900 border-blue-600"
+                                : "text-gray-600 hover:text-gray-900 border-transparent"
                                 }`}
                             onClick={() => setActiveTab("purchases")}
                         >
@@ -3294,18 +4003,18 @@ export default function CustomerDetail() {
                         </button>
                     )}
                     <button
-                        className={`px-2.5 py-1.75 text-[13px] rounded-t-md border border-transparent border-b-0 cursor-pointer transition-colors ${activeTab === "mails"
-                            ? "text-gray-900 bg-white border-gray-200"
-                            : "text-gray-600 hover:text-gray-900"
+                        className={`-mb-px px-2.5 py-2 text-[13px] font-medium cursor-pointer transition-colors border-b-2 ${activeTab === "mails"
+                            ? "text-gray-900 border-blue-600"
+                            : "text-gray-600 hover:text-gray-900 border-transparent"
                             }`}
                         onClick={() => setActiveTab("mails")}
                     >
                         Mails
                     </button>
                     <button
-                        className={`px-2.5 py-1.75 text-[13px] rounded-t-md border border-transparent border-b-0 cursor-pointer transition-colors ${activeTab === "statement"
-                            ? "text-gray-900 bg-white border-gray-200"
-                            : "text-gray-600 hover:text-gray-900"
+                        className={`-mb-px px-2.5 py-2 text-[13px] font-medium cursor-pointer transition-colors border-b-2 ${activeTab === "statement"
+                            ? "text-gray-900 border-blue-600"
+                            : "text-gray-600 hover:text-gray-900 border-transparent"
                             }`}
                         onClick={() => setActiveTab("statement")}
                     >
@@ -3315,26 +4024,31 @@ export default function CustomerDetail() {
 
                 {/* Tab Content */}
                 {activeTab === "overview" && (
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 min-h-0 overflow-y-auto bg-[#f8f9fc]">
                         <div className="flex min-h-full">
                             {/* Left Column */}
-                            <div className="w-[370px] flex-shrink-0 border-r border-gray-200 bg-[#f8f9fc] p-4">
+                            <div className="w-[370px] flex-shrink-0 border-r border-gray-200 bg-[#f8f9fc]">
                                 {/* Customer Profile Section */}
-                                <div className="mb-6">
+                                <div className="border-b border-gray-200 p-4">
                                     <div className="mb-2 text-sm text-[#1f5fa8]">
                                         {(customer as any).companyName || displayName}
                                     </div>
                                     {!showInviteCard ? (
-                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                        <div>
                                             <div className="flex items-start gap-4">
+                                                {(() => {
+                                                    const topProfileImage =
+                                                        String((primaryContact as any)?.profileImage || (primaryContact as any)?.image || profileImage || "").trim() || null;
+
+                                                    return (
                                                 <div
                                                     className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0 relative cursor-pointer overflow-hidden group"
                                                     onMouseEnter={() => setIsAvatarHovered(true)}
                                                     onMouseLeave={() => setIsAvatarHovered(false)}
                                                     onClick={() => profileImageInputRef.current?.click()}
                                                 >
-                                                    {profileImage ? (
-                                                        <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
+                                                    {topProfileImage ? (
+                                                        <img src={topProfileImage} alt="Profile" className="w-full h-full object-cover" />
                                                     ) : (
                                                         <User size={24} className="text-gray-400" />
                                                     )}
@@ -3351,6 +4065,8 @@ export default function CustomerDetail() {
                                                         style={{ display: "none" }}
                                                     />
                                                 </div>
+                                                    );
+                                                })()}
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <span className="text-base font-medium text-gray-900">
@@ -3380,17 +4096,25 @@ export default function CustomerDetail() {
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             setIsSettingsDropdownOpen(false);
-                                                                            navigate(`/sales/customers/${id}/edit`);
+                                                                            if (primaryContact && resolvedPrimaryContactIndex >= 0) {
+                                                                                openEditContactPerson(primaryContact, resolvedPrimaryContactIndex);
+                                                                            } else {
+                                                                                navigate(`/sales/customers/${id}/edit`);
+                                                                            }
                                                                         }}
                                                                     >
                                                                         Edit
                                                                     </button>
                                                                     <button
                                                                         className="w-full text-left px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors"
-                                                                        onClick={(e) => {
+                                                                        onClick={async (e) => {
                                                                             e.stopPropagation();
                                                                             setIsSettingsDropdownOpen(false);
-                                                                            setIsDeleteModalOpen(true);
+                                                                            if (primaryContact && resolvedPrimaryContactIndex >= 0) {
+                                                                                await deleteContactPerson(resolvedPrimaryContactIndex);
+                                                                            } else {
+                                                                                setIsDeleteModalOpen(true);
+                                                                            }
                                                                         }}
                                                                     >
                                                                         Delete
@@ -3455,7 +4179,7 @@ export default function CustomerDetail() {
                                                     </div>
                                                     <button
                                                         className="text-[13px] text-blue-600 font-medium hover:underline bg-transparent border-none p-0 cursor-pointer"
-                                                        onClick={() => alert("Re-invitation sent!")}
+                                                        onClick={() => toast.success("Re-invitation sent!")}
                                                     >
                                                         Re-invite
                                                     </button>
@@ -3473,141 +4197,168 @@ export default function CustomerDetail() {
                                 </div>
 
                                 {/* Address Section */}
-                                <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
-                                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">ADDRESS</div>
-                                    <div className="mb-4">
-                                        <div className="text-sm text-gray-600 mb-1">Billing Address</div>
-                                        {(customer.billingAddress?.street1 || customer.billingStreet1 || customer.billingAddress?.city || customer.billingCity) ? (
-                                            <div>
-                                                <div className="text-sm text-gray-900">
-                                                    {customer.billingAddress?.street1 || customer.billingStreet1 || ""}
-                                                    {(customer.billingAddress?.city || customer.billingCity) && `, ${customer.billingAddress?.city || customer.billingCity}`}
-                                                    {(customer.billingAddress?.state || customer.billingState) && `, ${customer.billingAddress?.state || customer.billingState}`}
-                                                    {(customer.billingAddress?.zipCode || customer.billingZipCode) && ` ${customer.billingAddress?.zipCode || customer.billingZipCode}`}
-                                                </div>
-                                                <a
-                                                    href="#"
-                                                    className="text-sm text-blue-600 hover:underline"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        setAddressType("billing");
-                                                        // Read data exactly from both nested and flat structures
-                                                        const billingAddr = customer.billingAddress || {};
-                                                        setAddressFormData({
-                                                            attention: billingAddr.attention ?? customer.billingAttention ?? "",
-                                                            country: billingAddr.country ?? customer.billingCountry ?? "",
-                                                            addressLine1: billingAddr.street1 ?? customer.billingStreet1 ?? "",
-                                                            addressLine2: billingAddr.street2 ?? customer.billingStreet2 ?? "",
-                                                            city: billingAddr.city ?? customer.billingCity ?? "",
-                                                            state: billingAddr.state ?? customer.billingState ?? "",
-                                                            zipCode: billingAddr.zipCode ?? customer.billingZipCode ?? "",
-                                                            phone: billingAddr.phone ?? customer.billingPhone ?? "",
-                                                            faxNumber: billingAddr.fax ?? customer.billingFax ?? "",
-                                                        });
-                                                        setShowAddressModal(true);
-                                                    }}
-                                                >
-                                                    Edit
-                                                </a>
-                                            </div>
+                                <div className="border-b border-gray-200">
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors hover:bg-white/50"
+                                        onClick={() => toggleSection("address")}
+                                        aria-expanded={expandedSections.address}
+                                    >
+                                        <span className="text-xs font-semibold text-gray-800 uppercase tracking-wider">ADDRESS</span>
+                                        {expandedSections.address ? (
+                                            <ChevronUp size={14} className="text-[#2563eb]" />
                                         ) : (
-                                            <a
-                                                href="#"
-                                                className="text-sm text-blue-600 hover:underline"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    setAddressType("billing");
-                                                    // Read data exactly from both nested and flat structures
-                                                    const billingAddr = customer.billingAddress || {};
-                                                    setAddressFormData({
-                                                        attention: billingAddr.attention ?? customer.billingAttention ?? "",
-                                                        country: billingAddr.country ?? customer.billingCountry ?? "",
-                                                        addressLine1: billingAddr.street1 ?? customer.billingStreet1 ?? "",
-                                                        addressLine2: billingAddr.street2 ?? customer.billingStreet2 ?? "",
-                                                        city: billingAddr.city ?? customer.billingCity ?? "",
-                                                        state: billingAddr.state ?? customer.billingState ?? "",
-                                                        zipCode: billingAddr.zipCode ?? customer.billingZipCode ?? "",
-                                                        phone: billingAddr.phone ?? customer.billingPhone ?? "",
-                                                        faxNumber: billingAddr.fax ?? customer.billingFax ?? "",
-                                                    });
-                                                    setShowAddressModal(true);
-                                                }}
-                                            >
-                                                No Billing Address - New Address
-                                            </a>
+                                            <ChevronDown size={14} className="text-[#2563eb]" />
                                         )}
-                                    </div>
-                                    <div>
-                                        <div className="text-sm text-gray-600 mb-1">Shipping Address</div>
-                                        {(customer.shippingAddress?.street1 || customer.shippingStreet1 || customer.shippingAddress?.city || customer.shippingCity) ? (
-                                            <div>
-                                                <div className="text-sm text-gray-900">
-                                                    {customer.shippingAddress?.street1 || customer.shippingStreet1 || ""}
-                                                    {(customer.shippingAddress?.city || customer.shippingCity) && `, ${customer.shippingAddress?.city || customer.shippingCity}`}
-                                                    {(customer.shippingAddress?.state || customer.shippingState) && `, ${customer.shippingAddress?.state || customer.shippingState}`}
-                                                    {(customer.shippingAddress?.zipCode || customer.shippingZipCode) && ` ${customer.shippingAddress?.zipCode || customer.shippingZipCode}`}
-                                                </div>
-                                                <a
-                                                    href="#"
-                                                    className="text-sm text-blue-600 hover:underline"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        setAddressType("shipping");
-                                                        // Read data exactly from both nested and flat structures
-                                                        const shippingAddr = customer.shippingAddress || {};
-                                                        setAddressFormData({
-                                                            attention: shippingAddr.attention ?? customer.shippingAttention ?? "",
-                                                            country: shippingAddr.country ?? customer.shippingCountry ?? "",
-                                                            addressLine1: shippingAddr.street1 ?? customer.shippingStreet1 ?? "",
-                                                            addressLine2: shippingAddr.street2 ?? customer.shippingStreet2 ?? "",
-                                                            city: shippingAddr.city ?? customer.shippingCity ?? "",
-                                                            state: shippingAddr.state ?? customer.shippingState ?? "",
-                                                            zipCode: shippingAddr.zipCode ?? customer.shippingZipCode ?? "",
-                                                            phone: shippingAddr.phone ?? customer.shippingPhone ?? "",
-                                                            faxNumber: shippingAddr.fax ?? customer.shippingFax ?? "",
-                                                        });
-                                                        setShowAddressModal(true);
-                                                    }}
-                                                >
-                                                    Edit
-                                                </a>
+                                    </button>
+
+                                    {expandedSections.address && (
+                                        <div className="px-4 pb-4">
+                                            <div className="mb-4">
+                                                <div className="text-sm text-gray-600 mb-1">Billing Address</div>
+                                                {(customer.billingAddress?.street1 || customer.billingStreet1 || customer.billingAddress?.city || customer.billingCity) ? (
+                                                    <div>
+                                                        <div className="text-sm text-gray-900">
+                                                            {customer.billingAddress?.street1 || customer.billingStreet1 || ""}
+                                                            {(customer.billingAddress?.city || customer.billingCity) && `, ${customer.billingAddress?.city || customer.billingCity}`}
+                                                            {(customer.billingAddress?.state || customer.billingState) && `, ${customer.billingAddress?.state || customer.billingState}`}
+                                                            {(customer.billingAddress?.zipCode || customer.billingZipCode) && ` ${customer.billingAddress?.zipCode || customer.billingZipCode}`}
+                                                        </div>
+                                                        <a
+                                                            href="#"
+                                                            className="text-sm text-blue-600 hover:underline"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                setAddressType("billing");
+                                                                // Read data exactly from both nested and flat structures
+                                                                const billingAddr = customer.billingAddress || {};
+                                                                setAddressFormData({
+                                                                    attention: billingAddr.attention ?? customer.billingAttention ?? "",
+                                                                    country: billingAddr.country ?? customer.billingCountry ?? "",
+                                                                    addressLine1: billingAddr.street1 ?? customer.billingStreet1 ?? "",
+                                                                    addressLine2: billingAddr.street2 ?? customer.billingStreet2 ?? "",
+                                                                    city: billingAddr.city ?? customer.billingCity ?? "",
+                                                                    state: billingAddr.state ?? customer.billingState ?? "",
+                                                                    zipCode: billingAddr.zipCode ?? customer.billingZipCode ?? "",
+                                                                    phone: billingAddr.phone ?? customer.billingPhone ?? "",
+                                                                    faxNumber: billingAddr.fax ?? customer.billingFax ?? "",
+                                                                });
+                                                                setShowAddressModal(true);
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </a>
+                                                    </div>
+                                                ) : (
+                                                    <a
+                                                        href="#"
+                                                        className="text-sm text-blue-600 hover:underline"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            setAddressType("billing");
+                                                            // Read data exactly from both nested and flat structures
+                                                            const billingAddr = customer.billingAddress || {};
+                                                            setAddressFormData({
+                                                                attention: billingAddr.attention ?? customer.billingAttention ?? "",
+                                                                country: billingAddr.country ?? customer.billingCountry ?? "",
+                                                                addressLine1: billingAddr.street1 ?? customer.billingStreet1 ?? "",
+                                                                addressLine2: billingAddr.street2 ?? customer.billingStreet2 ?? "",
+                                                                city: billingAddr.city ?? customer.billingCity ?? "",
+                                                                state: billingAddr.state ?? customer.billingState ?? "",
+                                                                zipCode: billingAddr.zipCode ?? customer.billingZipCode ?? "",
+                                                                phone: billingAddr.phone ?? customer.billingPhone ?? "",
+                                                                faxNumber: billingAddr.fax ?? customer.billingFax ?? "",
+                                                            });
+                                                            setShowAddressModal(true);
+                                                        }}
+                                                    >
+                                                        No Billing Address - New Address
+                                                    </a>
+                                                )}
                                             </div>
-                                        ) : (
-                                            <a
-                                                href="#"
-                                                className="text-sm text-blue-600 hover:underline"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    setAddressType("shipping");
-                                                    // Read data exactly from both nested and flat structures
-                                                    const shippingAddr = customer.shippingAddress || {};
-                                                    setAddressFormData({
-                                                        attention: shippingAddr.attention ?? customer.shippingAttention ?? "",
-                                                        country: shippingAddr.country ?? customer.shippingCountry ?? "",
-                                                        addressLine1: shippingAddr.street1 ?? customer.shippingStreet1 ?? "",
-                                                        addressLine2: shippingAddr.street2 ?? customer.shippingStreet2 ?? "",
-                                                        city: shippingAddr.city ?? customer.shippingCity ?? "",
-                                                        state: shippingAddr.state ?? customer.shippingState ?? "",
-                                                        zipCode: shippingAddr.zipCode ?? customer.shippingZipCode ?? "",
-                                                        phone: shippingAddr.phone ?? customer.shippingPhone ?? "",
-                                                        faxNumber: shippingAddr.fax ?? customer.shippingFax ?? "",
-                                                    });
-                                                    setShowAddressModal(true);
-                                                }}
-                                            >
-                                                No Shipping Address - New Address
-                                            </a>
-                                        )}
-                                    </div>
+                                            <div>
+                                                <div className="text-sm text-gray-600 mb-1">Shipping Address</div>
+                                                {(customer.shippingAddress?.street1 || customer.shippingStreet1 || customer.shippingAddress?.city || customer.shippingCity) ? (
+                                                    <div>
+                                                        <div className="text-sm text-gray-900">
+                                                            {customer.shippingAddress?.street1 || customer.shippingStreet1 || ""}
+                                                            {(customer.shippingAddress?.city || customer.shippingCity) && `, ${customer.shippingAddress?.city || customer.shippingCity}`}
+                                                            {(customer.shippingAddress?.state || customer.shippingState) && `, ${customer.shippingAddress?.state || customer.shippingState}`}
+                                                            {(customer.shippingAddress?.zipCode || customer.shippingZipCode) && ` ${customer.shippingAddress?.zipCode || customer.shippingZipCode}`}
+                                                        </div>
+                                                        <a
+                                                            href="#"
+                                                            className="text-sm text-blue-600 hover:underline"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                setAddressType("shipping");
+                                                                // Read data exactly from both nested and flat structures
+                                                                const shippingAddr = customer.shippingAddress || {};
+                                                                setAddressFormData({
+                                                                    attention: shippingAddr.attention ?? customer.shippingAttention ?? "",
+                                                                    country: shippingAddr.country ?? customer.shippingCountry ?? "",
+                                                                    addressLine1: shippingAddr.street1 ?? customer.shippingStreet1 ?? "",
+                                                                    addressLine2: shippingAddr.street2 ?? customer.shippingStreet2 ?? "",
+                                                                    city: shippingAddr.city ?? customer.shippingCity ?? "",
+                                                                    state: shippingAddr.state ?? customer.shippingState ?? "",
+                                                                    zipCode: shippingAddr.zipCode ?? customer.shippingZipCode ?? "",
+                                                                    phone: shippingAddr.phone ?? customer.shippingPhone ?? "",
+                                                                    faxNumber: shippingAddr.fax ?? customer.shippingFax ?? "",
+                                                                });
+                                                                setShowAddressModal(true);
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </a>
+                                                    </div>
+                                                ) : (
+                                                    <a
+                                                        href="#"
+                                                        className="text-sm text-blue-600 hover:underline"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            setAddressType("shipping");
+                                                            // Read data exactly from both nested and flat structures
+                                                            const shippingAddr = customer.shippingAddress || {};
+                                                            setAddressFormData({
+                                                                attention: shippingAddr.attention ?? customer.shippingAttention ?? "",
+                                                                country: shippingAddr.country ?? customer.shippingCountry ?? "",
+                                                                addressLine1: shippingAddr.street1 ?? customer.shippingStreet1 ?? "",
+                                                                addressLine2: shippingAddr.street2 ?? customer.shippingStreet2 ?? "",
+                                                                city: shippingAddr.city ?? customer.shippingCity ?? "",
+                                                                state: shippingAddr.state ?? customer.shippingState ?? "",
+                                                                zipCode: shippingAddr.zipCode ?? customer.shippingZipCode ?? "",
+                                                                phone: shippingAddr.phone ?? customer.shippingPhone ?? "",
+                                                                faxNumber: shippingAddr.fax ?? customer.shippingFax ?? "",
+                                                            });
+                                                            setShowAddressModal(true);
+                                                        }}
+                                                    >
+                                                        No Shipping Address - New Address
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Other Details Section */}
-                                <div className="mb-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-                                    <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                                        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Other Details</h3>
-                                        <ChevronUp size={14} className="text-[#2563eb]" />
-                                    </div>
-                                    <div className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-3 gap-y-4 px-4 py-5">
+                                <div className="border-b border-gray-200">
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors hover:bg-white/50"
+                                        onClick={() => toggleSection("otherDetails")}
+                                        aria-expanded={expandedSections.otherDetails}
+                                    >
+                                        <span className="text-xs font-semibold text-gray-800 uppercase tracking-wider">OTHER DETAILS</span>
+                                        {expandedSections.otherDetails ? (
+                                            <ChevronUp size={14} className="text-[#2563eb]" />
+                                        ) : (
+                                            <ChevronDown size={14} className="text-[#2563eb]" />
+                                        )}
+                                    </button>
+                                    {expandedSections.otherDetails && (
+                                        <div className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-3 gap-y-4 px-4 pt-2 pb-5">
                                         <span className="text-sm text-slate-500">Customer Type</span>
                                         <span className="text-sm font-medium text-slate-900">
                                             {customer.customerType === "individual" ? "Individual" : "Business"}
@@ -3652,129 +4403,322 @@ export default function CustomerDetail() {
                                                 ? `${customer.customerLanguage.charAt(0).toUpperCase()}${customer.customerLanguage.slice(1)}`
                                                 : "English"}
                                         </span>
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Contact Persons Section */}
-                                <div className="mb-6 bg-white rounded-lg border border-gray-200">
-                                    <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            CONTACT PERSONS ({customer.contactPersons?.length || 0})
-                                        </span>
+                                <div className="border-b border-gray-200">
+                                    <div className="flex items-center justify-between px-4 py-3">
                                         <button
-                                            className="p-1 text-blue-600 hover:bg-blue-50 rounded cursor-pointer"
-                                            onClick={() => {
-                                                setNewContactPerson({
-                                                    salutation: "Mr",
-                                                    firstName: "",
-                                                    lastName: "",
-                                                    email: "",
-                                                    workPhone: "",
-                                                    mobile: "",
-                                                    skype: "",
-                                                    designation: "",
-                                                    department: "",
-                                                    enablePortalAccess: true
-                                                });
-                                                setIsAddContactPersonModalOpen(true);
-                                            }}
+                                            type="button"
+                                            className="flex-1 text-left text-xs font-semibold text-gray-800 uppercase tracking-wider cursor-pointer"
+                                            onClick={() => toggleSection("contactPersons")}
+                                            aria-expanded={expandedSections.contactPersons}
                                         >
-                                            <Plus size={16} />
+                                            CONTACT PERSONS ({customer.contactPersons?.length || 0})
                                         </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                className="h-6 w-6 flex items-center justify-center rounded-full bg-blue-600 text-white cursor-pointer transition-colors hover:bg-blue-700"
+                                                onClick={() => {
+                                                    setOpenContactPersonSettingsIndex(null);
+                                                    resetContactPersonModal();
+                                                    setIsAddContactPersonModalOpen(true);
+                                                }}
+                                                aria-label="Add contact person"
+                                                title="Add contact person"
+                                            >
+                                                <Plus size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="p-1 text-blue-600 hover:bg-blue-50 rounded cursor-pointer"
+                                                onClick={() => toggleSection("contactPersons")}
+                                                aria-label={expandedSections.contactPersons ? "Collapse" : "Expand"}
+                                            >
+                                                {expandedSections.contactPersons ? (
+                                                    <ChevronUp size={14} className="text-[#2563eb]" />
+                                                ) : (
+                                                    <ChevronDown size={14} className="text-[#2563eb]" />
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="p-4">
+                                    {expandedSections.contactPersons && (
+                                        <div className="px-4 pb-4">
                                         {customer.contactPersons && customer.contactPersons.length > 0 ? (
-                                            <div className="space-y-3">
-                                                {customer.contactPersons.map((contact, index) => (
-                                                    <div key={index} className="flex items-start gap-3 pb-3 border-b border-gray-100 last:border-b-0 last:pb-0">
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-2 mb-1">
-                                                                <span className="text-sm font-medium text-gray-900">
-                                                                    {contact.salutation && `${contact.salutation}. `}
-                                                                    {contact.firstName} {contact.lastName}
-                                                                </span>
-                                                                <button className="p-1 text-gray-500 hover:text-gray-700 cursor-pointer">
-                                                                    <Settings size={14} />
-                                                                </button>
+                                            <div className="space-y-0">
+                                                {customer.contactPersons.map((contact: any, index: number) => {
+                                                    const name =
+                                                        String(
+                                                            `${contact?.salutation ? `${contact.salutation}. ` : ""}${contact?.firstName || ""} ${contact?.lastName || ""}`
+                                                        ).trim() ||
+                                                        String(contact?.name || contact?.displayName || "Contact");
+                                                    const email = String(contact?.email || "").trim();
+                                                    const workPhone = String(contact?.workPhone || contact?.phone || "").trim();
+                                                    const mobile = String(contact?.mobile || contact?.mobilePhone || "").trim();
+                                                    const avatar = contact?.profileImage || contact?.image || null;
+                                                    const isPrimary = Boolean(contact?.isPrimary);
+
+                                                    return (
+                                                        <div
+                                                            key={String(email || name || index)}
+                                                            className="flex items-start gap-3 py-4 border-b border-gray-100 last:border-b-0"
+                                                        >
+                                                            <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                                                {avatar ? (
+                                                                    <img src={String(avatar)} alt={name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <User size={22} className="text-gray-400" />
+                                                                )}
                                                             </div>
-                                                            {contact.email && (
-                                                                <div className="text-sm text-gray-600">{contact.email}</div>
-                                                            )}
-                                                            <div className="text-sm text-gray-500 mt-1">Portal invitation not accepted</div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="min-w-0">
+                                                                        <div className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
+                                                                            <span className="truncate">{name}</span>
+                                                                            {isPrimary && (
+                                                                                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5 flex-shrink-0">
+                                                                                    Primary
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        {email && (
+                                                                            <div className="text-sm text-gray-600 truncate">{email}</div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="relative flex-shrink-0" data-contact-person-menu-root="true">
+                                                                        <button
+                                                                            type="button"
+                                                                            className="p-1 text-gray-500 hover:text-gray-700 cursor-pointer"
+                                                                            title="Contact settings"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOpenContactPersonSettingsIndex((prev) => (prev === index ? null : index));
+                                                                            }}
+                                                                        >
+                                                                            <Settings size={14} />
+                                                                        </button>
+                                                                        {openContactPersonSettingsIndex === index && (
+                                                                            <div className="absolute top-full right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-xl z-[120] py-1">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="w-[calc(100%-8px)] mx-1 my-1 text-left px-3 py-2 text-sm text-white rounded-md cursor-pointer bg-blue-600 hover:bg-blue-700 transition-colors"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setOpenContactPersonSettingsIndex(null);
+                                                                                        openEditContactPerson(contact, index);
+                                                                                    }}
+                                                                                >
+                                                                                    Edit
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 transition-colors"
+                                                                                    onClick={async (e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setOpenContactPersonSettingsIndex(null);
+                                                                                        await markContactPersonAsPrimary(index);
+                                                                                    }}
+                                                                                >
+                                                                                    Mark as Primary
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="w-full text-left px-4 py-2 text-sm text-red-600 cursor-pointer hover:bg-red-50 transition-colors"
+                                                                                    onClick={async (e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setOpenContactPersonSettingsIndex(null);
+                                                                                        await deleteContactPerson(index);
+                                                                                    }}
+                                                                                >
+                                                                                    Delete
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {workPhone && (
+                                                                    <div className="mt-1 flex items-center gap-2 text-sm text-gray-700">
+                                                                        <Phone size={14} className="text-gray-500" />
+                                                                        <span className="truncate">{workPhone}</span>
+                                                                    </div>
+                                                                )}
+                                                                {mobile && (
+                                                                    <div className="mt-1 flex items-center gap-2 text-sm text-gray-700">
+                                                                        <Smartphone size={14} className="text-gray-500" />
+                                                                        <span className="truncate">{mobile}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         ) : (
                                             <div className="text-sm text-gray-500 text-center py-4">No contact persons found.</div>
                                         )}
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Associate Tags */}
-                                <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
-                                    <div className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-500">ASSOCIATE TAGS</div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {associatedTagLabels.length > 0 ? (
-                                            associatedTagLabels.map((tag: string, idx: number) => (
-                                                <span key={`${tag}-${idx}`} className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
-                                                    {tag}
-                                                    <X size={12} className="text-gray-500" />
-                                                </span>
-                                            ))
-                                        ) : (
-                                            <span className="text-xs text-gray-400">No tags associated</span>
-                                        )}
+                                <div className="border-b border-gray-200">
+                                    <div className="flex items-center justify-between px-4 py-3">
+                                        <button
+                                            type="button"
+                                            className="flex-1 text-left text-xs font-semibold uppercase tracking-wider text-gray-800 cursor-pointer"
+                                            onClick={() => toggleSection("associateTags")}
+                                            aria-expanded={expandedSections.associateTags}
+                                        >
+                                            ASSOCIATE TAGS
+                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                className="h-6 w-6 flex items-center justify-center rounded-full bg-blue-600 text-white cursor-pointer transition-colors hover:bg-blue-700"
+                                                onClick={() => openAssociateTagsModal()}
+                                                aria-label="Add tag"
+                                                title="Add tag"
+                                            >
+                                                <Plus size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="p-1 text-blue-600 hover:bg-blue-50 rounded cursor-pointer"
+                                                onClick={() => toggleSection("associateTags")}
+                                                aria-label={expandedSections.associateTags ? "Collapse" : "Expand"}
+                                            >
+                                                {expandedSections.associateTags ? (
+                                                    <ChevronUp size={14} className="text-[#2563eb]" />
+                                                ) : (
+                                                    <ChevronDown size={14} className="text-[#2563eb]" />
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
+                                    {expandedSections.associateTags && (
+                                        <div className="px-4 pb-4">
+                                            <div className="flex flex-wrap gap-2">
+                                                {associatedTagLabels.length > 0 ? (
+                                                    associatedTagLabels.map((tag: string, idx: number) => (
+                                                        <span key={`${tag}-${idx}`} className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                                                            {tag}
+                                                            <X size={12} className="text-gray-500" />
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">No tags associated</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Customer Portal Info */}
-                                <div className="mb-6 border border-green-200 bg-green-50 p-4">
-                                    <p className="mb-3 text-sm text-gray-700">
-                                        Customer Portal allows your customers to keep track of all the transactions between them and your business.
-                                    </p>
-                                    <button className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                                        Enable Portal
-                                    </button>
+                                <div className="border-b border-gray-200 p-4">
+                                    <div className="border border-green-200 bg-green-50 p-4">
+                                        <p className="mb-3 text-sm text-gray-700">
+                                            Customer Portal allows your customers to keep track of all the transactions between them and your business.
+                                        </p>
+                                        <button className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                                            Enable Portal
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Record Info Section */}
-                                <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
-                                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">RECORD INFO</div>
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-sm text-gray-600">Customer Number:</span>
-                                            <span className="text-sm font-medium text-gray-900">{customer.customerNumber || "--"}</span>
+                                <div>
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors hover:bg-white/50"
+                                        onClick={() => toggleSection("recordInfo")}
+                                        aria-expanded={expandedSections.recordInfo}
+                                    >
+                                        <span className="text-xs font-semibold text-gray-800 uppercase tracking-wider">RECORD INFO</span>
+                                        {expandedSections.recordInfo ? (
+                                            <ChevronUp size={14} className="text-[#2563eb]" />
+                                        ) : (
+                                            <ChevronDown size={14} className="text-[#2563eb]" />
+                                        )}
+                                    </button>
+                                    {expandedSections.recordInfo && (
+                                        <div className="px-4 pb-4">
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-600">Customer Number:</span>
+                                                    <span className="text-sm font-medium text-gray-900">{customer.customerNumber || "--"}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-600">Customer ID:</span>
+                                                    <span className="text-sm font-medium text-gray-900">{customer.id || id}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-600">Created On:</span>
+                                                    <span className="text-sm font-medium text-gray-900">
+                                                        {customer.createdDate ? new Date(customer.createdDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : "03/12/2025"}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-600">Created By:</span>
+                                                    <span className="text-sm font-medium text-gray-900">{customer.createdBy || "JIRDE HUSSEIN KHALIF"}</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-sm text-gray-600">Customer ID:</span>
-                                            <span className="text-sm font-medium text-gray-900">{customer.id || id}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-sm text-gray-600">Created On:</span>
-                                            <span className="text-sm font-medium text-gray-900">
-                                                {customer.createdDate ? new Date(customer.createdDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : "03/12/2025"}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-sm text-gray-600">Created By:</span>
-                                            <span className="text-sm font-medium text-gray-900">{customer.createdBy || "JIRDE HUSSEIN KHALIF"}</span>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
 
                             </div>
 
                             {/* Right Column */}
-                            <div className="flex-1 min-w-0 p-4">
-                                {/* Payment Terms */}
-                                <div className="mb-4">
-                                    <div className="px-2">
-                                        <span className="text-sm text-gray-500">Payment due period</span>
+                            <div className="flex-1 min-w-0 bg-white p-4">
+                                {/* Payment Terms + Credit Limit */}
+                                <div className="mb-4 grid grid-cols-2 gap-10">
+                                    <div>
+                                        <div className="px-2">
+                                            <span className="text-sm text-gray-500">Payment due period</span>
+                                        </div>
+                                        <div className="px-2 pt-1">
+                                            <div className="text-sm text-gray-900">
+                                                {customer.paymentTerms === "due-on-receipt" ? "Due on Receipt" : customer.paymentTerms || "Due on Receipt"}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="px-2 pt-1">
-                                        <div className="text-sm text-gray-900">
-                                            {customer.paymentTerms === "due-on-receipt" ? "Due on Receipt" : customer.paymentTerms || "Due on Receipt"}
+                                    <div>
+                                        <div className="px-2">
+                                            <span className="text-sm text-gray-500">Credit Limit</span>
+                                        </div>
+                                        <div className="px-2 pt-1">
+                                            {(() => {
+                                                const raw =
+                                                    (customer as any)?.creditLimit ??
+                                                    (customer as any)?.credit_limit ??
+                                                    (customer as any)?.creditlimit ??
+                                                    (customer as any)?.creditLimitAmount ??
+                                                    "";
+
+                                                const asString = String(raw ?? "").trim();
+                                                if (!asString) {
+                                                    return <div className="text-sm text-gray-900">Unlimited</div>;
+                                                }
+                                                if (asString.toLowerCase() === "unlimited") {
+                                                    return <div className="text-sm text-gray-900">Unlimited</div>;
+                                                }
+
+                                                const value = Number(asString);
+                                                if (!Number.isFinite(value)) {
+                                                    return <div className="text-sm text-gray-900">{asString}</div>;
+                                                }
+
+                                                return (
+                                                    <div className="text-sm text-gray-900">
+                                                        {formatCurrency(value, customer.currency || "USD")}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 </div>
@@ -3847,7 +4791,7 @@ export default function CustomerDetail() {
                                                                         setCustomer(updatedCustomer);
                                                                         setIsOpeningBalanceModalOpen(false);
                                                                     } catch (error) {
-                                                                        alert('Failed to update customer: ' + (error.message || 'Unknown error'));
+                                                                        toast.error('Failed to update customer: ' + (error.message || 'Unknown error'));
                                                                     }
                                                                 }
                                                             }}
@@ -3871,7 +4815,7 @@ export default function CustomerDetail() {
                                                                         setCustomer(updatedCustomer);
                                                                         setIsOpeningBalanceModalOpen(false);
                                                                     } catch (error) {
-                                                                        alert('Failed to update customer: ' + (error.message || 'Unknown error'));
+                                                                        toast.error('Failed to update customer: ' + (error.message || 'Unknown error'));
                                                                     }
                                                                 }
                                                             }}
@@ -3885,6 +4829,39 @@ export default function CustomerDetail() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Credit Limit Exceeded Warning */}
+                                {(() => {
+                                    const raw =
+                                        (customer as any)?.creditLimit ??
+                                        (customer as any)?.credit_limit ??
+                                        (customer as any)?.creditlimit ??
+                                        (customer as any)?.creditLimitAmount ??
+                                        "";
+
+                                    const asString = String(raw ?? "").trim();
+                                    if (!asString) return null;
+                                    if (asString.toLowerCase() === "unlimited") return null;
+
+                                    const limitValue = Number(asString);
+                                    if (!Number.isFinite(limitValue)) return null;
+
+                                    const receivablesValue = Number((customer as any)?.receivables ?? 0);
+                                    if (!Number.isFinite(receivablesValue)) return null;
+
+                                    if (receivablesValue <= limitValue) return null;
+
+                                    const exceededBy = receivablesValue - limitValue;
+                                    return (
+                                        <div className="mb-4 bg-white px-4 py-3 flex items-center gap-2 text-sm text-orange-600">
+                                            <AlertTriangle size={16} className="text-orange-500" />
+                                            <span>
+                                                Credit limit is being exceeded by {formatCurrency(exceededBy, customer.currency || "USD")}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
+
                                 {customer.linkedVendorId && (
                                     <div className="mb-4 border-t border-b border-gray-200 bg-white">
                                         <div className="p-4 border-b border-gray-200">
@@ -3928,14 +4905,14 @@ export default function CustomerDetail() {
                                         <div className="relative inline-flex" ref={subscriptionDropdownRef}>
                                             <div className="flex items-center">
                                                 <button
-                                                    className="px-4 py-1.5 text-sm font-medium text-white rounded-l hover:opacity-90 transition-opacity whitespace-nowrap"
-                                                    style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+                                                    className="h-[38px] min-w-[100px] cursor-pointer transition-all text-white px-4 rounded-l-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center gap-2"
+                                                    style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
                                                     onClick={() => navigate("/subscriptions/new", { state: { customerId: customer?.id, customerName: customer?.name } })}
                                                 >
-                                                    + New
+                                                    <Plus size={16} /> New
                                                 </button>
                                                 <button
-                                                    className="px-2 py-1.5 text-white rounded-r border-l border-white/20 hover:opacity-90 transition-opacity"
+                                                    className="h-[38px] w-10 cursor-pointer transition-all text-white rounded-r-lg border-[#0B3A41] border-b-[4px] border-l border-white/20 hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center"
                                                     style={{ background: "#0D4A52" }}
                                                     onClick={() => setIsSubscriptionDropdownOpen(!isSubscriptionDropdownOpen)}
                                                 >
@@ -3959,7 +4936,7 @@ export default function CustomerDetail() {
                                                         className="px-4 py-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors"
                                                         onClick={() => {
                                                             setIsSubscriptionDropdownOpen(false);
-                                                        navigate("/sales/quotes/subscription/new", { state: { customerId: customer?.id, customerName: customer?.name, forSubscription: true } });
+                                                            navigate("/sales/quotes/subscription/new", { state: { customerId: customer?.id, customerName: customer?.name, forSubscription: true } });
                                                         }}
                                                     >
                                                         Create Quote for Subscription
@@ -3969,20 +4946,20 @@ export default function CustomerDetail() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="mb-4 rounded border border-gray-200 bg-white">
+                                    <div className="mb-4 border-t border-b border-gray-200 bg-white">
                                         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-                                            <span className="text-xs font-semibold text-gray-500 tracking-wider uppercase">Subscriptions</span>
+                                            <span className="text-xs font-semibold text-gray-500 tracking-wider uppercase">SUBSCRIPTIONS</span>
                                             <div className="relative inline-flex" ref={subscriptionDropdownRef}>
                                                 <div className="flex items-center">
                                                     <button
-                                                        className="px-3 py-1.5 text-sm font-medium text-white rounded-l hover:opacity-90 transition-opacity whitespace-nowrap"
-                                                        style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+                                                        className="h-[38px] min-w-[100px] cursor-pointer transition-all text-white px-4 rounded-l-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center gap-2"
+                                                        style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
                                                         onClick={() => navigate("/subscriptions/new", { state: { customerId: customer?.id, customerName: customer?.name } })}
                                                     >
-                                                        + New
+                                                        <Plus size={16} /> New
                                                     </button>
                                                     <button
-                                                        className="px-2 py-1.5 text-white rounded-r border-l border-white/20 hover:opacity-90 transition-opacity"
+                                                        className="h-[38px] w-10 cursor-pointer transition-all text-white rounded-r-lg border-[#0B3A41] border-b-[4px] border-l border-white/20 hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center"
                                                         style={{ background: "#0D4A52" }}
                                                         onClick={() => setIsSubscriptionDropdownOpen(!isSubscriptionDropdownOpen)}
                                                     >
@@ -4015,55 +4992,107 @@ export default function CustomerDetail() {
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="divide-y divide-gray-100">
+
+                                        <div className="divide-y divide-gray-200">
                                             {customerSubscriptions.map((sub: any) => {
-                                                const name = sub?.planName || sub?.name || sub?.subscriptionName || "Subscription";
-                                                const description = sub?.description || sub?.notes || sub?.summary || "";
+                                                const normalizeText = (value: any) => String(value ?? "").trim();
+                                                const pick = (...values: any[]) => values.find((v) => normalizeText(v));
+
+                                                const name = normalizeText(
+                                                    pick(
+                                                        sub?.planName,
+                                                        sub?.plan_name,
+                                                        sub?.plan?.name,
+                                                        sub?.plan?.planName,
+                                                        sub?.productName,
+                                                        sub?.product?.name,
+                                                        sub?.subscriptionName,
+                                                        sub?.subscription_name,
+                                                        sub?.items?.[0]?.itemDetails,
+                                                        sub?.items?.[0]?.name,
+                                                        sub?.items?.[0]?.label,
+                                                        sub?.addonLines?.[0]?.addonName,
+                                                        sub?.addonLines?.[0]?.name,
+                                                        sub?.addons?.[0]?.name,
+                                                        sub?.name,
+                                                        "Subscription"
+                                                    )
+                                                );
+                                                const description = normalizeText(
+                                                    pick(
+                                                        sub?.planDescription,
+                                                        sub?.plan_description,
+                                                        sub?.plan?.description,
+                                                        sub?.description,
+                                                        sub?.notes,
+                                                        sub?.summary,
+                                                        ""
+                                                    )
+                                                );
                                                 const subId = sub?.subscriptionId || sub?.referenceId || sub?.id || sub?._id || "";
                                                 const subNumber = sub?.subscriptionNumber || sub?.number || sub?.code || "";
-                                                const amountValue = sub?.amount || sub?.total || sub?.amountDue || 0;
-                                                const currency = sub?.currency || customer?.currency || "USD";
-                                                const status = String(sub?.status || sub?.state || "LIVE").toUpperCase();
+                                                const amountRaw = sub?.amount ?? sub?.total ?? sub?.amountDue ?? 0;
+                                                let currency = String(sub?.currency || customer?.currency || "USD");
+                                                let amountValue = 0;
+                                                if (typeof amountRaw === "string") {
+                                                    const currencyMatch = amountRaw.match(/^[A-Za-z]+/);
+                                                    if (currencyMatch?.[0]) currency = currencyMatch[0];
+                                                    amountValue = Number(amountRaw.replace(/[^\d.]/g, "")) || 0;
+                                                } else {
+                                                    amountValue = Number(amountRaw) || 0;
+                                                }
+                                                const statusRaw = String(sub?.status || sub?.state || "LIVE").toUpperCase();
                                                 const lastBilling = sub?.lastBilledOn || sub?.lastBillingDate || sub?.lastBilledDate || sub?.lastBillingOn;
                                                 const nextBilling = sub?.nextBillingOn || sub?.nextBillingDate || sub?.nextBillDate;
 
+                                                const isUnpaid =
+                                                    statusRaw.includes("UNPAID") ||
+                                                    statusRaw.includes("OVERDUE") ||
+                                                    statusRaw.includes("DUE");
+                                                const isLive =
+                                                    statusRaw.includes("LIVE") ||
+                                                    statusRaw.includes("ACTIVE");
+
+                                                const statusDotClass = isUnpaid ? "bg-red-500" : isLive ? "bg-green-500" : "bg-gray-400";
+                                                const statusTextClass = isUnpaid ? "text-red-600" : isLive ? "text-green-600" : "text-gray-600";
+
                                                 return (
-                                                    <div key={String(subId || subNumber || name)} className="px-4 py-4">
-                                                        <div className="flex items-start justify-between gap-4">
-                                                            <div>
-                                                                <div className="text-base font-medium text-blue-600">{name}</div>
-                                                                {description && (
-                                                                    <div className="text-xs text-gray-500">({description})</div>
-                                                                )}
-                                                                <div className="mt-2 space-y-0.5 text-xs text-gray-600">
-                                                                    {subId && (
-                                                                        <div>Subscription ID : {subId}</div>
+                                                    <div key={String(subId || subNumber || name)} className="px-4 py-6">
+                                                        <div className="flex items-start justify-between gap-8">
+                                                            <div className="min-w-0">
+                                                                <div className="text-base font-medium text-blue-600">
+                                                                    <span>{name}</span>
+                                                                    {description && (
+                                                                        <span className="ml-1 text-xs font-normal text-gray-500">({description})</span>
                                                                     )}
-                                                                    {subNumber && (
-                                                                        <div>Subscription# : {subNumber}</div>
-                                                                    )}
+                                                                </div>
+
+                                                                <div className="mt-2 space-y-0.5 text-sm text-gray-600">
+                                                                    {subId && <div>Subscription ID : {subId}</div>}
+                                                                    {subNumber && <div>Subscription# : {subNumber}</div>}
                                                                 </div>
                                                             </div>
-                                                            <div className="text-right">
-                                                                <div className="text-lg font-semibold text-gray-900">
+
+                                                            <div className="text-right flex-shrink-0">
+                                                                <div className="text-xl font-semibold text-gray-900">
                                                                     {formatCurrency(amountValue || 0, currency)}
                                                                 </div>
-                                                                <div className="mt-1 inline-flex items-center gap-2 text-xs text-gray-600">
-                                                                    <span className="inline-flex h-2 w-2 rounded-full bg-green-500" />
-                                                                    <span>{status}</span>
+                                                                <div className={`mt-0.5 inline-flex items-center justify-end gap-2 text-[11px] font-semibold ${statusTextClass}`}>
+                                                                    <span className={`inline-flex h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+                                                                    <span>{statusRaw}</span>
                                                                 </div>
                                                             </div>
                                                         </div>
+
                                                         {(lastBilling || nextBilling) && (
-                                                            <div className="mt-3 text-xs text-gray-600">
+                                                            <div className="mt-5 text-sm text-gray-600">
                                                                 {lastBilling && (
                                                                     <span>Last Billing Date : {formatDateForDisplay(lastBilling)}</span>
                                                                 )}
-                                                                {lastBilling && nextBilling && (
-                                                                    <span className="mx-2 text-gray-400">|</span>
-                                                                )}
                                                                 {nextBilling && (
-                                                                    <span>Next Billing Date : {formatDateForDisplay(nextBilling)}</span>
+                                                                    <span className={lastBilling ? "ml-4" : ""}>
+                                                                        Next Billing Date : {formatDateForDisplay(nextBilling)}
+                                                                    </span>
                                                                 )}
                                                             </div>
                                                         )}
@@ -4282,6 +5311,32 @@ export default function CustomerDetail() {
                                                 detailsLink?: string;
                                             }> = [];
 
+                                            const canonicalCustomerId = String((customer as any)?._id || (customer as any)?.id || id || "").trim();
+                                            const customerUpdatedAt = (customer as any)?.updatedAt || (customer as any)?.modifiedAt || (customer as any)?.updated_on;
+
+                                            const toValidDate = (value: any): Date | null => {
+                                                if (!value) return null;
+                                                const d = value instanceof Date ? value : new Date(String(value));
+                                                return Number.isNaN(d.getTime()) ? null : d;
+                                            };
+
+                                            const pickDate = (...candidates: any[]): Date | null => {
+                                                for (const candidate of candidates) {
+                                                    const d = toValidDate(candidate);
+                                                    if (d) return d;
+                                                }
+                                                return null;
+                                            };
+
+                                            const matchesCustomer = (row: any) => {
+                                                if (!row || !canonicalCustomerId) return false;
+                                                const rowCustomerId = String(row.customerId || row.customer?._id || row.customer?.id || row.customer || row.customer_id || "").trim();
+                                                return rowCustomerId ? rowCustomerId === canonicalCustomerId : false;
+                                            };
+
+                                            const getActor = (row: any) =>
+                                                String(row?.updatedBy || row?.modifiedBy || row?.createdBy || row?.created_by || customer?.createdBy || "System").trim() || "System";
+
                                             if (customer?.createdDate || customer?.createdAt) {
                                                 events.push({
                                                     id: `customer-created-${customer.id || id}`,
@@ -4293,45 +5348,167 @@ export default function CustomerDetail() {
                                                 });
                                             }
 
+                                            const createdTime = pickDate((customer as any)?.createdDate, (customer as any)?.createdAt);
+                                            const updatedTime = pickDate(customerUpdatedAt);
+                                            if (updatedTime && (!createdTime || updatedTime.getTime() !== createdTime.getTime())) {
+                                                events.push({
+                                                    id: `customer-updated-${customer.id || id}`,
+                                                    date: updatedTime,
+                                                    title: "Contact updated",
+                                                    description: "Customer updated",
+                                                    author: getActor(customer),
+                                                    color: "border-blue-400",
+                                                });
+                                            }
+
                                             (customer?.contactPersons || []).forEach((contact: any, index: number) => {
                                                 const contactName = `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Contact person";
+                                                const date =
+                                                    pickDate(contact.updatedAt, contact.createdAt, (customer as any)?.updatedAt, (customer as any)?.createdDate, Date.now()) ||
+                                                    new Date();
                                                 events.push({
                                                     id: `contact-person-${contact.id || index}`,
-                                                    date: new Date(String(contact.createdAt || customer?.createdDate || Date.now())),
-                                                    title: "Contact person added",
-                                                    description: `Contact person ${contactName} has been created`,
-                                                    author: contact.createdBy || customer?.createdBy || "System",
+                                                    date,
+                                                    title: contact.updatedAt ? "Contact person updated" : "Contact person added",
+                                                    description: `Contact person ${contactName} has been ${contact.updatedAt ? "updated" : "created"}`,
+                                                    author: getActor(contact),
                                                     color: "border-blue-400",
                                                 });
                                             });
 
                                             invoices.forEach((invoice: any, index: number) => {
+                                                if (!matchesCustomer(invoice)) return;
+                                                const date =
+                                                    pickDate(invoice.updatedAt, invoice.invoiceDate, invoice.date, invoice.createdAt, invoice.created_on, Date.now()) ||
+                                                    new Date();
+                                                const invoiceNumber = String(invoice.invoiceNumber || invoice.invoiceNo || invoice.invoice_number || invoice.number || invoice.id || invoice._id || "record");
+                                                const normalizedStatus = String(invoice.status || invoice.invoiceStatus || "").toLowerCase();
+                                                const actionLabel = invoice.updatedAt ? "updated" : "created";
+
                                                 events.push({
                                                     id: `invoice-${invoice.id || invoice._id || index}`,
-                                                    date: new Date(String(invoice.invoiceDate || invoice.date || invoice.createdAt || Date.now())),
-                                                    title: invoice.status === "sent" || invoice.status === "emailed" ? "Invoice updated" : "Invoice added",
-                                                    description: `Invoice ${invoice.invoiceNumber || invoice.id || invoice._id || "record"} ${invoice.status === "sent" || invoice.status === "emailed" ? "emailed" : "created"}`,
-                                                    author: invoice.createdBy,
+                                                    date,
+                                                    title: invoice.updatedAt ? "Invoice updated" : "Invoice added",
+                                                    description: `Invoice ${invoiceNumber} ${normalizedStatus ? normalizedStatus : actionLabel}`,
+                                                    author: getActor(invoice),
                                                     color: "border-sky-400",
                                                     detailsLink: "View Details",
                                                 });
                                             });
 
                                             payments.forEach((payment: any, index: number) => {
+                                                if (!matchesCustomer(payment)) return;
+                                                const date =
+                                                    pickDate(payment.updatedAt, payment.paymentDate, payment.date, payment.createdAt, payment.created_on, Date.now()) ||
+                                                    new Date();
+                                                const paymentAmount = Number(payment.amountReceived || payment.amount || payment.total || 0) || 0;
+                                                const paymentCurrency = String(payment.currency || customer?.currency || "USD");
+                                                const invoiceRef = String(payment.invoiceNumber || payment.invoiceNo || payment.invoiceId || payment.invoice_id || "invoice");
                                                 events.push({
                                                     id: `payment-${payment.id || payment._id || index}`,
-                                                    date: new Date(String(payment.paymentDate || payment.date || payment.createdAt || Date.now())),
-                                                    title: "Payment received",
-                                                    description: `${formatCurrency(payment.amountReceived || payment.amount || 0, customer?.currency || "USD")} applied for ${payment.invoiceNumber || payment.invoiceId || "invoice"}`,
-                                                    author: payment.createdBy,
+                                                    date,
+                                                    title: payment.updatedAt ? "Payments Received updated" : "Payment received",
+                                                    description: payment.updatedAt ? "Invoice payment details modified" : `${formatCurrency(paymentAmount, paymentCurrency)} applied for ${invoiceRef}`,
+                                                    author: getActor(payment),
                                                     color: "border-green-400",
+                                                });
+                                            });
+
+                                            creditNotes.forEach((cn: any, index: number) => {
+                                                if (!matchesCustomer(cn)) return;
+                                                const date = pickDate(cn.updatedAt, cn.creditNoteDate, cn.date, cn.createdAt, cn.created_on, Date.now()) || new Date();
+                                                const number = String(cn.creditNoteNumber || cn.creditNoteNo || cn.number || cn.id || cn._id || "record");
+                                                events.push({
+                                                    id: `credit-note-${cn.id || cn._id || index}`,
+                                                    date,
+                                                    title: cn.updatedAt ? "Credit Note updated" : "Credit Note added",
+                                                    description: `Credit Note ${number} ${cn.updatedAt ? "updated" : "created"}`,
+                                                    author: getActor(cn),
+                                                    color: "border-indigo-400",
+                                                    detailsLink: "View Details",
+                                                });
+                                            });
+
+                                            quotes
+                                                .filter((q: any) => matchesCustomer(q))
+                                                .forEach((quote: any, index: number) => {
+                                                    const date = pickDate(quote.updatedAt, quote.date, quote.quoteDate, quote.createdAt, quote.created_on, Date.now()) || new Date();
+                                                    const number = String(quote.quoteNumber || quote.quoteNo || quote.number || quote.id || quote._id || "record");
+                                                    events.push({
+                                                        id: `quote-${quote.id || quote._id || index}`,
+                                                        date,
+                                                        title: quote.updatedAt ? "Quote updated" : "Quote added",
+                                                        description: `Quote ${number} ${quote.updatedAt ? "updated" : "created"}`,
+                                                        author: getActor(quote),
+                                                        color: "border-violet-400",
+                                                        detailsLink: "View Details",
+                                                    });
+                                                });
+
+                                            salesReceipts
+                                                .filter((sr: any) => matchesCustomer(sr))
+                                                .forEach((sr: any, index: number) => {
+                                                    const date = pickDate(sr.updatedAt, sr.date, sr.salesReceiptDate, sr.createdAt, sr.created_on, Date.now()) || new Date();
+                                                    const number = String(sr.salesReceiptNumber || sr.number || sr.id || sr._id || "record");
+                                                    events.push({
+                                                        id: `sales-receipt-${sr.id || sr._id || index}`,
+                                                        date,
+                                                        title: sr.updatedAt ? "Sales Receipt updated" : "Sales Receipt added",
+                                                        description: `Sales Receipt ${number} ${sr.updatedAt ? "updated" : "created"}`,
+                                                        author: getActor(sr),
+                                                        color: "border-emerald-400",
+                                                        detailsLink: "View Details",
+                                                    });
+                                                });
+
+                                            recurringInvoices.forEach((ri: any, index: number) => {
+                                                if (!matchesCustomer(ri)) return;
+                                                const date = pickDate(ri.updatedAt, ri.startDate, ri.recurringInvoiceDate, ri.createdAt, ri.created_on, Date.now()) || new Date();
+                                                const number = String(ri.profileName || ri.recurringInvoiceNumber || ri.number || ri.id || ri._id || "record");
+                                                events.push({
+                                                    id: `recurring-invoice-${ri.id || ri._id || index}`,
+                                                    date,
+                                                    title: ri.updatedAt ? "Recurring Invoice updated" : "Recurring Invoice added",
+                                                    description: `Recurring invoice ${number} ${ri.updatedAt ? "updated" : "created"}`,
+                                                    author: getActor(ri),
+                                                    color: "border-teal-400",
+                                                });
+                                            });
+
+                                            customerSubscriptions.forEach((sub: any, index: number) => {
+                                                const subCustomerId = String(sub?.customerId || sub?.customer_id || "").trim();
+                                                if (canonicalCustomerId && subCustomerId && subCustomerId !== canonicalCustomerId) return;
+                                                const date = pickDate(sub.updatedAt, sub.createdOn, sub.activatedOn, sub.createdAt, Date.now()) || new Date();
+                                                const number = String(sub.subscriptionNumber || sub.subscriptionNo || sub.number || sub.id || sub._id || "record");
+                                                const plan = String(
+                                                    sub.planName ||
+                                                    sub.plan_name ||
+                                                    sub.plan?.name ||
+                                                    sub.plan?.planName ||
+                                                    sub.productName ||
+                                                    sub.product?.name ||
+                                                    sub.items?.[0]?.itemDetails ||
+                                                    sub.items?.[0]?.name ||
+                                                    sub.addonLines?.[0]?.addonName ||
+                                                    sub.addonLines?.[0]?.name ||
+                                                    sub.name ||
+                                                    ""
+                                                ).trim();
+                                                events.push({
+                                                    id: `subscription-${sub.id || sub._id || index}`,
+                                                    date,
+                                                    title: sub.updatedAt ? "Subscription updated" : "Subscription added",
+                                                    description: `${number}${plan ? ` - ${plan}` : ""} ${sub.updatedAt ? "updated" : "created"}`,
+                                                    author: getActor(sub),
+                                                    color: "border-cyan-400",
+                                                    detailsLink: "View Details",
                                                 });
                                             });
 
                                             const displayEvents = events
                                                 .filter((event) => !Number.isNaN(event.date.getTime()))
                                                 .sort((a, b) => b.date.getTime() - a.date.getTime())
-                                                .slice(0, 8);
+                                                .slice(0, 30);
 
                                             if (displayEvents.length === 0) {
                                                 return (
@@ -4345,7 +5522,7 @@ export default function CustomerDetail() {
                                                 <div className="space-y-8">
                                                     {displayEvents.map((event, index) => {
                                                         const formattedDate = event.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                                                        const formattedTime = event.date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+                                                        const formattedTime = event.date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true });
                                                         const isLast = index === displayEvents.length - 1;
 
                                                         return (
@@ -4382,7 +5559,7 @@ export default function CustomerDetail() {
                 )}
 
                 {activeTab === "comments" && (
-                    <div className="flex-1 overflow-y-auto p-6">
+                    <div className="flex-1 min-h-0 overflow-y-auto p-6">
                         {/* Comment Editor */}
                         <div className="mb-8 bg-white rounded-lg border border-gray-200 p-6">
                             <div className="flex gap-2 mb-4 pb-4 border-b border-gray-200">
@@ -4464,7 +5641,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "transactions" && (
-                        <div className="flex-1 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
                             <div className="relative inline-block mb-4" ref={goToTransactionsDropdownRef}>
                                 <button
                                     className="flex items-center gap-1 text-sm text-[#0f5ca8] cursor-pointer hover:underline"
@@ -5567,7 +6744,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "purchases" && (
-                        <div className="flex-1 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
                             <button className="flex items-center gap-2 px-4 py-2 mb-4 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-700 cursor-pointer hover:bg-gray-100">
                                 Go to transactions
                                 <ChevronDown size={16} />
@@ -5635,16 +6812,16 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "mails" && (
-                        <div className="flex-1 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
-                            <div className="bg-white rounded-lg border border-gray-200 p-6">
-                                <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                            <div className="bg-white rounded-lg border border-gray-200">
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                                     <h3 className="text-lg font-semibold text-gray-900">System Mails</h3>
                                     <div className="relative" ref={linkEmailDropdownRef}>
                                         <button
-                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium cursor-pointer hover:bg-blue-700"
+                                            className="flex items-center gap-2 text-sm font-medium text-[#0f5ca8] cursor-pointer hover:underline"
                                             onClick={() => setIsLinkEmailDropdownOpen(!isLinkEmailDropdownOpen)}
                                         >
-                                            <Mail size={16} />
+                                            <Mail size={16} className="text-[#0f5ca8]" />
                                             Link Email account
                                             <ChevronDown size={14} />
                                         </button>
@@ -5676,21 +6853,25 @@ export default function CustomerDetail() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-4">
+                                <div className="divide-y divide-gray-200">
                                     {mails.length > 0 ? (
                                         mails.map((mail) => (
-                                            <div key={mail.id} className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-                                                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 text-white font-semibold text-sm">
+                                            <div key={String(mail.id)} className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50">
+                                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-semibold text-sm flex-shrink-0">
                                                     {mail.initial}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="text-sm text-gray-600 mb-1">
+                                                    <div className="text-sm text-gray-600 mb-0.5">
                                                         To <span className="font-medium text-gray-900">{mail.to}</span>
                                                     </div>
                                                     <div className="text-sm text-gray-700">
                                                         <span className="font-medium">{mail.subject}</span>
-                                                        <span className="text-gray-400"> - </span>
-                                                        <span className="text-gray-600">{mail.description}</span>
+                                                        {String(mail.description || "").trim() && (
+                                                            <>
+                                                                <span className="text-gray-400"> - </span>
+                                                                <span className="text-gray-600">{mail.description}</span>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="text-xs text-gray-500 whitespace-nowrap">
@@ -5712,7 +6893,7 @@ export default function CustomerDetail() {
 
                 {
                     activeTab === "statement" && (
-                        <div className="flex-1 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
+                        <div className="flex-1 min-h-0 overflow-y-auto p-6" style={{ paddingRight: 0 }}>
                             {/* Statement Header */}
                             <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
                                 <div className="flex items-center gap-3">
@@ -6392,7 +7573,7 @@ export default function CustomerDetail() {
                                                             email: mainContact.email || customer.email
                                                         });
                                                     } catch (error) {
-                                                        alert('Failed to update customer: ' + (error.message || 'Unknown error'));
+                                                        toast.error('Failed to update customer: ' + (error.message || 'Unknown error'));
                                                     }
                                                 }
                                             } else {
@@ -6403,7 +7584,7 @@ export default function CustomerDetail() {
                                                         enablePortal: portalAccessContacts.some(c => c.hasAccess)
                                                     });
                                                 } catch (error) {
-                                                    alert('Failed to update customer: ' + (error.message || 'Unknown error'));
+                                                    toast.error('Failed to update customer: ' + (error.message || 'Unknown error'));
                                                 }
                                             }
 
@@ -6562,7 +7743,7 @@ export default function CustomerDetail() {
                                                     }
                                                 }
                                             } catch (error: any) {
-                                                alert('Failed to update customer: ' + (error.message || 'Unknown error'));
+                                                toast.error('Failed to update customer: ' + (error.message || 'Unknown error'));
                                                 return;
                                             }
 
@@ -6595,30 +7776,90 @@ export default function CustomerDetail() {
                 )
             }
 
+            {/* Bulk Consolidated Billing Confirmation Modal */}
+            {
+                bulkConsolidatedAction && (
+                    <div
+                        className="fixed inset-0 bg-black/50 z-[2000] flex items-start justify-center pt-16 pb-10 overflow-y-auto"
+                        onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+                            if (e.target === e.currentTarget && !isBulkConsolidatedUpdating) {
+                                setBulkConsolidatedAction(null);
+                            }
+                        }}
+                    >
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-6 overflow-hidden">
+                            <div className="flex items-start justify-between gap-4 p-6 border-b border-gray-200">
+                                <div className="flex items-start gap-3">
+                                    <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+                                        <AlertTriangle size={18} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-gray-900">
+                                            {bulkConsolidatedAction === "enable" ? "Enable Consolidated Billing?" : "Disable Consolidated Billing?"}
+                                        </h2>
+                                        <p className="mt-2 text-sm text-gray-700 leading-relaxed max-w-[640px]">
+                                            Invoices will be {bulkConsolidatedAction === "enable" ? "consolidated" : "separated"} for the selected customers. Any invoices that were generated already will not be affected.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    className="p-2 text-gray-500 hover:text-gray-700 cursor-pointer"
+                                    onClick={() => setBulkConsolidatedAction(null)}
+                                    disabled={isBulkConsolidatedUpdating}
+                                    aria-label="Close"
+                                    title="Close"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="p-6">
+                                <div className="flex items-center justify-start gap-3">
+                                    <button
+                                        onClick={confirmSidebarBulkConsolidatedBilling}
+                                        disabled={isBulkConsolidatedUpdating}
+                                        className={`px-5 py-2.5 bg-blue-600 text-white rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-blue-700 flex items-center gap-2 ${isBulkConsolidatedUpdating ? "opacity-70 cursor-not-allowed" : ""}`}
+                                    >
+                                        {isBulkConsolidatedUpdating && <Loader2 size={14} className="animate-spin" />}
+                                        {bulkConsolidatedAction === "enable" ? "Enable Now" : "Disable Now"}
+                                    </button>
+                                    <button
+                                        onClick={() => setBulkConsolidatedAction(null)}
+                                        disabled={isBulkConsolidatedUpdating}
+                                        className={`px-5 py-2.5 bg-gray-100 text-gray-700 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-gray-200 ${isBulkConsolidatedUpdating ? "opacity-70 cursor-not-allowed" : ""}`}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
             {/* Add Contact Person Modal */}
             {
                 isAddContactPersonModalOpen && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <div
+                        className="fixed inset-0 bg-black/50 z-[2000] flex items-start justify-center pt-10 pb-10 overflow-y-auto"
+                        onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+                            if (e.target === e.currentTarget) {
+                                setIsAddContactPersonModalOpen(false);
+                                resetContactPersonModal();
+                            }
+                        }}
+                    >
+                        <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mx-6 max-h-[calc(100vh-80px)] overflow-y-auto">
                             {/* Header */}
-                            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                                <h2 className="text-xl font-semibold text-gray-900">Add Contact Person</h2>
+                            <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-6 border-b border-gray-200">
+                                <h2 className="text-xl font-semibold text-gray-900">
+                                    {editingContactPersonIndex !== null ? "Edit Contact Person" : "Add Contact Person"}
+                                </h2>
                                 <button
                                     className="flex items-center justify-center w-7 h-7 bg-white border-2 border-blue-600 rounded text-red-500 cursor-pointer hover:bg-red-50 transition-colors"
                                     onClick={() => {
                                         setIsAddContactPersonModalOpen(false);
-                                        setNewContactPerson({
-                                            salutation: "Mr",
-                                            firstName: "",
-                                            lastName: "",
-                                            email: "",
-                                            workPhone: "",
-                                            mobile: "",
-                                            skype: "",
-                                            designation: "",
-                                            department: "",
-                                            enablePortalAccess: true
-                                        });
+                                        resetContactPersonModal();
                                     }}
                                 >
                                     <X size={18} />
@@ -6626,7 +7867,9 @@ export default function CustomerDetail() {
                             </div>
 
                             {/* Content */}
-                            <div className="p-6 space-y-6">
+                            <div className="p-6">
+                                <div className="flex flex-col lg:flex-row gap-6">
+                                    <div className="flex-1 space-y-6">
                                 {/* Name Section */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
@@ -6677,21 +7920,51 @@ export default function CustomerDetail() {
                                 {/* Phone Section */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input
-                                            type="tel"
-                                            placeholder="Work Phone"
-                                            value={newContactPerson.workPhone}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewContactPerson(prev => ({ ...prev, workPhone: e.target.value }))}
-                                            className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        />
-                                        <input
-                                            type="tel"
-                                            placeholder="Mobile"
-                                            value={newContactPerson.mobile}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewContactPerson(prev => ({ ...prev, mobile: e.target.value }))}
-                                            className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        />
+                                    <div className="space-y-3">
+                                        <div className="flex gap-2">
+                                            <select
+                                                value={contactPersonWorkPhoneCode}
+                                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setContactPersonWorkPhoneCode(e.target.value)}
+                                                className="w-[92px] px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            >
+                                                <option value="+1">+1</option>
+                                                <option value="+44">+44</option>
+                                                <option value="+255">+255</option>
+                                                <option value="+254">+254</option>
+                                                <option value="+252">+252</option>
+                                                <option value="+355">+355</option>
+                                                <option value="+971">+971</option>
+                                            </select>
+                                            <input
+                                                type="tel"
+                                                placeholder="Work Phone"
+                                                value={newContactPerson.workPhone}
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewContactPerson(prev => ({ ...prev, workPhone: e.target.value }))}
+                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <select
+                                                value={contactPersonMobilePhoneCode}
+                                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setContactPersonMobilePhoneCode(e.target.value)}
+                                                className="w-[92px] px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            >
+                                                <option value="+1">+1</option>
+                                                <option value="+44">+44</option>
+                                                <option value="+255">+255</option>
+                                                <option value="+254">+254</option>
+                                                <option value="+252">+252</option>
+                                                <option value="+355">+355</option>
+                                                <option value="+971">+971</option>
+                                            </select>
+                                            <input
+                                                type="tel"
+                                                placeholder="Mobile"
+                                                value={newContactPerson.mobile}
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewContactPerson(prev => ({ ...prev, mobile: e.target.value }))}
+                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -6751,63 +8024,90 @@ export default function CustomerDetail() {
                                             </label>
                                             <p className="text-sm text-gray-600 leading-relaxed">
                                                 This customer will be able to see all their transactions with your organization by logging in to the portal using their email address.{" "}
-                                                <a href="#" className="text-blue-600 hover:text-blue-700 hover:underline font-medium">Learn More</a>
+                                                <a
+                                                    href="#"
+                                                    className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                                                    onClick={(e) => e.preventDefault()}
+                                                >
+                                                    Learn More
+                                                </a>
                                             </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                    </div>
+
+                                    {/* Profile Image Upload */}
+                                    <div className="w-full lg:w-[320px] lg:pt-2">
+                                        <div
+                                            className="h-[310px] w-full rounded-lg border border-dashed border-gray-300 bg-white flex flex-col items-center justify-center text-center px-6"
+                                            onDragOver={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                            }}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                const file = e.dataTransfer?.files?.[0];
+                                                handleContactPersonProfileFile(file);
+                                            }}
+                                        >
+                                            {contactPersonProfilePreview ? (
+                                                <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+                                                    <div className="w-28 h-28 rounded-full overflow-hidden border border-gray-200 bg-gray-50">
+                                                        <img src={contactPersonProfilePreview} alt="Profile preview" className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="text-sm text-blue-600 hover:underline"
+                                                        onClick={() => contactPersonProfileInputRef.current?.click()}
+                                                    >
+                                                        Change Image
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="text-sm text-gray-500 hover:underline"
+                                                        onClick={() => setContactPersonProfilePreview(null)}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center mb-3">
+                                                        <Upload size={18} className="text-blue-600" />
+                                                    </div>
+                                                    <div className="text-sm font-medium text-gray-800 mb-1">Drag &amp; Drop Profile Image</div>
+                                                    <div className="text-xs text-gray-500 mb-4">
+                                                        Supported Files: jpg, jpeg, png, gif, bmp
+                                                        <div className="mt-1">Maximum File Size: 5MB</div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="text-sm text-blue-600 hover:underline"
+                                                        onClick={() => contactPersonProfileInputRef.current?.click()}
+                                                    >
+                                                        Upload File
+                                                    </button>
+                                                </>
+                                            )}
+                                            <input
+                                                ref={contactPersonProfileInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={(e) => handleContactPersonProfileFile(e.target.files?.[0])}
+                                            />
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Footer */}
-                            <div className="flex items-center justify-start gap-3 p-6 border-t border-gray-200">
+                            <div className="sticky bottom-0 bg-white z-10 flex items-center justify-start gap-3 p-6 border-t border-gray-200">
                                 <button
-                                    className="px-6 py-2 bg-red-600 text-white rounded-md text-sm font-medium cursor-pointer hover:bg-red-700 transition-colors"
-                                    onClick={async () => {
-                                        if (customer && id) {
-                                            const contactPerson = {
-                                                id: Date.now(),
-                                                salutation: newContactPerson.salutation,
-                                                firstName: newContactPerson.firstName,
-                                                lastName: newContactPerson.lastName,
-                                                email: newContactPerson.email,
-                                                workPhone: newContactPerson.workPhone,
-                                                mobile: newContactPerson.mobile,
-                                                skype: newContactPerson.skype,
-                                                designation: newContactPerson.designation,
-                                                department: newContactPerson.department,
-                                                hasPortalAccess: newContactPerson.enablePortalAccess,
-                                                enablePortal: newContactPerson.enablePortalAccess
-                                            };
-
-                                            const updatedContactPersons = [...(customer.contactPersons || []), contactPerson];
-
-                                            const updatedCustomer = {
-                                                ...customer,
-                                                contactPersons: updatedContactPersons
-                                            };
-
-                                            try {
-                                                await customersAPI.update(id, updatedCustomer);
-                                                setCustomer(updatedCustomer);
-                                            } catch (error) {
-                                                alert('Failed to update customer: ' + (error.message || 'Unknown error'));
-                                            }
-
-                                            setIsAddContactPersonModalOpen(false);
-                                            setNewContactPerson({
-                                                salutation: "Mr",
-                                                firstName: "",
-                                                lastName: "",
-                                                email: "",
-                                                workPhone: "",
-                                                mobile: "",
-                                                skype: "",
-                                                designation: "",
-                                                department: "",
-                                                enablePortalAccess: true
-                                            });
-                                        }
-                                    }}
+                                    className="px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium cursor-pointer hover:bg-blue-700 transition-colors"
+                                    onClick={saveContactPerson}
                                 >
                                     Save
                                 </button>
@@ -6815,18 +8115,7 @@ export default function CustomerDetail() {
                                     className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium cursor-pointer hover:bg-gray-50 transition-colors"
                                     onClick={() => {
                                         setIsAddContactPersonModalOpen(false);
-                                        setNewContactPerson({
-                                            salutation: "Mr",
-                                            firstName: "",
-                                            lastName: "",
-                                            email: "",
-                                            workPhone: "",
-                                            mobile: "",
-                                            skype: "",
-                                            designation: "",
-                                            department: "",
-                                            enablePortalAccess: true
-                                        });
+                                        resetContactPersonModal();
                                     }}
                                 >
                                     Cancel
@@ -6836,6 +8125,106 @@ export default function CustomerDetail() {
                     </div>
                 )
             }
+
+            {/* Associate Tags Modal */}
+            {isAssociateTagsModalOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-[2000] flex items-start justify-center pt-10 pb-10 overflow-y-auto"
+                    onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+                        if (e.target === e.currentTarget) {
+                            closeAssociateTagsModal();
+                        }
+                    }}
+                >
+                    <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-6 overflow-visible">
+                        <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-6 border-b border-gray-200">
+                            <h2 className="text-xl font-semibold text-gray-900">Associate Tags</h2>
+                            <button
+                                type="button"
+                                className="flex items-center justify-center w-10 h-10 bg-white border-2 border-blue-600 rounded text-gray-800 cursor-pointer hover:bg-gray-50 transition-colors"
+                                onClick={closeAssociateTagsModal}
+                                aria-label="Close"
+                                title="Close"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            {availableReportingTags.length === 0 ? (
+                                <div className="text-sm text-gray-600">Loading tags...</div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {availableReportingTags.map((tag: any) => {
+                                        const tagId = String(tag?._id || tag?.id || "").trim();
+                                        if (!tagId) return null;
+                                        const isRequired = Boolean(tag?.isRequired || tag?.required);
+                                        const selectedVal = String(associateTagsValues?.[tagId] || "");
+                                        const normalizedOptions = Array.isArray(tag?.options) ? tag.options : [];
+                                        const options = [
+                                            { value: "", label: "None" },
+                                            ...normalizedOptions.map((opt: string) => ({ value: opt, label: opt })),
+                                        ];
+
+                                        return (
+                                            <div key={tagId} className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 items-start">
+                                                <label className={`text-sm font-medium ${isRequired ? "text-red-600" : "text-gray-700"} pt-2`}>
+                                                    {tag?.name || "Tag"}{isRequired ? " *" : ""}
+                                                </label>
+                                                <div className="max-w-md">
+                                                    <SearchableDropdown
+                                                        value={selectedVal}
+                                                        options={options}
+                                                        placeholder="None"
+                                                        accentColor="#2563eb"
+                                                        showClear={true}
+                                                        onClear={() => {
+                                                            setAssociateTagsValues((prev) => {
+                                                                const next = { ...(prev || {}) };
+                                                                delete next[tagId];
+                                                                return next;
+                                                            });
+                                                        }}
+                                                        onChange={(value) => {
+                                                            setAssociateTagsValues((prev) => {
+                                                                const next = { ...(prev || {}) };
+                                                                if (!value) {
+                                                                    delete next[tagId];
+                                                                } else {
+                                                                    next[tagId] = value;
+                                                                }
+                                                                return next;
+                                                            });
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="sticky bottom-0 bg-white z-10 flex items-center justify-start gap-3 p-6 border-t border-gray-200">
+                            <button
+                                type="button"
+                                className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${isSavingAssociateTags ? "bg-blue-400 text-white cursor-not-allowed" : "bg-blue-600 text-white cursor-pointer hover:bg-blue-700"}`}
+                                onClick={handleSaveAssociateTags}
+                                disabled={isSavingAssociateTags}
+                            >
+                                Save
+                            </button>
+                            <button
+                                type="button"
+                                className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium cursor-pointer hover:bg-gray-50 transition-colors"
+                                onClick={closeAssociateTagsModal}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Address Modal */}
             {
@@ -7370,7 +8759,7 @@ export default function CustomerDetail() {
                                             // Handle Outlook integration enable
                                             setIsOutlookIntegrationModalOpen(false);
                                             // Add your integration logic here
-                                            alert("Outlook integration enabled!");
+                                            toast.success("Outlook integration enabled!");
                                         }}
                                         className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 cursor-pointer transition-colors"
                                     >
@@ -7510,7 +8899,7 @@ export default function CustomerDetail() {
                                             // Handle Zoho Mail integration enable
                                             setIsZohoMailIntegrationModalOpen(false);
                                             // Add your integration logic here
-                                            alert("Zoho Mail integration enabled!");
+                                            toast.success("Zoho Mail integration enabled!");
                                         }}
                                         className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 cursor-pointer transition-colors"
                                     >

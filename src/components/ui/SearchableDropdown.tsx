@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Search, Check, ChevronUp, PlusCircle } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown, Search, Check, ChevronUp, PlusCircle, XCircle } from 'lucide-react';
 
 export type DropdownOption = {
     value: string;
     label: string;
+    customLabel?: React.ReactNode;
 };
 
 export type SearchableDropdownProps = {
@@ -11,10 +12,15 @@ export type SearchableDropdownProps = {
     options: Array<DropdownOption>;
     onChange: (value: string) => void;
     placeholder: string;
-    accentColor: string;
+    accentColor?: string;
     addNewLabel?: string;
     onAddNew?: () => void;
+    onClear?: () => void;
+    showClear?: boolean;
     openDirection?: 'down' | 'up';
+    onOpenChange?: (open: boolean) => void;
+    className?: string;
+    inputClassName?: string;
 };
 
 const SearchableDropdown = ({
@@ -22,15 +28,21 @@ const SearchableDropdown = ({
     options,
     onChange,
     placeholder,
-    accentColor,
+    accentColor = '#3b82f6',
     addNewLabel,
     onAddNew,
+    onClear,
+    showClear = false,
     openDirection = 'down',
+    onOpenChange,
+    className = "",
+    inputClassName = "",
 }: SearchableDropdownProps) => {
     const [open, setOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [hoveredValue, setHoveredValue] = useState<string | null>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const instanceId = useId();
 
     const selected = options.find((opt) => opt.value === value);
     const filtered = options.filter((opt) =>
@@ -41,27 +53,67 @@ const SearchableDropdown = ({
         const handleOutside = (event: MouseEvent) => {
             if (!wrapperRef.current?.contains(event.target as Node)) {
                 setOpen(false);
+                onOpenChange?.(false);
             }
         };
         document.addEventListener("mousedown", handleOutside);
         return () => document.removeEventListener("mousedown", handleOutside);
-    }, []);
+    }, [onOpenChange]);
+
+    useEffect(() => {
+        const handleOtherDropdownOpened = (event: Event) => {
+            const custom = event as CustomEvent<{ id?: string }>;
+            const otherId = custom?.detail?.id;
+            if (!otherId || otherId === instanceId) return;
+            if (open) {
+                setOpen(false);
+                onOpenChange?.(false);
+            }
+        };
+        window.addEventListener("searchableDropdownOpened", handleOtherDropdownOpened as EventListener);
+        return () => window.removeEventListener("searchableDropdownOpened", handleOtherDropdownOpened as EventListener);
+    }, [instanceId, onOpenChange, open]);
 
     return (
-        <div ref={wrapperRef} className={`relative ${open ? 'z-[260]' : ''}`}>
-            <button
-                type="button"
-                onClick={() => setOpen((prev) => !prev)}
-                className="flex h-[38px] w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left text-[14px] outline-none transition-all focus:border-blue-400"
-                style={open ? { borderColor: '#3b82f6', boxShadow: '0 0 0 1px #3b82f6' } : {}}
-            >
-                <span className={selected ? "text-gray-900" : "text-gray-500"}>{selected?.label || placeholder}</span>
-                {open ? <ChevronUp size={16} className="text-blue-500" /> : <ChevronDown size={16} className="text-gray-400" />}
-            </button>
+        <div ref={wrapperRef} className={`relative ${open ? 'z-[1200]' : ''} ${className}`}>
+            <div className="relative group/sd">
+                <button
+                    type="button"
+                    onClick={() => {
+                        const nextOpen = !open;
+                        setOpen(nextOpen);
+                        onOpenChange?.(nextOpen);
+                        if (nextOpen) {
+                            window.dispatchEvent(new CustomEvent("searchableDropdownOpened", { detail: { id: instanceId } }));
+                        }
+                    }}
+                    className={`flex h-[38px] w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-left text-[14px] outline-none transition-all hover:border-gray-400 focus:border-blue-400 ${inputClassName}`}
+                    style={open ? { borderColor: accentColor, boxShadow: `0 0 0 1px ${accentColor}` } : {}}
+                >
+                    <span className={`truncate mr-6 ${selected ? "text-gray-900" : "text-gray-500"}`}>
+                        {selected?.label || placeholder}
+                    </span>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                        {showClear && selected && onClear && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClear();
+                                }}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                <XCircle size={14} fill="currentColor" className="text-white bg-gray-400 rounded-full" />
+                            </button>
+                        )}
+                        {open ? <ChevronUp size={16} className="text-blue-500" /> : <ChevronDown size={16} className="text-gray-400" />}
+                    </div>
+                </button>
+            </div>
 
             {open && (
                 <div
-                    className={`absolute left-0 z-[260] w-full rounded-lg border border-gray-200 bg-white p-2 shadow-xl animate-in fade-in duration-200 ${openDirection === 'up' ? 'bottom-full mb-1 slide-in-from-bottom-2' : 'top-full mt-1 slide-in-from-top-2'
+                    className={`absolute left-0 z-[1200] w-full rounded-lg border border-gray-200 bg-white p-2 shadow-xl animate-in fade-in duration-200 ${openDirection === 'up' ? 'bottom-full mb-1 slide-in-from-bottom-2' : 'top-full mt-1 slide-in-from-top-2'
                         }`}
                 >
                     <div className="mb-2 flex items-center gap-2 rounded-md border border-blue-400 bg-white px-3 py-2">
@@ -75,7 +127,7 @@ const SearchableDropdown = ({
                         />
                     </div>
 
-                    <div className="max-h-56 overflow-y-auto space-y-0.5">
+                    <div className="max-h-56 overflow-y-auto space-y-0.5 custom-scrollbar">
                         {filtered.length === 0 ? (
                             <div className="px-3 py-2 text-[13px] text-gray-500 italic">No options found</div>
                         ) : (
@@ -89,13 +141,21 @@ const SearchableDropdown = ({
                                             onChange(opt.value);
                                             setOpen(false);
                                             setSearchTerm("");
+                                            onOpenChange?.(false);
                                         }}
                                         onMouseEnter={() => setHoveredValue(opt.value)}
                                         onMouseLeave={() => setHoveredValue(null)}
                                         className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-[13px] transition-colors ${isSelected || hoveredValue === opt.value ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
                                     >
-                                        <span className="truncate">{opt.label}</span>
-                                        {isSelected && <Check size={14} />}
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <span className="truncate">{opt.label}</span>
+                                            {opt.customLabel && (
+                                                <span className={`ml-2 flex-shrink-0 ${isSelected || hoveredValue === opt.value ? 'text-blue-100' : 'text-gray-400 text-[11px]'}`}>
+                                                    {opt.customLabel}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {isSelected && <Check size={14} className="ml-2 flex-shrink-0" />}
                                     </button>
                                 );
                             })

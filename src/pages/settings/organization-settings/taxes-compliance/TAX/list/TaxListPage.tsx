@@ -61,6 +61,8 @@ export default function TaxListPage() {
                     type: isTaxGroupRecord(tax) ? "tax-group" : "tax",
                     active: tax.isActive !== false,
                     isDefault: !!tax.isDefault,
+                    isCompound: !!tax.isCompound,
+                    country: tax.digitalServiceCountry || "",
                 }));
                 setTaxes(normalized.filter((item: any) => item.type !== "tax-group"));
                 setTaxGroups(normalized.filter((item: any) => item.type === "tax-group"));
@@ -328,14 +330,12 @@ export default function TaxListPage() {
                                     className="h-4 w-4 text-[#156372] border-gray-300 rounded"
                                 />
                             </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tax Name</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                                <div className="flex items-center justify-between">
-                                    <span>Rate (%)</span>
-                                    <button onClick={() => setShowSearchModal(true)}><Search size={14} className="text-gray-400" /></button>
-                                </div>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Tax Name</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Country/Region</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Rate (%)</th>
+                            <th className="px-4 py-3 text-right">
+                                <button onClick={() => setShowSearchModal(true)} className="text-gray-400"><Search size={14} /></button>
                             </th>
-                            <th className="w-10"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -354,13 +354,21 @@ export default function TaxListPage() {
                                             className="h-4 w-4 text-[#156372] border-gray-300 rounded"
                                         />
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+                                    <td className="px-4 py-3 text-sm">
                                         {item.type === "tax-group" ? (
-                                            <div><span className="text-blue-600">{item.name}</span> <span className="text-[#156372] text-xs">(Tax Group)</span></div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-blue-500 hover:underline cursor-pointer">{item.name}</span>
+                                                <span className="text-gray-400 text-xs italic">(Tax Group)</span>
+                                            </div>
                                         ) : (
-                                            <div>{item.name} {item.isDefault && <span className="text-xs text-gray-400 italic">- Default</span>}</div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-blue-500 hover:underline cursor-pointer">{item.name}</span>
+                                                {item.isCompound && <span className="text-gray-400 text-xs italic">(Compound tax)</span>}
+                                                {item.isDefault && <span className="text-gray-400 text-xs italic">- Default Tax</span>}
+                                            </div>
                                         )}
                                     </td>
+                                    <td className="px-4 py-3 text-sm text-gray-500">{item.country}</td>
                                     <td className="px-4 py-3 text-sm text-gray-900">{item.rate}</td>
                                     <td className="px-4 py-3 text-right">
                                         <div className="relative inline-block tax-row-actions">

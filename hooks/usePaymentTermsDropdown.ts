@@ -51,6 +51,8 @@ export const usePaymentTermsDropdown = ({
   }, [searchQuery, terms]);
 
   const handleToggle = () => setIsOpen((v) => !v);
+  const open = () => setIsOpen(true);
+  const close = () => setIsOpen(false);
 
   const handleSelect = (term: PaymentTerm) => {
     setSelectedTerm(term.value);
@@ -68,5 +70,7 @@ export const usePaymentTermsDropdown = ({
     filteredTerms,
     handleToggle,
     handleSelect,
+    open,
+    close,
   };
 };

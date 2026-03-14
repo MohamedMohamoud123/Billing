@@ -85,6 +85,21 @@ function LegacyPurchasesExpensesRedirect() {
   return <Navigate to={`${nextPath}${location.search}${location.hash}`} replace />
 }
 
+function LegacyCustomersRedirect() {
+  const location = useLocation()
+  let nextPath = location.pathname
+
+  if (nextPath.startsWith('/sales/customer')) {
+    nextPath = nextPath.replace('/sales/customer', '/sales/customers')
+  } else if (nextPath.startsWith('/customers')) {
+    nextPath = nextPath.replace('/customers', '/sales/customers')
+  } else {
+    nextPath = '/sales/customers'
+  }
+
+  return <Navigate to={`${nextPath}${location.search}${location.hash}`} replace />
+}
+
 export default function AppRoutes() {
   return (
     <Routes>
@@ -107,7 +122,8 @@ export default function AppRoutes() {
 
       <Route path="/sales/subscriptions/*" element={<SubscriptionsRoutes />} />
       <Route path="/subscriptions/*" element={<SubscriptionsRoutes />} />
-      <Route path="/customers/*" element={<CustomersRoutes />} />
+      <Route path="/sales/customer/*" element={<LegacyCustomersRedirect />} />
+      <Route path="/customers/*" element={<LegacyCustomersRedirect />} />
       <Route path="/sales/customers/*" element={<CustomersRoutes />} />
       <Route path="/sales/payments-received/*" element={<LegacyPaymentsReceivedRedirect />} />
       <Route path="/payments-received/*" element={<LegacyPaymentsReceivedRedirect />} />

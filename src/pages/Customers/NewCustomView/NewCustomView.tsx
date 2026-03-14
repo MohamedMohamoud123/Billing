@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { X, Search, ChevronDown, Check, Star, GripVertical, Lock, Users, FileText, Plus, Trash2, UserPlus } from "lucide-react";
+import { toast } from "react-toastify";
 import { saveCustomView } from "../../salesModel";
 
 const customerFields = [
@@ -216,7 +217,7 @@ export default function NewCustomView() {
         navigate(context.basePath);
       } catch (error) {
         console.error("Error saving custom view:", error);
-        alert("Failed to save custom view. Please try again.");
+        toast.error("Failed to save custom view. Please try again.");
       }
     }
   };

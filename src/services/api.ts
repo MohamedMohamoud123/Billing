@@ -101,6 +101,63 @@ const ensureCustomersDbReady = async () => {
 
 const toCustomerId = (value: any) => String(value ?? "").trim();
 
+const detectCustomerNumberPrefix = (value: any) => {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const match = text.match(/^(\D*?)(\d+)/);
+  return match ? match[1] : "";
+};
+
+const parseCustomerNumberValue = (customerNumber: any, prefix: string) => {
+  const text = String(customerNumber ?? "").trim();
+  if (!text) return null;
+  if (prefix && !text.startsWith(prefix)) return null;
+  const rest = prefix ? text.slice(prefix.length) : text;
+  const match = rest.match(/^(\d+)/);
+  if (!match) return null;
+  const numeric = Number(match[1]);
+  if (!Number.isFinite(numeric)) return null;
+  return {
+    numeric,
+    digits: match[1].length,
+  };
+};
+
+const getNextCustomerNumberFromCustomers = (
+  customers: any[],
+  options?: { prefix?: string; start?: string | number }
+) => {
+  const cleanedCustomers = Array.isArray(customers) ? customers : [];
+
+  const startDigits = String(options?.start ?? "").match(/\d+/)?.[0] || "";
+  const startNumeric = Number(startDigits || 1);
+  const parsedStart = Number.isFinite(startNumeric) && startNumeric > 0 ? startNumeric : 1;
+
+  const existingNumbers = new Set(
+    cleanedCustomers.map((c: any) => String(c?.customerNumber ?? "").trim()).filter(Boolean)
+  );
+
+  const inferredPrefix =
+    String(options?.prefix ?? "").trim() ||
+    detectCustomerNumberPrefix(cleanedCustomers.find((c: any) => c?.customerNumber)?.customerNumber) ||
+    "CUS-";
+
+  const parsed = cleanedCustomers
+    .map((c: any) => parseCustomerNumberValue(c?.customerNumber, inferredPrefix))
+    .filter(Boolean) as Array<{ numeric: number; digits: number }>;
+
+  const maxExisting = parsed.reduce((max, entry) => Math.max(max, entry.numeric), parsedStart - 1);
+  const width = Math.max(5, startDigits.length, parsed.reduce((max, entry) => Math.max(max, entry.digits), 0));
+
+  let next = maxExisting + 1;
+  let candidate = `${inferredPrefix}${String(next).padStart(width, "0")}`;
+  while (existingNumbers.has(candidate)) {
+    next += 1;
+    candidate = `${inferredPrefix}${String(next).padStart(width, "0")}`;
+  }
+  return candidate;
+};
+
 const buildCustomerName = (customer: any) =>
   (
     customer?.displayName ||
@@ -468,6 +525,11 @@ export const customersAPI = {
     return { success: true, data: customers };
   },
   list: async (params?: Record<string, any>) => customersAPI.getAll(params),
+  getNextCustomerNumber: async (options?: { prefix?: string; start?: string | number }) => {
+    await ensureCustomersDbReady();
+    const customers = readAllCustomersLocal();
+    return getNextCustomerNumberFromCustomers(customers, options);
+  },
   getById: async (id: string) => {
     await ensureCustomersDbReady();
     const customerId = toCustomerId(id);
@@ -479,7 +541,21 @@ export const customersAPI = {
   },
   create: async (data: any) => {
     await ensureCustomersDbReady();
-    const created = writeCustomerLocal(data || {});
+    const input = { ...(data || {}) };
+    const desiredCustomerNumber = String(input?.customerNumber ?? "").trim();
+    const customers = readAllCustomersLocal();
+    const existingNumbers = new Set(
+      customers.map((c: any) => String(c?.customerNumber ?? "").trim()).filter(Boolean)
+    );
+
+    if (!desiredCustomerNumber || existingNumbers.has(desiredCustomerNumber)) {
+      const desiredPrefix = detectCustomerNumberPrefix(desiredCustomerNumber);
+      input.customerNumber = getNextCustomerNumberFromCustomers(customers, {
+        prefix: desiredPrefix || undefined,
+      });
+    }
+
+    const created = writeCustomerLocal(input);
     return { success: true, data: created, message: "Customer saved locally" };
   },
   update: async (id: string, data: any) => {

@@ -16,6 +16,8 @@ import { Country, State } from "country-state-city";
 import { toast } from "react-toastify";
 import SearchableDropdown from "../../../components/ui/SearchableDropdown";
 import { countryData, countryPhoneCodes } from "./countriesData";
+import { readTaxesLocal, isTaxGroupRecord } from "../../settings/organization-settings/taxes-compliance/TAX/storage";
+
 
 const splitPhoneNumber = (phone: string, defaultPrefix: string) => {
   if (!phone) return { prefix: defaultPrefix, number: "" };
@@ -175,21 +177,23 @@ export default function NewCustomer() {
   const [customerNumberStart, setCustomerNumberStart] = useState("00003");
   const [isCustomerNumberSettingsModalOpen, setIsCustomerNumberSettingsModalOpen] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isCustomerNumberManuallyEdited, setIsCustomerNumberManuallyEdited] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [availableTaxes, setAvailableTaxes] = useState<any[]>([]);
   const [isNewTaxModalOpen, setIsNewTaxModalOpen] = useState(false);
 
   const loadTaxes = useCallback(async () => {
     try {
-      const response: any = await taxesAPI.getAll({ status: "active" });
-      const rawTaxes = Array.isArray(response) ? response : (response?.data || []);
-      const normalized = (Array.isArray(rawTaxes) ? rawTaxes : [])
+      const response = readTaxesLocal();
+      const normalized = (Array.isArray(response) ? response : [])
+        .filter((t: any) => t.isActive !== false)
         .map((t: any) => ({
           ...t,
-          id: String(t?._id || t?.id || t?.tax_id || ""),
+          id: String(t?._id || t?.id || ""),
         }))
         .filter((t: any) => t.id);
       setAvailableTaxes(normalized);
+
     } catch (error) {
       setAvailableTaxes([]);
     }
@@ -500,13 +504,6 @@ export default function NewCustomer() {
               const prefStart = data.data.customerNumberStart || "00003";
               setCustomerNumberPrefix(prefPrefix);
               setCustomerNumberStart(prefStart);
-
-              if (!isEditMode) {
-                setFormData(prev => ({
-                  ...prev,
-                  customerNumber: `${prefPrefix}${prefStart}`
-                }));
-              }
             }
           }
         } catch (error) {
@@ -586,11 +583,43 @@ export default function NewCustomer() {
     // Track if display name is manually edited
     if (name === "displayName") {
       setIsDisplayNameManuallyEdited(true);
+    } else if (name === "customerNumber") {
+      setIsCustomerNumberManuallyEdited(true);
     } else if (name === "firstName" || name === "lastName" || name === "companyName") {
       // Reset manual edit flag when these fields change so display name can auto-update
       setIsDisplayNameManuallyEdited(false);
     }
   };
+
+  const applyNextCustomerNumber = useCallback(
+    async (force = false) => {
+      if (isEditMode) return;
+      if (!enableCustomerNumbers && !force) return;
+      if (!force && isCustomerNumberManuallyEdited) return;
+      try {
+        const nextNumber = await customersAPI.getNextCustomerNumber({
+          prefix: customerNumberPrefix,
+          start: customerNumberStart,
+        });
+        setFormData((prev) => ({ ...prev, customerNumber: nextNumber }));
+        if (force) setIsCustomerNumberManuallyEdited(false);
+        setErrors((prev) => ({ ...prev, customerNumber: "" }));
+      } catch {
+        // Ignore auto-number failures; validation handles missing values.
+      }
+    },
+    [
+      isEditMode,
+      enableCustomerNumbers,
+      isCustomerNumberManuallyEdited,
+      customerNumberPrefix,
+      customerNumberStart,
+    ]
+  );
+
+  useEffect(() => {
+    applyNextCustomerNumber(false);
+  }, [applyNextCustomerNumber]);
 
   // Auto-update display name when firstName, lastName, or companyName changes
   useEffect(() => {
@@ -810,12 +839,26 @@ export default function NewCustomer() {
   }, [isEditMode, id]);
 
   const handleSave = async () => {
+    let resolvedCustomerNumber = String(formData.customerNumber || "").trim();
+    if (!isEditMode && enableCustomerNumbers && !resolvedCustomerNumber) {
+      try {
+        resolvedCustomerNumber = await customersAPI.getNextCustomerNumber({
+          prefix: customerNumberPrefix,
+          start: customerNumberStart,
+        });
+        setFormData((prev) => ({ ...prev, customerNumber: resolvedCustomerNumber }));
+        setIsCustomerNumberManuallyEdited(false);
+      } catch {
+        // Ignore; validation handles missing values.
+      }
+    }
+
     // Validation
     const errors: { [key: string]: string } = {};
     if (!formData.displayName?.trim()) {
       errors.displayName = "Display Name is required.";
     }
-    if (!formData.customerNumber?.trim()) {
+    if (enableCustomerNumbers && !resolvedCustomerNumber) {
       errors.customerNumber = "Customer Number is required.";
     }
 
@@ -879,7 +922,7 @@ export default function NewCustomer() {
         xHandle: formData.xHandle || '',
         skypeName: formData.skypeName || '',
         facebook: formData.facebook || '',
-        customerNumber: formData.customerNumber || '',
+        customerNumber: enableCustomerNumbers ? (resolvedCustomerNumber || "") : "",
         customerLanguage: formData.customerLanguage || 'english',
         taxRate: formData.taxRate || '',
         exchangeRate: parseFloat(formData.exchangeRate || "1"),
@@ -1067,10 +1110,7 @@ export default function NewCustomer() {
       }
 
       setEnableCustomerNumbers(true);
-      setFormData(prev => ({
-        ...prev,
-        customerNumber: `${customerNumberPrefix}${customerNumberStart}`
-      }));
+      await applyNextCustomerNumber(true);
       setIsCustomerNumberSettingsModalOpen(false);
     } catch (error: any) {
       toast.error("Error saving customer number settings: " + (error?.message || "Unknown error."));
@@ -1635,12 +1675,7 @@ export default function NewCustomer() {
                       <RefreshCw
                         size={14}
                         className="text-[#156372] cursor-pointer hover:opacity-80"
-                        onClick={() => {
-                          setFormData(prev => ({
-                            ...prev,
-                            customerNumber: `${customerNumberPrefix}${customerNumberStart}`
-                          }));
-                        }}
+                        onClick={() => applyNextCustomerNumber(true)}
                       />
                     </div>
                     {errors.customerNumber && (
@@ -1812,7 +1847,60 @@ export default function NewCustomer() {
                     )}
                   </div>
                 </div>
+
+                {/* Reporting Tags */}
+                {availableReportingTags.length > 0 && (
+                  <div className="space-y-4 mb-10">
+                    {availableReportingTags.map((tag) => {
+                      const tagId = tag._id || tag.id;
+                      const currentTag = Array.isArray(formData.reportingTags)
+                        ? formData.reportingTags.find((rt: any) => rt.tagId === tagId || rt.id === tagId)
+                        : null;
+                      const selectedVal = currentTag?.value || "";
+
+                      const normalizedTagOptions = Array.isArray(tag.options) ? tag.options : [];
+                      const selectedOptionMissing = selectedVal && !normalizedTagOptions.includes(selectedVal);
+                      const options = [
+                        { value: "", label: "None" },
+                        ...normalizedTagOptions.map((opt: string) => ({ value: opt, label: opt })),
+                        ...(selectedOptionMissing ? [{ value: selectedVal, label: selectedVal }] : []),
+                      ];
+
+                      return (
+                        <div key={tagId} className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 items-center">
+                          <label className={`text-[13px] font-medium flex items-center gap-1 ${tag.isMandatory ? 'text-red-500' : 'text-gray-700'}`}>
+                            {tag.name} {tag.isMandatory && <span className="ml-0.5">*</span>}
+                            {tag.description && (
+                              <HelpTooltip text={tag.description}>
+                                <Info size={14} className="text-gray-400 cursor-help" />
+                              </HelpTooltip>
+                            )}
+                          </label>
+                          <div className="w-full max-w-md">
+                            <SearchableDropdown
+                              value={selectedVal}
+                              options={options}
+                              onChange={(value) => {
+                                setFormData(prev => {
+                                  const existing = Array.isArray(prev.reportingTags) ? prev.reportingTags : [];
+                                  const filtered = existing.filter((rt: any) => rt.tagId !== tagId && rt.id !== tagId);
+                                  const updated = value
+                                    ? [...filtered, { tagId, id: tagId, name: tag.name, value }]
+                                    : filtered;
+                                  return { ...prev, reportingTags: updated };
+                                });
+                              }}
+                              placeholder="None"
+                              accentColor="#156372"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+
 
               {/* Tabs */}
               <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto whitespace-nowrap">
@@ -1821,7 +1909,6 @@ export default function NewCustomer() {
                   { id: "address", label: "Address" },
                   { id: "contact-persons", label: "Contact Persons" },
                   { id: "custom-fields", label: "Custom Fields" },
-                  { id: "reporting-tags", label: "Reporting Tags" },
                   { id: "remarks", label: "Remarks" },
                 ].map((tab) => (
                   <button
@@ -1873,32 +1960,33 @@ export default function NewCustomer() {
                         </HelpTooltip>
                       </label>
                       <div className="w-full max-w-md">
-                        <div className="flex items-center gap-2">
-                          <select
-                            name="taxRate"
-                            value={formData.taxRate}
-                            onChange={handleChange}
-                            className="flex-1 px-3 py-1.5 border border-gray-300 rounded text-[13px] text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-[#156372] focus:border-[#156372] hover:border-gray-400 transition-colors"
-                          >
-                            <option value="">Select a Tax</option>
-                            {availableTaxes.map((tax) => (
-                              <option key={tax.id} value={tax.id}>
-                                {tax.name} ({tax.rate}%)
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setIsNewTaxModalOpen(true)}
-                            className="px-3 py-1.5 text-[12px] font-semibold text-[#156372] border border-[#156372]/20 rounded hover:bg-[#156372]/5 transition-colors whitespace-nowrap"
-                          >
-                            + New Tax
-                          </button>
-                        </div>
-                        <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
+                        <SearchableDropdown
+                          value={formData.taxRate}
+                          options={[
+                            { value: "", label: "None" },
+                            ...availableTaxes.map(tax => ({
+                              value: tax.id,
+                              label: `${tax.name} (${tax.rate}%)`,
+                              customLabel: (
+                                <span className="flex items-center gap-1.5 opacity-70">
+                                  {isTaxGroupRecord(tax) ? "[Tax Group]" : tax.isCompound ? "[Compound Tax]" : "[Tax]"}
+                                </span>
+                              )
+                            }))
+                          ]}
+                          onChange={(val) => setFormData(prev => ({ ...prev, taxRate: val }))}
+                          onClear={() => setFormData(prev => ({ ...prev, taxRate: "" }))}
+                          showClear={!!formData.taxRate}
+                          placeholder="Select a Tax"
+                          accentColor="#156372"
+                          addNewLabel="New Tax"
+                          onAddNew={() => setIsNewTaxModalOpen(true)}
+                        />
+                        <p className="mt-2 text-[11px] text-gray-500 leading-relaxed font-medium">
                           To associate more than one tax, you need to create a tax group in Settings.
                         </p>
                       </div>
+
                     </div>
 
                     {/* Company ID */}
@@ -3270,57 +3358,7 @@ export default function NewCustomer() {
                   </div>
                 )}
 
-                {activeTab === "reporting-tags" && (
-                  <div className="mt-6 space-y-4">
-                    {availableReportingTags.map((tag) => {
-                      const tagId = tag._id || tag.id;
-                      const currentTag = Array.isArray(formData.reportingTags)
-                        ? formData.reportingTags.find((rt: any) => rt.tagId === tagId || rt.id === tagId)
-                        : null;
-                      const selectedVal = currentTag?.value || "";
 
-                      const normalizedTagOptions = Array.isArray(tag.options) ? tag.options : [];
-                      const selectedOptionMissing = selectedVal && !normalizedTagOptions.includes(selectedVal);
-                      const options = [
-                        { value: "", label: "None" },
-                        ...normalizedTagOptions.map((opt: string) => ({ value: opt, label: opt })),
-                        ...(selectedOptionMissing ? [{ value: selectedVal, label: selectedVal }] : []),
-                      ];
-
-                      return (
-                        <div key={tagId} className="grid grid-cols-1 md:grid-cols-[140px_1fr] gap-4 items-center max-w-2xl">
-                          <label className={`text-sm font-medium ${tag.isMandatory ? 'text-red-500' : 'text-gray-700'}`}>
-                            {tag.name} {tag.isMandatory && <span className="ml-0.5">*</span>}
-                          </label>
-                          <div className="w-full max-w-md">
-                            <SearchableDropdown
-                              value={selectedVal}
-                              options={options}
-                              onChange={(value) => {
-                                setFormData(prev => {
-                                  const existing = Array.isArray(prev.reportingTags) ? prev.reportingTags : [];
-                                  const filtered = existing.filter((rt: any) => rt.tagId !== tagId && rt.id !== tagId);
-                                  const updated = value
-                                    ? [...filtered, { tagId, id: tagId, name: tag.name, value }]
-                                    : filtered;
-                                  return { ...prev, reportingTags: updated };
-                                });
-                              }}
-                              placeholder="None"
-                              accentColor="#3b82f6"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {availableReportingTags.length === 0 && (
-                      <div className="p-8 text-center border border-dashed border-gray-200 rounded-lg">
-                        <p className="text-sm text-gray-400">There are no reporting tags associated with Customers.</p>
-                        <p className="text-xs text-gray-400 mt-1">You can create and associate reporting tags in Settings &gt; Customization.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {activeTab === "remarks" && (
                   <div className="mt-6">
