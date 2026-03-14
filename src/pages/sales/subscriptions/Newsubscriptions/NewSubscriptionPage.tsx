@@ -3804,6 +3804,7 @@ const NewSubscriptionPage = () => {
                     </div>
                 </div>
             </div>
+        </div>
 
             {isAddressModalOpen && (
                 <div
