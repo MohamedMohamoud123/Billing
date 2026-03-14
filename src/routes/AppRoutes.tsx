@@ -41,6 +41,8 @@ import ConfigureCheckoutButton from '../pages/Product-Calalog/plans/productDetai
 import ExpensesRoutes from '../pages/Expense/ExpensesRoutes'
 import SettingsRoutes from '../pages/settings/SettingsRoutes'
 import TimeTrackingPage from '../pages/timeTracking/TimeTrackingPage'
+import EventsPage from '../pages/events/EventsPage'
+
 
 function ModulePlaceholder({ title }: { title: string }) {
   return (
@@ -162,7 +164,8 @@ export default function AppRoutes() {
       <Route path="/products/*" element={<Navigate to="/products/items" replace />} />
       <Route path="/items/*" element={<Navigate to="/products/items" replace />} />
       <Route path="/time-tracking/*" element={<TimeTrackingPage />} />
-      <Route path="/events/*" element={<ModulePlaceholder title="Events" />} />
+      <Route path="/events/*" element={<EventsPage />} />
+
       <Route path="/documents/*" element={<ModulePlaceholder title="Documents" />} />
       <Route path="/settings/*" element={<SettingsRoutes />} />
       <Route path="/reports/*" element={<ReportsRoutes />} />

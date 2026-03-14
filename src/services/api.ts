@@ -297,6 +297,8 @@ const LOCAL_REPORTING_TAGS_KEY = "taban_books_reporting_tags";
 const LOCAL_GENERAL_SETTINGS_KEY = "taban_books_settings_general";
 const LOCAL_LOCATIONS_KEY = "taban_locations_cache";
 const PLANS_STORAGE_KEY = "inv_plans_v1";
+const LOCAL_EVENTS_KEY = "taban_books_events";
+
 
 
 const ensureSeedRows = (key: string, seed: any[]) => {
@@ -461,6 +463,79 @@ const defaultTxSeries = [
   { id: "series-sr", _id: "series-sr", module: "sales-receipts", prefix: "SR-", nextNumber: 1, status: "Active" },
   { id: "series-cn", _id: "series-cn", module: "credit-notes", prefix: "CN-", nextNumber: 1, status: "Active" },
 ];
+
+const defaultEvents = [
+  {
+    id: "evt_001",
+    event_id: "8628362000000109578",
+    event_type: "Customer Updated",
+    occurred_at: "2026-03-14T10:39:27+03:00",
+    source: "User",
+    data: {
+      customer: {
+        id: "cus_001",
+        displayName: "Taban Enterprise",
+        email: "contact@taban.example",
+        status: "Active",
+        billing_address: {
+          address: "Main Rd, Mogadishu",
+          city: "Mogadishu",
+          country: "Somalia"
+        }
+      }
+    }
+  },
+  {
+    id: "evt_002",
+    event_id: "8628362000000109551",
+    event_type: "Invoice Created",
+    occurred_at: "2026-03-14T10:30:15+03:00",
+    source: "User",
+    data: {
+      invoice: {
+        invoice_number: "INV-001",
+        customer_name: "John Doe",
+        total: 500,
+        currency: "USD"
+      }
+    }
+  },
+  {
+    id: "evt_003",
+    event_id: "8628362000000109532",
+    event_type: "Payment Received",
+    occurred_at: "2026-03-14T09:15:00+03:00",
+    source: "System",
+    data: {
+      payment: {
+        payment_number: "PAY-001",
+        amount_received: 200,
+        payment_mode: "Bank Transfer"
+      }
+    }
+  },
+  {
+    id: "evt_004",
+    event_id: "8628362000000109511",
+    event_type: "Subscription Activated",
+    occurred_at: "2026-03-14T08:12:00+03:00",
+    source: "Scheduler",
+    data: {
+      subscription: {
+        id: "sub_001",
+        plan_name: "Basic Plan",
+        status: "Active"
+      }
+    }
+  }
+];
+
+const eventsLocal = localResource(LOCAL_EVENTS_KEY, "evt", defaultEvents);
+
+export const eventsAPI = {
+  ...eventsLocal,
+};
+
 
 const defaultVendors = [
   { id: "ven-001", _id: "ven-001", name: "Default Vendor", email: "vendor@local.app", status: "Active" },
@@ -1616,4 +1691,6 @@ export default {
   chartOfAccountsAPI,
   openingBalancesAPI,
   automationAPI,
+  eventsAPI,
 };
+

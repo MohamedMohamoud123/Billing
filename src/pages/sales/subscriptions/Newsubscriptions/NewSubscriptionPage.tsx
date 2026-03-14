@@ -2083,14 +2083,15 @@ const NewSubscriptionPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-white font-sans text-slate-700 pb-32">
+        <div className="flex flex-col h-[calc(100vh-72px)] bg-white font-sans text-slate-700 overflow-hidden">
             {/* Header */}
-            <div className="px-8 py-4 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-[50]">
+            <div className="flex-none px-8 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
                 <h1 className="text-lg font-medium text-slate-800">{isEditMode ? "Edit Subscription" : "New Subscription"}</h1>
             </div>
 
-            <div className="px-8 py-8 max-w-6xl">
-                <div className="flex flex-col gap-10">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                <div className="px-8 py-8 max-w-6xl pb-32">
+                    <div className="flex flex-col gap-10">
 
                     {/* Main Content */}
                     <div className="space-y-10">
@@ -3802,6 +3803,7 @@ const NewSubscriptionPage = () => {
                         </div>
                     </div>
                 </div>
+            </div>
 
             {isAddressModalOpen && (
                 <div
@@ -4155,7 +4157,6 @@ const NewSubscriptionPage = () => {
                     Cancel
                 </button>
             </div>
-        </div>
         </div>
     );
 };
