@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import { Check, ChevronDown, HelpCircle, Image as ImageIcon, PlusCircle, Search, X, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useOrganizationBranding } from "../../../../hooks/useOrganizationBranding";
-import { taxesAPI, unitsAPI } from "../../../../services/api";
+import { reportingTagsAPI, taxesAPI, unitsAPI } from "../../../../services/api";
 import CreateAccountModal from "../../../settings/organization-settings/setup-configurations/opening-balances/CreateAccountModal";
 import ManageUnitsModal from "./modals/ManageUnitsModal";
 
@@ -29,23 +29,62 @@ const SALES_ACCOUNTS = [
 
 const TAX_GROUP_MARKER = "__taban_tax_group__";
 
-const normalizeTaxOptions = (rows: any[]) =>
-  rows
-    .filter((tax) => {
-      if (!tax) return false;
-      if (tax.isActive === false) return false;
-      if (tax.description === TAX_GROUP_MARKER) return false;
-      if (tax.isGroup === true || String(tax.type || "").toLowerCase() === "group") return false;
-      return true;
-    })
-    .map((tax) => {
-      const name = String(tax.name || tax.taxName || "").trim();
-      const rate = Number(tax.rate ?? tax.taxRate ?? 0);
-      if (!name) return "";
-      const safeRate = Number.isFinite(rate) ? rate : 0;
-      return `${name} [${safeRate}%]`;
-    })
+const normalizeReportingTagOptions = (tag: any): string[] => {
+  const raw = Array.isArray(tag?.options) ? tag.options : [];
+  return raw
+    .map((value: any) => String(value ?? "").trim())
     .filter(Boolean);
+};
+
+const normalizeReportingTagAppliesTo = (tag: any): string[] => {
+  const direct = Array.isArray(tag?.appliesTo) ? tag.appliesTo : [];
+  const fromModulesObject = tag?.modules && typeof tag.modules === "object"
+    ? Object.keys(tag.modules).filter((key) => Boolean(tag.modules[key]))
+    : [];
+  const fromModuleSettings = tag?.moduleSettings && typeof tag.moduleSettings === "object"
+    ? Object.keys(tag.moduleSettings).filter((key) => Boolean(tag.moduleSettings[key]))
+    : [];
+  const fromAssociations = Array.isArray(tag?.associations) ? tag.associations : [];
+  const fromModulesList = Array.isArray(tag?.modulesList) ? tag.modulesList : [];
+
+  return [...direct, ...fromModulesObject, ...fromModuleSettings, ...fromAssociations, ...fromModulesList]
+    .map((value: any) => String(value || "").toLowerCase().trim())
+    .filter(Boolean);
+};
+
+const getGroupedTaxes = (rows: any[]) => {
+  const taxes: string[] = [];
+  const compoundTaxes: string[] = [];
+  const taxGroups: string[] = [];
+
+  rows.forEach((tax) => {
+    if (!tax) return;
+    if (tax.isActive === false) return;
+    if (tax.description === "__taban_tax_group__") return;
+
+    const name = String(tax.name || tax.taxName || "").trim();
+    const rate = Number(tax.rate ?? tax.taxRate ?? 0);
+    if (!name) return;
+    const label = `${name} [${rate}%]`;
+
+    const isGroup = tax.isGroup === true || String(tax.type || "").toLowerCase() === "group";
+    const isCompound = tax.isCompound === true || String(tax.type || "").toLowerCase() === "compound";
+
+    if (isGroup) {
+      taxGroups.push(label);
+    } else if (isCompound) {
+      compoundTaxes.push(label);
+    } else {
+      taxes.push(label);
+    }
+  });
+
+  return [
+    { label: "Tax", options: Array.from(new Set(taxes)) },
+    { label: "Compound tax", options: Array.from(new Set(compoundTaxes)) },
+    { label: "Tax Group", options: Array.from(new Set(taxGroups)) },
+  ].filter((g) => g.options.length > 0);
+};
 
 type DropdownOption = {
   value: string;
@@ -54,7 +93,8 @@ type DropdownOption = {
 
 type SearchableDropdownProps = {
   value: string;
-  options: Array<string | DropdownOption>;
+  options?: Array<string | DropdownOption>;
+  groupedOptions?: Array<{ label: string; options: Array<string | DropdownOption> }>;
   onChange: (value: string) => void;
   placeholder: string;
   accentColor: string;
@@ -65,7 +105,8 @@ type SearchableDropdownProps = {
 
 const SearchableDropdown = ({
   value,
-  options,
+  options = [],
+  groupedOptions,
   onChange,
   placeholder,
   accentColor,
@@ -75,16 +116,26 @@ const SearchableDropdown = ({
 }: SearchableDropdownProps) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [hoveredValue, setHoveredValue] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const normalizedOptions: DropdownOption[] = options.map((opt) =>
-    typeof opt === "string" ? { value: opt, label: opt } : opt
-  );
-  const selected = normalizedOptions.find((opt) => opt.value === value);
-  const filtered = normalizedOptions.filter((opt) =>
-    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const normalizeOptions = (opts: Array<string | DropdownOption>): DropdownOption[] =>
+    opts.map((opt) => (typeof opt === "string" ? { value: opt, label: opt } : opt));
+
+  const normalizedOptions = normalizeOptions(options);
+  const selected = (groupedOptions
+    ? groupedOptions.flatMap(g => normalizeOptions(g.options))
+    : normalizedOptions
+  ).find((opt) => opt.value === value);
+
+  const filterOptions = (opts: DropdownOption[]) =>
+    opts.filter((opt) => opt.label.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const displayedGroups = groupedOptions?.map(group => ({
+    label: group.label,
+    options: filterOptions(normalizeOptions(group.options))
+  })).filter(group => group.options.length > 0) || [];
+
+  const displayedOptions = filterOptions(normalizedOptions);
 
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
@@ -95,6 +146,25 @@ const SearchableDropdown = ({
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
+
+  const renderOptionItem = (opt: DropdownOption, isIndented = false) => {
+    const isSelected = value === opt.value;
+    return (
+      <button
+        key={opt.value}
+        type="button"
+        onClick={() => {
+          onChange(opt.value);
+          setOpen(false);
+          setSearchTerm("");
+        }}
+        className={`flex w-full items-center justify-between rounded-lg py-2 text-[13px] transition-colors hover:bg-slate-50 ${isIndented ? "pl-8 pr-4" : "px-4"} ${isSelected ? "font-medium text-slate-900" : "text-slate-700"}`}
+      >
+        <span>{opt.label}</span>
+        {isSelected ? <Check size={14} style={{ color: accentColor }} /> : null}
+      </button>
+    );
+  };
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -111,48 +181,43 @@ const SearchableDropdown = ({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-[140] mt-1 w-full rounded-xl border border-[#d6dbe8] bg-white p-2 shadow-xl">
-          <div className="mb-2 flex items-center gap-2 rounded-lg border bg-white px-3 py-2" style={{ borderColor: accentColor }}>
-            <Search size={14} className="text-[#94a3b8]" />
-            <input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search"
-              className="w-full border-none bg-transparent text-[13px] text-[#334155] outline-none"
-            />
+        <div className="absolute left-0 top-full z-[140] mt-1 w-full rounded-xl border border-[#d6dbe8] bg-white p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+          <div className="p-2">
+            <div className="flex items-center gap-2 rounded-lg border bg-slate-50/50 px-3 py-1.5 transition-all focus-within:bg-white" style={{ borderColor: accentColor }}>
+              <Search size={14} className="text-slate-400" />
+              <input
+                autoFocus
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search..."
+                className="w-full border-none bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400"
+              />
+            </div>
           </div>
 
-          {groupLabel ? <div className="px-2 pb-1 text-[13px] font-semibold text-[#475569]">{groupLabel}</div> : null}
-
-          <div className="max-h-56 overflow-y-auto rounded-lg bg-white">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-2 text-[13px] text-[#94a3b8]">No options found</div>
+          <div className="max-h-64 overflow-y-auto custom-scrollbar py-1">
+            {groupedOptions ? (
+              displayedGroups.length === 0 ? (
+                <div className="px-4 py-3 text-center text-[13px] text-slate-400">No results found</div>
+              ) : (
+                displayedGroups.map((group) => (
+                  <div key={group.label} className="mb-1 last:mb-0">
+                    <div className="px-4 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{group.label}</div>
+                    {group.options.map((opt) => renderOptionItem(opt, true))}
+                  </div>
+                ))
+              )
+            ) : displayedOptions.length === 0 ? (
+              <div className="px-4 py-3 text-center text-[13px] text-slate-400">No results found</div>
             ) : (
-              filtered.map((opt) => {
-                const isSelected = value === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      onChange(opt.value);
-                      setOpen(false);
-                      setSearchTerm("");
-                    }}
-                    onMouseEnter={() => setHoveredValue(opt.value)}
-                    onMouseLeave={() => setHoveredValue(null)}
-                    className="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] text-[#334155] transition-colors last:mb-0"
-                    style={isSelected || hoveredValue === opt.value ? { backgroundColor: accentColor, color: "#ffffff" } : {}}
-                  >
-                    <span>{opt.label}</span>
-                    {isSelected ? <Check size={14} className="text-white" /> : null}
-                  </button>
-                );
-              })
+              <>
+                {groupLabel && <div className="px-4 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{groupLabel}</div>}
+                {displayedOptions.map((opt) => renderOptionItem(opt))}
+              </>
             )}
           </div>
 
-          {onAddNew && addNewLabel ? (
+          {onAddNew && addNewLabel && (
             <button
               type="button"
               onClick={() => {
@@ -160,13 +225,13 @@ const SearchableDropdown = ({
                 setSearchTerm("");
                 onAddNew();
               }}
-              className="mt-2 flex w-full items-center gap-2 border-t border-[#e2e8f0] px-2 pt-2 text-[13px]"
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium border-t border-slate-100 hover:bg-slate-50 transition-colors"
               style={{ color: accentColor }}
             >
               <PlusCircle size={14} />
               {addNewLabel}
             </button>
-          ) : null}
+          )}
         </div>
       )}
     </div>
@@ -182,6 +247,16 @@ const Label = ({ children, required = false, tooltip, dotted = false }: any) => 
     {tooltip && <HelpCircle size={14} className="cursor-help text-gray-400" />}
   </div>
 );
+
+const isReportingTagRequired = (tag: any) =>
+  Boolean(
+    tag?.isMandatory ||
+    tag?.mandatory ||
+    tag?.is_required ||
+    tag?.required ||
+    tag?.isRequired ||
+    tag?.is_mandatory
+  );
 
 export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialData, formTitle = "New Item" }: NewItemFormProps) {
   const navigate = useNavigate();
@@ -203,8 +278,11 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
     salesAccount: initialData?.salesAccount || "Sales",
     salesTax: initialData?.salesTax || (initialData?.taxInfo ? `${initialData.taxInfo.taxName} [${initialData.taxInfo.taxRate}%]` : ""),
     salesDescription: initialData?.salesDescription || initialData?.description || "",
+    isDigitalService: initialData?.isDigitalService || false,
   });
-  const [taxOptions, setTaxOptions] = useState<string[]>([]);
+  const [taxOptions, setTaxOptions] = useState<any[]>([]);
+  const [availableReportingTags, setAvailableReportingTags] = useState<any[]>([]);
+  const [reportingTagValues, setReportingTagValues] = useState<Record<string, string>>({});
 
   const [images, setImages] = useState<string[]>(
     Array.isArray(initialData?.images)
@@ -230,8 +308,68 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
     return out;
   };
   const salesAccountOptions = dedupeOptions([form.salesAccount, ...SALES_ACCOUNTS, ...extraSalesAccounts]);
-  const mergedTaxOptions = dedupeOptions([form.salesTax, ...taxOptions]);
+  const mergedTaxOptions = taxOptions;
   const mergedUnitOptions = dedupeOptions([form.unit, ...BUILTIN_UNITS, ...unitOptions]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadReportingTags = async () => {
+      try {
+        const response = await reportingTagsAPI.getAll();
+        const rows = Array.isArray(response) ? response : (response?.data || []);
+        if (!Array.isArray(rows)) {
+          if (mounted) setAvailableReportingTags([]);
+          return;
+        }
+
+        const tagsForItems = rows
+          .filter((tag: any) => {
+            if (tag?.isActive === false) return false;
+            const appliesTo = normalizeReportingTagAppliesTo(tag);
+            return appliesTo.some((entry) => entry.includes("item"));
+          })
+          .map((tag: any) => ({
+            ...tag,
+            _id: String(tag?._id || tag?.id || ""),
+            options: normalizeReportingTagOptions(tag),
+          }))
+          .filter((tag: any) => tag._id && String(tag?.name || "").trim());
+
+        const fallbackAll = rows
+          .map((tag: any) => ({
+            ...tag,
+            _id: String(tag?._id || tag?.id || ""),
+            options: normalizeReportingTagOptions(tag),
+          }))
+          .filter((tag: any) => tag._id && String(tag?.name || "").trim());
+
+        const finalTags = tagsForItems.length > 0 ? tagsForItems : fallbackAll;
+        if (mounted) setAvailableReportingTags(finalTags);
+      } catch (e) {
+        if (mounted) setAvailableReportingTags([]);
+      }
+    };
+    loadReportingTags();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!initialData?.tags || !Array.isArray(initialData.tags)) return;
+    // Pre-fill reporting tag selections from existing item tags.
+    setReportingTagValues((prev) => {
+      const next = { ...prev };
+      initialData.tags.forEach((t: any) => {
+        const groupId = String(t?.groupId || t?.group_id || t?.tagId || "");
+        const groupName = String(t?.groupName || t?.group || "").trim();
+        const value = String(t?.name || t?.value || "").trim();
+        if (!value) return;
+        if (groupId) next[groupId] = value;
+        else if (groupName) next[`name:${groupName.toLowerCase()}`] = value;
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?._id, initialData?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -239,18 +377,20 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
     const loadTaxes = async () => {
       try {
         const response: any = await taxesAPI.getAll({ limit: 1000 });
-        const apiRows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
-        let options = normalizeTaxOptions(apiRows);
-
-        if (options.length === 0) {
-          const settingsRows = JSON.parse(localStorage.getItem("taban_settings_taxes_v1") || "[]");
-          if (Array.isArray(settingsRows)) {
-            options = normalizeTaxOptions(settingsRows);
+        let apiRows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
+        if (apiRows.length === 0) {
+          const local = localStorage.getItem("taban_settings_taxes_v1");
+          if (local) {
+            try {
+              apiRows = JSON.parse(local);
+            } catch {
+              // ignore
+            }
           }
         }
 
         if (mounted) {
-          setTaxOptions(Array.from(new Set(options)));
+          setTaxOptions(getGroupedTaxes(apiRows));
         }
       } catch (error) {
         console.error("Failed to load taxes", error);
@@ -314,6 +454,31 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
       return;
     }
 
+    const selectedReportingTags = availableReportingTags
+      .map((tag: any) => {
+        const id = String(tag?._id || "");
+        const name = String(tag?.name || "").trim();
+        const keyById = id;
+        const keyByName = `name:${name.toLowerCase()}`;
+        const selected = reportingTagValues[keyById] || reportingTagValues[keyByName] || "";
+        return { id, groupName: name, value: selected, isMandatory: isReportingTagRequired(tag) };
+      })
+      .filter((row: any) => row.id && row.groupName);
+
+    const missingMandatory = selectedReportingTags.find((row: any) => row.isMandatory && !row.value);
+    if (missingMandatory) {
+      toast.error(`${missingMandatory.groupName} is required.`);
+      return;
+    }
+
+    const tagsPayload = selectedReportingTags
+      .filter((row: any) => Boolean(row.value))
+      .map((row: any) => ({
+        groupId: row.id,
+        groupName: row.groupName,
+        name: row.value,
+      }));
+
     setIsSaving(true);
     try {
       await onCreate(
@@ -330,10 +495,12 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
           rate: Number(form.sellingPrice),
           images,
           currency: currencyCode,
+          tags: tagsPayload,
           active: initialData?.active ?? true,
           status: initialData?.status || "Active",
+          isDigitalService: form.type === "Service" ? form.isDigitalService : false,
         },
-        []
+        tagsPayload.map((t: any) => String(t.groupId)).filter(Boolean)
       );
     } catch (error) {
       console.error("Failed to save item:", error);
@@ -344,17 +511,17 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-98px)] flex-col bg-white">
+    <div className="flex min-h-[calc(100vh-98px)] flex-col bg-gray-50">
 
       {/* HEADER: Fixed at top */}
-      <div className="flex items-center justify-between border-b px-6 py-3">
+      <div className="flex items-center justify-between border-b bg-white px-6 py-3">
         <h1 className="text-lg font-normal text-gray-800">{formTitle}</h1>
         <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors">
           <X size={20} />
         </button>
       </div>
 
-      <div className="bg-white">
+      <div className="bg-gray-50">
         <div className="max-w-[1120px] px-6 py-6">
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px]">
 
@@ -394,6 +561,22 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
                 <Label required dotted tooltip="SKU Number">SKU</Label>
                 <input name="sku" value={form.sku} onChange={handleChange} className={inputBaseClass} />
               </div>
+
+              {form.type === "Service" && (
+                <div className="grid grid-cols-[180px_1fr] items-center gap-4">
+                  <div />
+                  <label className="flex items-center gap-2 text-[13px] text-gray-600 cursor-pointer w-fit group">
+                    <input
+                      type="checkbox"
+                      checked={form.isDigitalService}
+                      onChange={(e) => setForm((prev) => ({ ...prev, isDigitalService: e.target.checked }))}
+                      className="accent-[#1b5e6a] w-4 h-4 cursor-pointer"
+                    />
+                    <span className="group-hover:text-gray-900 transition-colors">It is a digital service</span>
+                    <HelpCircle size={14} className="text-gray-400" />
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Right Column Image Section */}
@@ -472,7 +655,7 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
                 <Label tooltip="Select Tax">Tax</Label>
                 <SearchableDropdown
                   value={form.salesTax}
-                  options={mergedTaxOptions}
+                  groupedOptions={mergedTaxOptions}
                   onChange={(value) => setForm((prev) => ({ ...prev, salesTax: value }))}
                   placeholder="Select a Tax"
                   accentColor={accentColor}
@@ -485,18 +668,71 @@ export default function NewItemForm({ onCancel, onCreate, baseCurrency, initialD
         </div>
       </div>
 
+      {/* Associated / Reporting Tags */}
+      <div className="bg-gray-50 border-t border-gray-100">
+        <div className="max-w-[1120px] px-6 py-8">
+          <h2 className="mb-5 text-[15px] font-medium text-gray-800">Associated Tags</h2>
+          {availableReportingTags.length === 0 ? (
+            <div className="text-[13px] text-gray-500">No reporting tags found in Settings.</div>
+          ) : (
+            <div className="space-y-4">
+              {availableReportingTags.map((tag: any) => {
+                const id = String(tag?._id || "");
+                const name = String(tag?.name || "").trim();
+                const options = Array.isArray(tag?.options) ? tag.options : [];
+                const keyById = id;
+                const keyByName = `name:${name.toLowerCase()}`;
+                const value = reportingTagValues[keyById] || reportingTagValues[keyByName] || "";
+                const required = isReportingTagRequired(tag);
+
+                return (
+                  <div key={id || name} className="grid grid-cols-[180px_1fr] items-center gap-4">
+                    <Label required={required}>{name || "Reporting Tag"}</Label>
+                    <div className="w-full max-w-[300px]">
+                      <SearchableDropdown
+                        value={value}
+                        options={[{ value: "", label: "None" }, ...options.filter(Boolean).map((opt: any) => String(opt))]}
+                        onChange={(nextValue) => {
+                          setReportingTagValues((prev) => ({ ...prev, [keyById]: nextValue }));
+                        }}
+                        placeholder="None"
+                        accentColor={accentColor}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="mt-20 border-t bg-[#f9fafb] px-6 py-4">
         <div className="flex gap-2">
           <button
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="text-white px-6 py-1.5 rounded text-[13px] font-medium hover:opacity-90 shadow-sm active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ backgroundColor: accentColor }}
+            className="cursor-pointer transition-all text-white px-8 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-2 text-[13px] font-semibold disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:border-b-[4px]"
+            style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? (
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                <span>Saving...</span>
+              </div>
+            ) : (
+              <>
+                <Check size={16} strokeWidth={3} />
+                <span>Save</span>
+              </>
+            )}
           </button>
-          <button onClick={onCancel} className="bg-white border border-gray-300 text-gray-700 px-6 py-1.5 rounded text-[13px] font-medium hover:bg-gray-50 active:scale-95 transition-all">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="cursor-pointer transition-all bg-white text-slate-600 px-8 py-1.5 rounded-lg border-slate-200 border border-b-[4px] hover:bg-slate-50 active:border-b-[2px] active:translate-y-[2px] text-[13px] font-semibold"
+          >
             Cancel
           </button>
         </div>

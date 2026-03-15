@@ -40,15 +40,15 @@ export default function Layout({ children }) {
 
   return (
     <OrgsProvider>
-      <div className="min-h-screen w-full bg-slate-50 text-[rgb(21,99,114)]">
-        <div className="flex">
+      <div className="h-screen w-full bg-slate-50 text-[rgb(21,99,114)] overflow-hidden">
+        <div className="flex h-full">
           <Sidebar
             mobileOpen={mobileSidebarOpen}
             onCloseMobile={() => setMobileSidebarOpen(false)}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
           />
-          <div className={`flex-1 min-w-0 min-h-screen bg-white ${sidebarCollapsed ? "lg:ml-[112px]" : "lg:ml-[236px]"}`}>
+          <div className={`flex-1 min-w-0 h-full flex flex-col bg-white overflow-hidden ${sidebarCollapsed ? "lg:ml-[112px]" : "lg:ml-[236px]"}`}>
             <Header onToggleSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)} />
 
             {/* Mobile Action Bar - "Under the header" */}
@@ -67,7 +67,7 @@ export default function Layout({ children }) {
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Navigation Menu</div>
             </div>
 
-            <main className={`w-full min-w-0 ${isFullWidthPage ? "p-0" : "p-4 md:p-6"}`}>{children}</main>
+            <main className={`w-full min-w-0 flex-1 min-h-0 overflow-hidden ${isFullWidthPage ? "p-0" : "p-4 md:p-6 overflow-y-auto"}`}>{children}</main>
           </div>
         </div>
       </div>

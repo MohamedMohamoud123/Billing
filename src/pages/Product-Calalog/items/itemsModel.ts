@@ -33,6 +33,7 @@ export interface Item {
   active?: boolean;
   status?: string;
   locked?: boolean;
+  isDigitalService?: boolean;
   trackInventory?: boolean;
   sellingPrice?: number;
   costPrice?: number;

@@ -85,7 +85,7 @@ export default function AllItemsPage() {
   };
 
   return (
-    <div className="w-full bg-white min-h-screen m-0 p-0 flex flex-col overflow-x-auto">
+    <div className="w-full bg-white h-full m-0 p-0 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white shrink-0">
         <div className="flex items-center gap-2">
@@ -165,7 +165,7 @@ export default function AllItemsPage() {
       </div>
 
       {/* Table Header */}
-      <div className="px-6 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
+      <div className="px-6 py-3 border-b border-gray-200 flex items-center justify-between shrink-0 bg-white z-10">
         <div className="flex items-center gap-6 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-500 uppercase">
@@ -264,10 +264,10 @@ export default function AllItemsPage() {
       </div>
 
       {/* Table Content */}
-      <div className="px-6 flex-1 overflow-x-auto w-full">
+      <div className="px-6 flex-1 overflow-auto w-full custom-scrollbar">
         <table className="w-full border-collapse min-w-[800px]">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+          <thead className="sticky top-0 z-20 bg-gray-50">
+            <tr className="border-b border-gray-200">
               <th className="p-2 px-6 text-left w-10">
                 <input type="checkbox" className="cursor-pointer" />
               </th>

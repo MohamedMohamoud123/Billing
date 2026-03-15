@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, HelpCircle, Info } from "lucide-react";
+import { HelpCircle, Info } from "lucide-react";
 import { toast } from "react-toastify";
 import Modal from "../../../../components/ui/Modal";
 import { useOrganizationBranding } from "../../../../hooks/useOrganizationBranding";
@@ -115,15 +115,15 @@ export default function NewProductModal({
     };
 
     const labelClass = "block text-[13px] text-gray-700 font-normal mb-1.5";
-    const inputClass = "w-full h-[32px] border border-gray-300 rounded px-3 text-[13px] outline-none focus:border-blue-400 transition-all";
-    const textareaClass = "w-full border border-gray-300 rounded p-3 text-[13px] outline-none focus:border-blue-400 min-h-[100px] resize-none";
+    const inputClass = "w-full h-[36px] rounded border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-gray-400 transition-all placeholder:text-gray-400";
+    const textareaClass = "w-full rounded border border-gray-200 bg-white p-2.5 text-[13px] outline-none focus:border-gray-400 min-h-[100px] resize-none transition-all placeholder:text-gray-400";
 
     return (
         <Modal open={isOpen} title={isEditMode ? "Edit Product" : "New Product"} onClose={onClose}>
-            <div className="bg-white w-full rounded-lg overflow-hidden border-none shadow-none">
+            <div className="bg-gray-50 w-full rounded-lg overflow-hidden border-none shadow-none">
 
                 {/* Form Body */}
-                <div className="py-2 space-y-6">
+                <div className="py-4 px-1 space-y-6">
 
                     {/* Name Field */}
                     <div>
@@ -165,24 +165,23 @@ export default function NewProductModal({
                     {/* Redirection URL */}
                     <div>
                         <div className="flex justify-between items-center mb-1.5">
-                            <label className={`${labelClass} flex items-center gap-1 mb-0 font-medium`}>
+                            <label className={`${labelClass} flex items-center gap-1 mb-0`}>
                                 Redirection URL <Info size={14} className="text-gray-400 cursor-help" />
                             </label>
                             <div className="relative">
                                 <button
                                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                                    className="text-[12px] text-blue-600 border border-blue-600 rounded-md px-3 py-1 hover:bg-blue-50 transition-colors"
+                                    className="text-[12px] font-medium text-gray-600 border border-gray-200 bg-white rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors"
                                 >
                                     + Insert Placeholders
                                 </button>
                                 {dropdownOpen && (
                                     <div className="absolute right-0 bottom-full mb-2 w-56 bg-white border border-gray-200 rounded-lg shadow-[0_10px_40px_rgba(0,0,0,0.15)] z-[100] py-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                                        {placeholders.map((ph, idx) => (
+                                        {placeholders.map((ph) => (
                                             <button
                                                 key={ph}
                                                 onClick={() => insertPlaceholder(ph)}
-                                                className={`w-full text-left px-4 py-2 text-[13px] hover:bg-blue-600 hover:text-white transition-colors ${idx === 0 ? "bg-blue-600 text-white rounded-[4px] mx-[2px]" : "text-gray-700"}`}
-                                                style={idx === 0 ? { width: 'calc(100% - 4px)' } : {}}
+                                                className="w-full text-left px-4 py-2 text-[13px] text-gray-600 hover:bg-slate-50 hover:text-gray-900 transition-colors"
                                             >
                                                 {ph}
                                             </button>
@@ -193,7 +192,7 @@ export default function NewProductModal({
                         </div>
                         <input
                             type="text"
-                            className={`${inputClass} !h-[38px] !text-[14px] !bg-slate-50/30 whitespace-nowrap overflow-hidden`}
+                            className={`${inputClass} whitespace-nowrap overflow-hidden`}
                             value={form.redirectionUrl}
                             onChange={(e) => setForm((prev) => ({ ...prev, redirectionUrl: e.target.value }))}
                         />
@@ -210,7 +209,7 @@ export default function NewProductModal({
                             <input
                                 type="checkbox"
                                 id="auto-gen"
-                                className="mt-1 w-4 h-4 border-gray-300 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                className="mt-1 w-4 h-4 border-gray-300 rounded accent-[#156372] focus:ring-gray-400 cursor-pointer"
                                 checked={form.autoGenerateSubscriptionNumbers}
                                 onChange={(e) => setForm((prev) => ({ ...prev, autoGenerateSubscriptionNumbers: e.target.checked }))}
                             />
@@ -228,7 +227,7 @@ export default function NewProductModal({
                                         </label>
                                         <input
                                             type="text"
-                                            className="w-full h-[38px] border border-blue-400 bg-white rounded-lg px-3 text-[14px] outline-none shadow-[0_0_0_1px_rgba(59,130,246,0.1)]"
+                                            className={inputClass}
                                             value={form.prefix}
                                             onChange={(e) => setForm(prev => ({ ...prev, prefix: e.target.value }))}
                                         />
@@ -239,7 +238,7 @@ export default function NewProductModal({
                                         </label>
                                         <input
                                             type="text"
-                                            className="w-full h-[38px] border border-gray-200 bg-white rounded-lg px-3 text-[14px] outline-none focus:border-blue-400"
+                                            className={inputClass}
                                             value={form.nextNumber}
                                             onChange={(e) => setForm(prev => ({ ...prev, nextNumber: e.target.value }))}
                                         />
@@ -254,18 +253,18 @@ export default function NewProductModal({
                 </div>
 
                 {/* Footer Actions */}
-                <div className="bg-gray-50/50 px-0 py-4 border-t border-gray-100 flex gap-3 mt-4">
+                <div className="bg-white px-1 py-4 border-t border-gray-200 flex gap-3 mt-4">
                     <button
                         onClick={saveProduct}
                         disabled={isSaving}
-                        className="text-white px-5 py-1.5 rounded text-[13px] font-medium transition-all shadow-sm active:scale-95 hover:opacity-90 disabled:opacity-60"
-                        style={{ backgroundColor: accentColor }}
+                        className="cursor-pointer transition-all text-white px-6 py-2 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-2 text-[13px] font-semibold disabled:opacity-60 disabled:pointer-events-none"
+                        style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
                     >
                         {isSaving ? (isEditMode ? "Updating..." : "Saving...") : "Save"}
                     </button>
                     <button
                         onClick={onClose}
-                        className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-1.5 rounded text-[13px] font-medium transition-all active:scale-95"
+                        className="rounded-lg border border-gray-200 bg-white px-6 py-2 text-[13px] text-[#111827] hover:bg-slate-50 font-medium transition-colors"
                     >
                         Cancel
                     </button>

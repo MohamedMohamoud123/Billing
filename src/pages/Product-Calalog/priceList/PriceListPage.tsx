@@ -63,7 +63,7 @@ const toCsv = (headers: string[], rows: string[][]) => {
 export default function PriceListPage() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
-    const [editingPriceList, setEditingPriceList] = useState<PriceListRecord | null>(null);
+    const [editingPriceList, setEditingPriceList] = useState<any | null>(null);
     const [view, setView] = useState<'list' | 'form'>('list');
     const [moreOpen, setMoreOpen] = useState(false);
     const sortKey: PriceListSortKey = 'createdOn';
@@ -281,7 +281,18 @@ export default function PriceListPage() {
     };
 
     const handleEdit = (row: PriceListRecord) => {
-        setEditingPriceList(row);
+        const targetId = String(row?.id || '');
+        const fullRows = (() => {
+            try {
+                const raw = localStorage.getItem(PRICE_LISTS_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        })();
+        const full = fullRows.find((r: any) => String(r?.id || r?._id || '') === targetId);
+        setEditingPriceList(full ? { ...full, id: String(full.id || full._id || targetId) } : row);
         setView('form');
     };
 

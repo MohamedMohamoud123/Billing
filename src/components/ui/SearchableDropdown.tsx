@@ -40,7 +40,6 @@ const SearchableDropdown = ({
 }: SearchableDropdownProps) => {
     const [open, setOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const [hoveredValue, setHoveredValue] = useState<string | null>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const instanceId = useId();
 
@@ -140,22 +139,20 @@ const SearchableDropdown = ({
                                         onClick={() => {
                                             onChange(opt.value);
                                             setOpen(false);
-                                            setSearchTerm("");
-                                            onOpenChange?.(false);
-                                        }}
-                                        onMouseEnter={() => setHoveredValue(opt.value)}
-                                        onMouseLeave={() => setHoveredValue(null)}
-                                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-[13px] transition-colors ${isSelected || hoveredValue === opt.value ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                                             setSearchTerm("");
+                                             onOpenChange?.(false);
+                                         }}
+                                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-[13px] transition-colors hover:bg-gray-50 ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}
                                     >
                                         <div className="flex-1 flex items-center justify-between min-w-0">
                                             <span className="truncate">{opt.label}</span>
                                             {opt.customLabel && (
-                                                <span className={`ml-2 flex-shrink-0 ${isSelected || hoveredValue === opt.value ? 'text-blue-100' : 'text-gray-400 text-[11px]'}`}>
+                                                <span className="ml-2 flex-shrink-0 text-gray-400 text-[11px]">
                                                     {opt.customLabel}
                                                 </span>
                                             )}
                                         </div>
-                                        {isSelected && <Check size={14} className="ml-2 flex-shrink-0" />}
+                                        {isSelected && <Check size={14} className="ml-2 flex-shrink-0" style={{ color: accentColor }} />}
                                     </button>
                                 );
                             })

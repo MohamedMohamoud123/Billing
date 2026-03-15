@@ -492,13 +492,13 @@ const NewCouponPage: React.FC<NewCouponPageProps> = ({ onCancel, onClose, onSave
   };
 
   return (
-    <div className="relative flex flex-col h-full w-full bg-white font-sans overflow-hidden">
+    <div className="relative flex flex-col h-full w-full bg-gray-50 font-sans overflow-hidden overflow-x-hidden">
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
         <h2 className="text-lg font-semibold text-gray-800">{isEditMode ? 'Edit Coupon' : 'New Coupon'}</h2>
         <button onClick={handleClose} className="text-gray-400 transition-colors hover:text-gray-600"><X size={22} /></button>
       </header>
 
-      <main className="flex-1 overflow-y-auto bg-white p-8">
+      <main className="flex-1 overflow-y-auto bg-gray-50 p-8">
         <div className="max-w-[1200px] space-y-12">
           <div className="grid grid-cols-2 gap-x-16 gap-y-6">
             <FormRow label="Product*" required>
@@ -621,7 +621,7 @@ const NewCouponPage: React.FC<NewCouponPageProps> = ({ onCancel, onClose, onSave
         </div>
       </main>
 
-      <footer className="flex gap-3 border-t border-gray-200 bg-white px-8 py-4 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+      <footer className="flex gap-3 border-t border-gray-200 bg-transparent px-8 py-4">
         <button
           onClick={handleSave}
           className="cursor-pointer rounded-lg border-b-[4px] border-[#0D4A52] px-6 py-2 text-sm font-medium text-white transition-all hover:-translate-y-[1px] hover:border-b-[6px] hover:brightness-110 active:translate-y-[2px] active:border-b-[2px] active:brightness-90"

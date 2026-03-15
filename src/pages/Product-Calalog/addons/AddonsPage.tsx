@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, MoreHorizontal, Plus, Search, SlidersHorizontal, ArrowDownUp, Download, Upload, RotateCcw, ChevronRight, Star, X } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Plus, Search, SlidersHorizontal, ArrowDownUp, Download, Upload, RotateCcw, ChevronRight, Star, X, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import PlansCustomizeColumnsModal, { ColumnConfig } from "../plans/components/PlansCustomizeColumnsModal";
@@ -351,25 +351,30 @@ export default function AddonsPage() {
   return (
     <div className="flex w-full min-h-[calc(100vh-100px)] flex-col overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
       {selectedIds.length > 0 ? (
-        <div className="flex items-center justify-between border-b border-gray-100 bg-white px-4 py-3">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-6 py-6 border-b border-gray-100 bg-white relative overflow-visible z-[100]">
+          <div className="flex min-w-0 flex-1 items-center gap-3 pl-4 pr-2 overflow-visible">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={(e) => toggleAll(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              style={{ accentColor: "#1b5e6a" }}
+              className="h-4 w-4 rounded border-gray-300 transition-all focus:ring-0"
             />
-            <button onClick={() => setBulkUpdateOpen(true)} className="rounded-md border border-[#1b5e6a] bg-white px-3 py-1.5 text-sm font-semibold text-[#1b5e6a] hover:bg-slate-50 transition-colors">Bulk Update</button>
-            <button onClick={() => handleMarkStatus("Active")} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-gray-50 transition-colors">Mark as Active</button>
-            <button onClick={() => handleMarkStatus("Inactive")} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-gray-50 transition-colors">Mark as Inactive</button>
-            <button onClick={handleBulkDelete} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-gray-50 transition-colors">Delete</button>
-            <div className="mx-1 h-5 w-px bg-gray-200" />
-            <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-600">
+            <button onClick={() => setBulkUpdateOpen(true)} className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">Bulk Update</button>
+            <button onClick={() => handleMarkStatus("Active")} className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">Mark as Active</button>
+            <button onClick={() => handleMarkStatus("Inactive")} className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">Mark as Inactive</button>
+            <button onClick={handleBulkDelete} className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">Delete</button>
+
+            <div className="h-6 w-px bg-gray-200 mx-1" aria-hidden />
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="flex items-center justify-center min-w-[28px] h-7 px-2 bg-[#156372] rounded-full text-[13px] font-semibold text-white">
                 {selectedIds.length}
               </span>
-              <span className="text-sm text-gray-600">Selected</span>
+              <span className="text-sm text-gray-700">Selected</span>
             </div>
+          </div>
           </div>
           <button
             onClick={() => {
@@ -381,8 +386,8 @@ export default function AddonsPage() {
           </button>
         </div>
       ) : (
-        <div className="flex items-center justify-between border-b border-gray-100 bg-white px-4">
-          <div className="flex items-center gap-8 pl-4">
+        <div className="flex-none flex items-center justify-between px-6 py-6 border-b border-gray-100 bg-white relative overflow-visible z-30">
+          <div className="flex items-center gap-6 pl-4">
             <div className="relative" ref={allAddonsRef}>
               <button
                 onClick={() => setAllAddonsOpen((prev) => !prev)}
@@ -397,7 +402,7 @@ export default function AddonsPage() {
                     onClick={() => setAllAddonsOpen(false)}
                     className="flex w-full items-center justify-between px-4 py-2 text-left text-[14px] text-slate-700 hover:bg-slate-50"
                   >
-                    <span className="rounded border border-blue-600 text-blue-600 px-2 py-0.5 text-[13px] font-medium leading-none">All</span>
+                    <span>All</span>
                     <Star size={14} className="text-slate-300 hover:text-yellow-400" />
                   </button>
                   <button
@@ -433,20 +438,20 @@ export default function AddonsPage() {
             </div>
           </div>
 
-          <div className="mr-4 flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
             <button
               onClick={() => navigate("/products/addons/new")}
-              className="flex items-center gap-1 cursor-pointer rounded-lg border-b-[4px] border-[#0D4A52] text-white px-3 py-1.5 text-sm font-semibold transition-all hover:-translate-y-[1px] hover:border-b-[6px] hover:brightness-110 active:translate-y-[2px] active:border-b-[2px] active:brightness-90"
-              style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
+              className="h-[38px] min-w-[100px] cursor-pointer transition-all text-white px-5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center gap-2"
+              style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
             >
-              <Plus size={16} strokeWidth={3} />
-              New
+              <Plus size={16} />
+              <span className="hidden sm:inline">New</span>
             </button>
 
             <div className="relative" ref={moreRef}>
               <button
                 onClick={() => setMoreOptionsOpen((prev) => !prev)}
-                className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors bg-white shadow-sm"
+                className="h-[38px] flex items-center justify-center p-2 bg-white border border-gray-300 border-b-[4px] rounded-lg hover:bg-gray-50 transition-all hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
               >
                 <MoreHorizontal size={18} className="text-gray-500" />
               </button>
@@ -547,13 +552,17 @@ export default function AddonsPage() {
                     maxWidth: clampAddonColumnWidth(col.width, 160),
                   }}
                 >
-                  {col.label}
+                  <div className="pr-3 select-none">{col.label}</div>
                   <div
-                    className="absolute right-0 top-0 bottom-0 w-[2px] cursor-col-resize border-gray-100 opacity-0 transition-opacity group-hover:border-r group-hover:opacity-100 hover:bg-teal-400/50"
+                    className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize"
                     onMouseDown={(e) => startResizing(col.key, e)}
                     onClick={(e) => e.stopPropagation()}
-                    title="Drag to resize column"
-                  />
+                    title="Resize"
+                    role="separator"
+                    aria-orientation="vertical"
+                  >
+                    <div className="absolute right-1 top-1 bottom-1 w-[2px] bg-transparent opacity-0 transition-opacity group-hover:opacity-100 group-hover:bg-slate-900/70" />
+                  </div>
                 </th>
               ))}
               <th className="sticky right-0 w-10 bg-[#f6f7fb] px-4 py-3 z-20">
@@ -636,7 +645,7 @@ export default function AddonsPage() {
                     <select
                       value={bulkUpdateField}
                       onChange={(e) => setBulkUpdateField(e.target.value)}
-                      className="w-full appearance-none rounded-md border border-[#3b82f6] bg-white px-4 py-2 pr-8 text-sm text-gray-700 outline-none focus:ring-1 focus:ring-[#3b82f6]"
+                      className="w-full appearance-none rounded-md border border-gray-300 bg-white px-4 py-2 pr-8 text-sm text-gray-700 outline-none focus:border-[#1b5e6a] transition-colors"
                     >
                       <option value="" disabled>Select a field</option>
                       <option value="description">Addon Description</option>
@@ -644,7 +653,7 @@ export default function AddonsPage() {
                       <option value="showInWidget">Show in Widget</option>
                       <option value="showInPortal">Show in Portal</option>
                     </select>
-                    <ChevronDown size={14} className="absolute right-3 top-[50%] -translate-y-[50%] text-[#3b82f6]" />
+                    <ChevronDown size={14} className="absolute right-3 top-[50%] -translate-y-[50%] text-[#1b5e6a]" />
                   </div>
                 </div>
 
@@ -653,7 +662,7 @@ export default function AddonsPage() {
                     <textarea
                       value={bulkTextValue}
                       onChange={(e) => setBulkTextValue(e.target.value)}
-                      className="h-[84px] w-full resize-none rounded-md border border-[#3b82f6] px-4 py-2 text-sm outline-none focus:ring-1 focus:ring-[#3b82f6]"
+                      className="h-[84px] w-full resize-none rounded-md border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#1b5e6a] transition-colors"
                     />
                   )}
 
@@ -662,10 +671,10 @@ export default function AddonsPage() {
                       <button
                         type="button"
                         onClick={() => setBulkAccountOpen((prev) => !prev)}
-                        className="flex w-full items-center justify-between rounded-md border border-[#3b82f6] bg-white px-4 py-2 text-left text-sm text-gray-700 outline-none focus:ring-1 focus:ring-[#3b82f6]"
+                        className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-4 py-2 text-left text-sm text-gray-700 outline-none focus:border-[#1b5e6a] transition-colors"
                       >
                         <span>{bulkAccountValue || "Select account"}</span>
-                        <ChevronDown size={14} className={`text-[#3b82f6] transition-transform ${bulkAccountOpen ? "rotate-180" : ""}`} />
+                        <ChevronDown size={14} className={`text-[#1b5e6a] transition-transform ${bulkAccountOpen ? "rotate-180" : ""}`} />
                       </button>
 
                       {bulkAccountOpen && (
@@ -678,7 +687,7 @@ export default function AddonsPage() {
                                 value={bulkAccountSearch}
                                 onChange={(e) => setBulkAccountSearch(e.target.value)}
                                 placeholder="Search"
-                                className="w-full rounded-md border border-[#3b82f6] py-2 pl-8 pr-3 text-sm outline-none focus:ring-1 focus:ring-[#3b82f6]"
+                                className="w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm outline-none focus:border-[#1b5e6a] transition-colors"
                               />
                             </div>
                           </div>
@@ -694,12 +703,12 @@ export default function AddonsPage() {
                                     setBulkAccountValue(account);
                                     setBulkAccountOpen(false);
                                   }}
-                                  className={`block w-full px-4 py-2 text-left text-sm ${bulkAccountValue === account
-                                    ? "bg-[#3b82f6] text-white"
-                                    : "text-slate-700 hover:bg-slate-50"
-                                    }`}
+                                  className={`w-full px-4 py-2 text-left text-sm transition-colors hover:bg-slate-50 ${bulkAccountValue === account ? "font-medium text-slate-900" : "text-slate-700"}`}
                                 >
-                                  {account}
+                                  <span className="flex items-center justify-between gap-3">
+                                    <span>{account}</span>
+                                    {bulkAccountValue === account ? <Check size={14} style={{ color: "#1b5e6a" }} /> : null}
+                                  </span>
                                 </button>
                               ))
                             )}
@@ -718,7 +727,7 @@ export default function AddonsPage() {
                           checked={bulkBooleanValue === "check"}
                           onChange={() => setBulkBooleanValue("check")}
                           className="h-4 w-4"
-                          style={{ accentColor: "#3b82f6" }}
+                          style={{ accentColor: "#1b5e6a" }}
                         />
                         <span className="text-sm text-slate-700">Check this option</span>
                       </label>
@@ -729,7 +738,7 @@ export default function AddonsPage() {
                           checked={bulkBooleanValue === "uncheck"}
                           onChange={() => setBulkBooleanValue("uncheck")}
                           className="h-4 w-4"
-                          style={{ accentColor: "#3b82f6" }}
+                          style={{ accentColor: "#1b5e6a" }}
                         />
                         <span className="text-sm text-slate-700">Uncheck this option</span>
                       </label>

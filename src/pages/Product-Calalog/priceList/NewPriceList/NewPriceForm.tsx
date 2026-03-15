@@ -101,9 +101,19 @@ export default function NewPriceForm({ onClose, editData }: NewPriceFormProps) {
             const rawItems = localStorage.getItem('inv_items_v1');
             const loadedItems = rawItems ? JSON.parse(rawItems) : [];
             if (loadedItems.length === 0) {
-                setItems([{ name: 'mohamed', sku: 'sdv', salesRate: 11.00, status: 'Active' }]);
+                setItems([{ id: 'item-sample', name: 'mohamed', sku: 'sdv', salesRate: 11.00, status: 'Active', customRate: '', discount: '' }]);
             } else {
-                setItems(loadedItems.filter((i: any) => i.status === 'Active'));
+                const normalized = loadedItems
+                    .filter((i: any) => i?.status === 'Active')
+                    .map((row: any, idx: number) => {
+                        const id = String(row?.id || row?._id || `item-${idx}`);
+                        const name = String(row?.name || row?.itemName || '').trim();
+                        const sku = String(row?.sku || '').trim();
+                        const salesRate = Number(row?.sellingPrice ?? row?.rate ?? row?.salesRate ?? 0) || 0;
+                        return { ...row, id, name, sku, salesRate, customRate: '', discount: '' };
+                    })
+                    .filter((row: any) => row?.name);
+                setItems(normalized);
             }
 
             const rawProducts = localStorage.getItem('inv_products_v1');
@@ -194,6 +204,8 @@ export default function NewPriceForm({ onClose, editData }: NewPriceFormProps) {
         loadData();
     }, [baseCurrency]);
 
+    const itemRatesHydratedRef = useRef(false);
+
     useEffect(() => {
         if (editData) {
             setName(editData.name || '');
@@ -236,6 +248,35 @@ export default function NewPriceForm({ onClose, editData }: NewPriceFormProps) {
             }
         }
     }, [editData]);
+
+    useEffect(() => {
+        if (!editData) return;
+        if (itemRatesHydratedRef.current) return;
+        if (!items.length) return;
+        if (!Array.isArray(editData.itemRates)) return;
+
+        const byId = new Map<string, any>(
+            editData.itemRates.map((r: any) => [String(r?.itemId || r?.id || ''), r])
+        );
+
+        setItems(prev =>
+            prev.map((it: any, idx: number) => {
+                const id = String(it?.id || it?._id || `item-${idx}`);
+                const match = byId.get(id);
+                if (!match) return it;
+                const rateValue = match?.rate ?? match?.customRate ?? '';
+                const discountValue = match?.discount ?? '';
+                return {
+                    ...it,
+                    id,
+                    customRate: rateValue === null || rateValue === undefined ? '' : String(rateValue),
+                    discount: discountValue === null || discountValue === undefined ? '' : String(discountValue),
+                };
+            })
+        );
+
+        itemRatesHydratedRef.current = true;
+    }, [editData, items.length]);
 
     const toggleProductExpansion = (id: string) => {
         setExpandedProducts(prev =>
@@ -316,6 +357,17 @@ export default function NewPriceForm({ onClose, editData }: NewPriceFormProps) {
             const raw = localStorage.getItem('inv_price_lists_v1');
             const currentLists = raw ? JSON.parse(raw) : [];
 
+            const itemRates = (items || [])
+                .map((it: any, idx: number) => {
+                    const id = String(it?.id || it?._id || `item-${idx}`);
+                    const itemName = String(it?.name || '').trim();
+                    const sku = String(it?.sku || '').trim();
+                    const rate = it?.customRate !== "" ? Number(it.customRate) : null;
+                    const discount = it?.discount !== "" ? Number(it.discount) : null;
+                    return { itemId: id, itemName, sku, rate: Number.isFinite(rate as any) ? rate : null, discount: Number.isFinite(discount as any) ? discount : null };
+                })
+                .filter((r: any) => r.itemId && r.itemName && (r.rate !== null || r.discount !== null));
+
             const productRates = products.map((prod: any) => ({
                 productId: prod.id,
                 productName: prod.name,
@@ -343,6 +395,7 @@ export default function NewPriceForm({ onClose, editData }: NewPriceFormProps) {
                 roundOffTo: roundOffTo === 'Decimal Places' ? `${decimalPlaces} Decimal Places` : roundOffTo,
                 markup: `${markupPercentage}%`,
                 markupType: markupType,
+                itemRates,
                 productRates,
                 createdOn: editData ? editData.createdOn : new Date().toISOString(),
                 createdAt: editData ? (editData.createdAt || editData.createdOn) : new Date().toISOString(),
@@ -944,37 +997,73 @@ export default function NewPriceForm({ onClose, editData }: NewPriceFormProps) {
                                                                                         <input type="text" className="w-full h-full px-2 text-[13px] outline-none text-right" placeholder="10" />
                                                                                     </div>
                                                                                 </div>
-                                                                                <div className="flex justify-end pr-2">
-                                                                                    <div className="flex items-center h-8 w-full max-w-[120px] border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
-                                                                                        <div className="px-2 text-[10px] text-gray-400 font-bold border-r border-gray-200 h-full flex items-center bg-gray-50/50">{currency || baseCurrency.code}</div>
-                                                                                        <input type="text" className="w-full h-full px-2 text-[13px] bg-white outline-none text-right" placeholder="0.00" />
-                                                                                    </div>
-                                                                                </div>
-                                                                                {includeDiscount && (
-                                                                                    <div className="flex justify-end pr-2">
-                                                                                        <div className="flex items-center h-8 w-full max-w-[100px] border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
-                                                                                            <input type="text" className="w-full h-full px-2 text-[13px] bg-white outline-none text-right" placeholder="0" />
-                                                                                            <div className="px-2 text-[10px] text-gray-400 font-bold border-l border-gray-200 h-full flex items-center bg-gray-50/50">%</div>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
+                                                            <div className="flex justify-end pr-2">
+                                                                <div className="flex items-center h-8 w-full max-w-[120px] border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
+                                                                    <div className="px-2 text-[10px] text-gray-400 font-bold border-r border-gray-200 h-full flex items-center bg-gray-50/50">{currency || baseCurrency.code}</div>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={item.customRate ?? ""}
+                                                                        onChange={(e) => {
+                                                                            const value = e.target.value;
+                                                                            setItems((prev: any[]) => prev.map((row, i) => i === idx ? { ...row, customRate: value } : row));
+                                                                        }}
+                                                                        className="w-full h-full px-2 text-[13px] bg-white outline-none text-right"
+                                                                        placeholder="0.00"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            {includeDiscount && (
+                                                                <div className="flex justify-end pr-2">
+                                                                    <div className="flex items-center h-8 w-full max-w-[100px] border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={item.discount ?? ""}
+                                                                            onChange={(e) => {
+                                                                                const value = e.target.value;
+                                                                                setItems((prev: any[]) => prev.map((row, i) => i === idx ? { ...row, discount: value } : row));
+                                                                            }}
+                                                                            className="w-full h-full px-2 text-[13px] bg-white outline-none text-right"
+                                                                            placeholder="0"
+                                                                        />
+                                                                        <div className="px-2 text-[10px] text-gray-400 font-bold border-l border-gray-200 h-full flex items-center bg-gray-50/50">%</div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                                             </>
                                                                         ) : (
                                                                             <>
-                                                                                <div className="flex justify-end pr-4 text-right">
-                                                                                    <div className="flex items-center h-8 w-32 border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
-                                                                                        <div className="px-2 text-[11px] text-gray-400 font-bold border-r border-gray-200 h-full flex items-center bg-gray-50/50">{currency || baseCurrency.code}</div>
-                                                                                        <input type="text" className="w-full h-full px-2 text-[13px] bg-white outline-none text-right" placeholder="0.00" />
+                                                                            <div className="flex justify-end pr-4 text-right">
+                                                                                <div className="flex items-center h-8 w-32 border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
+                                                                                    <div className="px-2 text-[11px] text-gray-400 font-bold border-r border-gray-200 h-full flex items-center bg-gray-50/50">{currency || baseCurrency.code}</div>
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        value={item.customRate ?? ""}
+                                                                                        onChange={(e) => {
+                                                                                            const value = e.target.value;
+                                                                                            setItems((prev: any[]) => prev.map((row, i) => i === idx ? { ...row, customRate: value } : row));
+                                                                                        }}
+                                                                                        className="w-full h-full px-2 text-[13px] bg-white outline-none text-right"
+                                                                                        placeholder="0.00"
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                            {includeDiscount && (
+                                                                                <div className="flex justify-end pr-4">
+                                                                                    <div className="flex items-center h-8 w-24 border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            value={item.discount ?? ""}
+                                                                                            onChange={(e) => {
+                                                                                                const value = e.target.value;
+                                                                                                setItems((prev: any[]) => prev.map((row, i) => i === idx ? { ...row, discount: value } : row));
+                                                                                            }}
+                                                                                            className="w-full h-full px-2 text-[13px] bg-white outline-none text-right"
+                                                                                            placeholder="0"
+                                                                                        />
+                                                                                        <div className="px-2 text-[11px] text-gray-400 font-bold border-l border-gray-200 h-full flex items-center bg-gray-50/50">%</div>
                                                                                     </div>
                                                                                 </div>
-                                                                                {includeDiscount && (
-                                                                                    <div className="flex justify-end pr-4">
-                                                                                        <div className="flex items-center h-8 w-24 border border-gray-200 rounded bg-gray-50 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all shadow-sm">
-                                                                                            <input type="text" className="w-full h-full px-2 text-[13px] bg-white outline-none text-right" placeholder="0" />
-                                                                                            <div className="px-2 text-[11px] text-gray-400 font-bold border-l border-gray-200 h-full flex items-center bg-gray-50/50">%</div>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
+                                                                            )}
                                                                             </>
                                                                         )}
                                                                     </div>

@@ -694,9 +694,9 @@ export default function PlansPage() {
     const allSelected = currentRows.length > 0 && selectedIds.length === currentRows.length;
 
     return (
-        <div className="flex flex-col min-h-screen w-full bg-white font-sans text-gray-800 antialiased relative overflow-visible">
+        <div className="flex flex-col h-full min-h-0 w-full bg-white font-sans text-gray-800 antialiased relative overflow-hidden">
             {selectedIds.length > 0 ? (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50 gap-2 sm:h-[57px]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-3 border-b border-gray-100 bg-white gap-2 sm:h-[57px]">
                     <PlansBulkActions
                         selectedCount={selectedIds.length}
                         onClear={() => setSelectedIds([])}
@@ -707,8 +707,8 @@ export default function PlansPage() {
                     />
                 </div>
             ) : (
-                <div className="flex items-start justify-between px-4 border-b border-gray-100 bg-white relative overflow-visible mt-3">
-                    <div className="flex items-center gap-8 pl-4">
+                <div className="flex-none flex items-center justify-between px-6 py-6 border-b border-gray-100 bg-white relative overflow-visible z-30">
+                    <div className="flex items-center gap-6 pl-4">
                         <div className="relative" ref={allPlansRef}>
                             <button
                                 onClick={() => {
@@ -780,20 +780,20 @@ export default function PlansPage() {
                         </div>
                     </div>
 
-                    <div className="mr-4 flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
                         <div className="relative" ref={newRef}>
                             <button
                                 onClick={handleNew}
-                                className="flex items-center gap-1 cursor-pointer rounded-lg border-b-[4px] border-[#0D4A52] text-white px-3 py-1.5 text-sm font-semibold transition-all hover:-translate-y-[1px] hover:border-b-[6px] hover:brightness-110 active:translate-y-[2px] active:border-b-[2px] active:brightness-90"
-                                style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
+                                className="h-[38px] min-w-[100px] cursor-pointer transition-all text-white px-5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] text-sm font-semibold shadow-sm flex items-center justify-center gap-2"
+                                style={{ background: "linear-gradient(180deg, #156372 0%, #0D4A52 100%)" }}
                             >
-                                <Plus size={16} strokeWidth={3} /> New
+                                <Plus size={16} /> <span className="hidden sm:inline">New</span>
                             </button>
                         </div>
                         <div className="relative" ref={moreRef}>
                             <button
                                 onClick={() => setMoreDropdownOpen((prev) => !prev)}
-                                className="p-1.5 border border-gray-200 rounded hover:bg-gray-50 transition-colors bg-white shadow-sm"
+                                className="h-[38px] flex items-center justify-center p-2 bg-white border border-gray-300 border-b-[4px] rounded-lg hover:bg-gray-50 transition-all hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:translate-y-[1px] shadow-sm"
                             >
                                 <MoreHorizontal size={18} className="text-gray-500" />
                             </button>
@@ -890,15 +890,15 @@ export default function PlansPage() {
                 </div>
             )}
 
-            <div className="flex-1 overflow-x-auto bg-white min-h-0">
-                <table className="w-full text-left border-collapse min-w-[1200px]">
-                    <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
-                        <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
-                            <th className="px-4 py-3 w-16 min-w-[64px]">
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setCustomizeOpen(true)}
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto bg-white">
+	                <table className="w-full text-left border-collapse min-w-[1200px]">
+	                    <thead className="bg-[#f6f7fb] border-b border-[#e6e9f2]">
+	                        <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">
+	                            <th className="px-4 py-3 w-16 min-w-[64px] sticky top-0 z-20 bg-[#f6f7fb]">
+	                                <div className="flex items-center gap-2">
+	                                    <button
+	                                        type="button"
+	                                        onClick={() => setCustomizeOpen(true)}
                                         className="h-6 w-6 flex items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
                                         title="Manage Columns"
                                     >
@@ -919,24 +919,34 @@ export default function PlansPage() {
                                     />
                                 </div>
                             </th>
-                            {visibleColumns.map((col) => (
-                                <th
-                                    key={col.key}
-                                    className={`group relative px-4 py-3 font-semibold ${/tax/i.test(col.key) ? "text-black" : "text-[#7b8494]"}`}
-                                    style={{
-                                        width: getEffectiveColumnWidth(col),
-                                    }}
-                                >
-                                    {col.label}
-                                </th>
-                            ))}
-                            <th className="px-4 py-3 w-12 sticky right-0 bg-[#f6f7fb]">
-                                <div className="flex items-center justify-center">
-                                    <Search size={14} className="text-gray-300 cursor-pointer transition-colors hover:opacity-80" />
-                                </div>
-                            </th>
-                        </tr>
-                    </thead>
+	                            {visibleColumns.map((col) => (
+	                                <th
+	                                    key={col.key}
+	                                    className={`group relative px-4 py-3 font-semibold sticky top-0 z-20 bg-[#f6f7fb] ${/tax/i.test(col.key) ? "text-black" : "text-[#7b8494]"}`}
+	                                    style={{
+	                                        width: getEffectiveColumnWidth(col),
+	                                    }}
+	                                >
+                                    <div className="pr-3 select-none">{col.label}</div>
+                                    <div
+                                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize"
+                                        onMouseDown={(e) => startResizing(col.key, e)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        title="Resize"
+                                        role="separator"
+                                        aria-orientation="vertical"
+                                    >
+                                        <div className="absolute right-1 top-1 bottom-1 w-[2px] bg-transparent opacity-0 transition-opacity group-hover:opacity-100 group-hover:bg-slate-900/70" />
+	                                    </div>
+	                                </th>
+	                            ))}
+	                            <th className="px-4 py-3 w-12 sticky top-0 right-0 z-30 bg-[#f6f7fb] border-l border-[#e6e9f2]">
+	                                <div className="flex items-center justify-center">
+	                                    <Search size={14} className="text-gray-300 cursor-pointer transition-colors hover:opacity-80" />
+	                                </div>
+	                            </th>
+	                        </tr>
+	                    </thead>
                     <tbody className="bg-white">
                         {currentRows.map((row: any) => (
                             <tr

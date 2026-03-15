@@ -307,12 +307,12 @@ const ItemsList = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white relative overflow-visible">
+    <div className="flex flex-col h-full bg-white relative overflow-hidden">
       {/* Header - Match Subscriptions list page */}
       {selectedIds.length > 0 ? (
-        <div className="flex items-center justify-between px-5 border-b border-gray-100 bg-white relative overflow-visible mt-1">
-          <div className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-2 pr-2 overflow-visible">
-            <div className="flex min-w-0 items-center gap-2 sm:gap-3 overflow-x-auto whitespace-nowrap">
+        <div className="flex items-center justify-between px-6 py-6 border-b border-gray-100 bg-white relative overflow-visible z-[100]">
+          <div className="flex min-w-0 flex-1 items-center gap-3 pl-4 pr-2 overflow-visible">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
               {canEdit && (
                 <button
                   type="button"
@@ -337,14 +337,14 @@ const ItemsList = ({
                   </button>
 
                   {newTransactionOpen && (
-                    <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-2xl z-50 py-1 overflow-hidden">
+                    <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-2xl z-[200] py-1 overflow-hidden">
                       <button
                         type="button"
                         onClick={() => {
                           navigate("/sales/quotes/new");
                           setNewTransactionOpen(false);
                         }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50 hover:text-slate-900 transition-colors font-medium border-b border-gray-50 last:border-0"
                       >
                         Quote
                       </button>
@@ -354,7 +354,7 @@ const ItemsList = ({
                           navigate("/sales/invoices/new");
                           setNewTransactionOpen(false);
                         }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50 hover:text-slate-900 transition-colors font-medium border-b border-gray-50 last:border-0"
                       >
                         Invoice
                       </button>
@@ -364,7 +364,7 @@ const ItemsList = ({
                           navigate("/sales/sales-receipts/new");
                           setNewTransactionOpen(false);
                         }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50 hover:text-slate-900 transition-colors font-medium last:border-0"
                       >
                         Sales Receipt
                       </button>
@@ -454,17 +454,17 @@ const ItemsList = ({
             <X size={16} className="text-red-500" />
           </button>
         </div>
-	      ) : (
-	        <div className="flex items-center justify-between px-6 border-b border-gray-100 bg-white relative overflow-visible mt-1">
-	          <div className="flex items-center gap-8 pl-4">
-	            <div className="relative" ref={filterDropdownRef}>
-	              <div
-	                className="flex items-center gap-1.5 py-3 cursor-pointer group border-b-2 border-slate-900 -mb-[px]"
-	                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
-	              >
-	                <h1 className="text-[15px] font-bold text-slate-900 transition-colors">
-	                  {filterType === "All" ? "All Items" : filterType === "Active Items" ? "Active Items" : filterType}
-	                </h1>
+      ) : (
+        <div className="flex items-center justify-between px-6 py-6 border-b border-gray-100 bg-white relative overflow-visible">
+          <div className="flex items-center gap-6 pl-4">
+            <div className="relative" ref={filterDropdownRef}>
+              <div
+                className="flex items-center gap-1.5 py-4 cursor-pointer group border-b-2 border-slate-900 -mb-[px]"
+                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+              >
+                <h1 className="text-[15px] font-bold text-slate-900 transition-colors">
+                  {filterType === "All" ? "All Items" : filterType === "Active Items" ? "Active Items" : filterType}
+                </h1>
                 <ChevronDown size={14} className={`transition-transform duration-200 ${filterDropdownOpen ? 'rotate-180' : ''}`} style={{ color: accentColor }} />
               </div>
 
@@ -497,14 +497,14 @@ const ItemsList = ({
                   </div>
                 </div>
               )}
-	            </div>
-	          </div>
+            </div>
+          </div>
 
-	          <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4 py-3">
-	            {canCreate && (
-	              <button
-	                onClick={onNew}
-	                className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-1 text-sm font-semibold"
+          <div className="flex flex-wrap items-center gap-3 sm:gap-2 mr-4">
+            {canCreate && (
+              <button
+                onClick={onNew}
+                className="cursor-pointer transition-all text-white px-3 sm:px-4 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-1 text-sm font-semibold"
                 style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
               >
                 <Plus size={16} strokeWidth={3} /> <span className="hidden sm:inline">New</span>
@@ -637,7 +637,7 @@ const ItemsList = ({
       )}
 
       {/* Table Content */}
-      <div className="flex-1 overflow-x-auto bg-white min-h-0">
+      <div className="flex-1 overflow-auto bg-white min-h-0 custom-scrollbar">
         <table className="w-full text-left border-collapse min-w-[1200px]">
           <thead className="bg-[#f6f7fb] sticky top-0 z-10 border-b border-[#e6e9f2]">
             <tr className="text-[10px] font-semibold text-[#7b8494] uppercase tracking-wider">

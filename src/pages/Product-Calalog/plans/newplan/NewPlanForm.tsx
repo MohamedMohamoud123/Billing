@@ -143,10 +143,10 @@ function StyledDropdown({
         onClick={() => !disabled && setOpen((prev) => !prev)}
         disabled={disabled}
         className={`h-[36px] w-full rounded border px-3 text-left text-[13px] transition-colors ${disabled
-          ? "cursor-not-allowed border-[#d7dce8] bg-[#f1f3f8] text-[#9ca3af]"
+          ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400"
           : open
-            ? "border-[#3b82f6] bg-white text-[#1f2937]"
-            : "border-[#cfd5e3] bg-white text-[#1f2937] hover:border-[#94a3b8]"
+            ? "border-gray-300 bg-white text-[#1f2937]"
+            : "border-gray-200 bg-white text-[#1f2937] hover:border-gray-300"
           }`}
       >
         <div className="flex items-center justify-between gap-2">
@@ -156,29 +156,29 @@ function StyledDropdown({
       </button>
 
       {open && !disabled && (
-        <div className="absolute left-0 top-full z-[120] mt-1 w-full rounded-xl border border-[#d6dbe8] bg-white p-2 shadow-xl">
+        <div className="absolute left-0 top-full z-[120] mt-1 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-xl animate-in fade-in zoom-in-95 duration-200">
           {searchable && (
-            <div className="mb-2 flex items-center gap-2 rounded-lg border border-[#c5cedf] bg-white px-3 py-2">
-              <Search size={14} className="text-[#94a3b8]" />
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 focus-within:border-gray-300 transition-colors">
+              <Search size={14} className="text-gray-400" />
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search"
-                className="w-full border-none bg-transparent text-[13px] text-[#334155] outline-none"
+                className="w-full border-none bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
               />
             </div>
           )}
 
-          {groupLabel ? <div className="px-2 pb-1 text-[13px] font-semibold text-[#475569]">{groupLabel}</div> : null}
+          {groupLabel ? <div className="px-2 pb-1 text-[13px] font-semibold text-gray-700">{groupLabel}</div> : null}
 
           <div className="max-h-52 overflow-auto rounded-lg bg-white">
             {normalizedGroups.length > 0 ? (
               filteredGroups.length === 0 ? (
-                <div className="px-3 py-2 text-[13px] text-[#94a3b8]">No options found</div>
+                <div className="px-3 py-2 text-[13px] text-gray-400">No options found</div>
               ) : (
                 filteredGroups.map((group) => (
                   <div key={group.label} className="mb-1 last:mb-0">
-                    <div className="px-2 pb-1 text-[13px] font-semibold text-[#475569]">{group.label}</div>
+                    <div className="px-2 pb-1 text-[13px] font-semibold text-gray-700">{group.label}</div>
                     {group.options.map((opt) => {
                       const isSelected = value === opt.value;
                       return (
@@ -191,15 +191,13 @@ function StyledDropdown({
                             setSearchTerm("");
                           }}
                           className={`mb-1 flex w-full items-center justify-between rounded-lg px-4 py-2 text-[13px] transition-colors last:mb-0 ${isSelected
-                            ? selectedStyle === "blue"
-                              ? "bg-[#3b82f6] text-white"
-                              : "bg-[#e9edf6] text-[#475569]"
-                            : "text-[#475569] hover:bg-[#3b82f6] hover:text-white"
+                            ? "bg-slate-50 text-slate-900 font-medium"
+                            : "text-gray-600 hover:bg-slate-50 hover:text-slate-900"
                             }`}
                         >
                           <span>{opt.label}</span>
                           {isSelected ? (
-                            <Check size={14} className={selectedStyle === "blue" ? "text-white" : "text-[#3b82f6]"} />
+                            <Check size={14} className="text-gray-500" />
                           ) : null}
                         </button>
                       );
@@ -208,7 +206,7 @@ function StyledDropdown({
                 ))
               )
             ) : filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-[13px] text-[#94a3b8]">No options found</div>
+              <div className="px-3 py-2 text-[13px] text-gray-400">No options found</div>
             ) : (
               filteredOptions.map((opt) => {
                 const isSelected = value === opt.value;
@@ -222,15 +220,13 @@ function StyledDropdown({
                       setSearchTerm("");
                     }}
                     className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors last:mb-0 ${isSelected
-                      ? selectedStyle === "blue"
-                        ? "bg-[#3b82f6] text-white"
-                        : "bg-[#e9edf6] text-[#475569]"
-                      : "text-[#475569] hover:bg-[#3b82f6] hover:text-white"
+                      ? "bg-slate-50 text-slate-900 font-medium"
+                      : "text-gray-600 hover:bg-slate-50 hover:text-slate-900"
                       }`}
                   >
                     <span>{opt.label}</span>
                     {isSelected ? (
-                      <Check size={14} className={selectedStyle === "blue" ? "text-white" : "text-[#3b82f6]"} />
+                      <Check size={14} className="text-gray-500" />
                     ) : null}
                   </button>
                 );
@@ -246,7 +242,7 @@ function StyledDropdown({
                 setSearchTerm("");
                 onFooterActionClick();
               }}
-              className="mt-2 flex w-full items-center gap-2 border-t border-[#e2e8f0] px-2 pt-2 text-[13px] text-[#3b82f6] hover:text-[#2563eb]"
+              className="mt-2 flex w-full items-center gap-2 border-t border-gray-100 px-2 pt-2 text-[13px] text-gray-600 hover:text-gray-900 transition-colors"
             >
               <PlusCircle size={14} />
               {footerActionLabel}
@@ -480,7 +476,7 @@ export default function NewPlanForm() {
   }, [editPlanId, clonePlanId]);
 
   const inputClass =
-    "h-[36px] w-full rounded border border-[#cfd5e3] bg-white px-3 text-[13px] text-[#1f2937] outline-none focus:border-[#3b82f6] disabled:bg-[#f1f3f8] disabled:text-[#9ca3af] disabled:border-[#d7dce8] disabled:cursor-not-allowed";
+    "h-[36px] w-full rounded border border-gray-200 bg-white px-3 text-[13px] text-[#1f2937] outline-none focus:border-gray-400 disabled:bg-gray-50 disabled:text-[#9ca3af] disabled:border-gray-200 disabled:cursor-not-allowed transition-all";
 
   const onFieldChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -571,8 +567,8 @@ export default function NewPlanForm() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-[#f4f5f9]">
-      <div className="flex items-center justify-between border-b border-[#d8deea] bg-[#f7f8fc] px-8 py-5">
+    <div className="flex h-screen flex-col bg-gray-50">
+      <div className="flex items-center justify-between border-b border-gray-200 bg-white px-8 py-5">
         <h1 className="text-[18px] font-medium text-[#111827]">
           {isEditMode ? "Edit Plan" : clonePlanId ? "Clone Plan" : "Add Plan"}
         </h1>
@@ -586,7 +582,7 @@ export default function NewPlanForm() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="border-b border-[#d8deea] bg-[#f6f7fb] px-8 py-8">
+        <div className="border-b border-gray-200 bg-gray-50 px-8 py-8">
           <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_320px]">
             <div className="space-y-6">
               <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[180px_340px]">
@@ -671,7 +667,7 @@ export default function NewPlanForm() {
                   value={form.planDescription}
                   onChange={onFieldChange}
                   rows={3}
-                  className="w-full resize-none rounded border border-[#cfd5e3] bg-white p-2.5 text-[13px] outline-none focus:border-[#3b82f6]"
+                  className="w-full resize-none rounded border border-gray-200 bg-white p-2.5 text-[13px] outline-none focus:border-gray-400 transition-all"
                   disabled={lockDependentFields}
                 />
               </div>
@@ -680,7 +676,7 @@ export default function NewPlanForm() {
             <div className={`flex justify-start xl:justify-end ${lockDependentFields ? "opacity-45" : ""}`}>
               <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onImageChange} disabled={lockDependentFields} />
               <div
-                className={`flex h-[230px] w-full max-w-[300px] flex-col items-center justify-center rounded-md border border-dashed border-[#cfd5e3] bg-[#f8f9fc] text-center ${lockDependentFields ? "cursor-not-allowed" : "cursor-pointer"}`}
+                className={`flex h-[230px] w-full max-w-[300px] flex-col items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-center ${lockDependentFields ? "cursor-not-allowed" : "cursor-pointer"}`}
                 onClick={() => !lockDependentFields && fileInputRef.current?.click()}
               >
                 {images.length ? (
@@ -697,8 +693,8 @@ export default function NewPlanForm() {
           </div>
         </div>
 
-        <div className={`border-b border-[#d8deea] bg-[#f7f8fc] px-8 ${lockDependentFields ? "opacity-45" : ""}`}>
-          <div className="flex items-end gap-5 border-b border-[#d8deea] pt-2">
+        <div className={`border-b border-gray-200 bg-gray-50 px-8 ${lockDependentFields ? "opacity-45" : ""}`}>
+          <div className="flex items-end gap-5 border-b border-gray-200 pt-2">
             <button
               className={`px-5 py-3 text-[13px] ${activeTab === "pricing" ? "border-t-2 border-[#22b573] bg-white font-medium text-[#111827]" : "text-[#111827]"} ${lockDependentFields ? "cursor-not-allowed" : ""}`}
               onClick={() => !lockDependentFields && setActiveTab("pricing")}
@@ -748,7 +744,7 @@ export default function NewPlanForm() {
                 <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[180px_340px] xl:col-start-2 xl:row-start-1">
                   <label className="text-[13px] text-[#ef4444]">Price*</label>
                   <div className="grid grid-cols-[54px_1fr]">
-                    <span className="flex h-[36px] items-center justify-center rounded-l border border-r-0 border-[#cfd5e3] bg-[#f3f4f6] text-[13px]">{currencyCode}</span>
+                    <span className="flex h-[36px] items-center justify-center rounded-l border border-r-0 border-gray-200 bg-gray-50 text-[13px]">{currencyCode}</span>
                     <input name="price" value={form.price} onChange={onFieldChange} className={`${inputClass} rounded-l-none`} disabled={lockDependentFields} />
                   </div>
                 </div>
@@ -773,9 +769,9 @@ export default function NewPlanForm() {
                 <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[180px_340px]">
                   <label className="text-[13px] text-[#ef4444]">Price*</label>
                   <div className="grid grid-cols-[54px_1fr_105px]">
-                    <span className="flex h-[36px] items-center justify-center rounded-l border border-r-0 border-[#cfd5e3] bg-[#f3f4f6] text-[13px]">{currencyCode}</span>
+                    <span className="flex h-[36px] items-center justify-center rounded-l border border-r-0 border-gray-200 bg-gray-50 text-[13px]">{currencyCode}</span>
                     <input name="price" value={form.price} onChange={onFieldChange} className={`${inputClass} rounded-none`} disabled={lockDependentFields} />
-                    <span className="flex h-[36px] items-center justify-center rounded-r border border-l-0 border-[#cfd5e3] bg-[#f3f4f6] text-[13px]">{`/unit /${pricePeriodLabel}`}</span>
+                    <span className="flex h-[36px] items-center justify-center rounded-r border border-l-0 border-gray-200 bg-gray-50 text-[13px]">{`/unit /${pricePeriodLabel}`}</span>
                   </div>
                 </div>
               ) : null}
@@ -784,7 +780,7 @@ export default function NewPlanForm() {
                 <label className="text-[13px] text-[#111827]">Free Trial</label>
                 <div className="grid grid-cols-[1fr_56px]">
                   <input name="freeTrialDays" value={form.freeTrialDays} onChange={onFieldChange} className={`${inputClass} rounded-r-none`} disabled={lockDependentFields} />
-                  <span className="flex h-[36px] items-center justify-center rounded-r border border-l-0 border-[#cfd5e3] bg-[#f3f4f6] text-[13px]">Days</span>
+                  <span className="flex h-[36px] items-center justify-center rounded-r border border-l-0 border-gray-200 bg-gray-50 text-[13px]">Days</span>
                 </div>
               </div>
 
@@ -1015,21 +1011,21 @@ export default function NewPlanForm() {
         </div>
       </div>
 
-      <div className="border-t border-[#d8deea] bg-[#f7f8fc] px-8 py-4">
+      <div className="border-t border-gray-200 bg-white px-8 py-4">
         <div className="flex gap-3">
           <button
             type="button"
             onClick={handleSave}
             disabled={isSaving || lockDependentFields}
-            className="rounded px-6 py-2 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-60"
-            style={{ backgroundColor: accentColor }}
+            className="cursor-pointer transition-all text-white px-6 py-2 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-2 text-[13px] font-semibold disabled:opacity-60 disabled:pointer-events-none"
+            style={{ background: 'linear-gradient(90deg, #156372 0%, #0D4A52 100%)' }}
           >
             {isSaving ? "Saving..." : "Save"}
           </button>
           <button
             type="button"
             onClick={() => (isEditMode && editPlanId ? navigate(`/products/plans/${editPlanId}`) : navigate("/products/plans"))}
-            className="rounded border border-[#cfd5e3] bg-white px-6 py-2 text-[13px] text-[#111827] hover:bg-slate-50"
+            className="rounded-lg border border-gray-200 bg-white px-6 py-2 text-[13px] text-[#111827] hover:bg-slate-50 font-medium transition-colors"
           >
             Cancel
           </button>

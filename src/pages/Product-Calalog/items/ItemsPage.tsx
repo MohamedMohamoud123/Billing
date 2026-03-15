@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { itemsAPI, tagAssignmentsAPI } from "../../../services/api";
 import { Item, DeleteConfirmModal } from "./itemsModel";
+import { useLocation, useNavigate } from "react-router-dom";
 
 // Import extracted components
 import ItemsList from "./ItemsList";
@@ -15,6 +16,9 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { buildCloneName } from "../utils/cloneName";
 
 function ItemsPageContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [view, setView] = useState<string>("list"); // list | new | detail | edit
@@ -125,7 +129,11 @@ function ItemsPageContent() {
         }
       }
 
-      setView("list");
+      if (view === "detail") {
+        setSelectedId(String(newItem._id || newItem.id));
+      } else {
+        setView("list");
+      }
       setClonedItem(null);
       toast.success("Item created successfully");
       // Final sync from local store/API
@@ -246,6 +254,26 @@ function ItemsPageContent() {
     setClonedItem(null);
   };
 
+  // Keep a tiny URL signal while inside the Items module.
+  // This lets a global sidebar click to `/products/items` reliably reset the view back to the list
+  // even if this page is already mounted (detail/new/edit are state-driven).
+  useEffect(() => {
+    const desiredHash = view === "list" ? "" : `#${view}`;
+    if (location.hash === desiredHash) return;
+    navigate({ pathname: location.pathname, search: location.search, hash: desiredHash }, { replace: true });
+    // Intentionally do not depend on `location.hash` so external hash changes can drive state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, navigate, location.pathname, location.search]);
+
+  // If the URL hash is cleared (ex: user clicks "Items" in the global sidebar),
+  // force the list view.
+  useEffect(() => {
+    if (location.hash) return;
+    if (view === "list") return;
+    handleBackToList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.hash]);
+
   const handleCloneItem = async (data: any) => {
     if (!canCreateItems) {
       toast.error("You do not have permission to create items.");
@@ -291,9 +319,9 @@ function ItemsPageContent() {
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full h-full">
       {view === "detail" && selectedItem ? (
-        <div className="flex flex-col md:flex-row gap-0" style={{ minHeight: "calc(100vh - 56px)" }}>
+        <div className="flex flex-col md:flex-row gap-0 h-full">
           <div className="hidden md:flex w-full md:w-1/5 border-r border-gray-200 bg-white flex-col z-20">
             <ItemSidebar
               items={items}
@@ -330,7 +358,7 @@ function ItemsPageContent() {
           </div>
         </div>
       ) : (
-        <div className="w-full">
+        <div className="w-full h-full overflow-hidden">
           {view === "list" && (
             <ItemsList
               items={items}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Image as ImageIcon, Info, MinusCircle, PlusCircle, Search, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Image as ImageIcon, Info, MinusCircle, PlusCircle, Search, Trash2, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useCurrency } from "../../../../hooks/useCurrency";
@@ -200,6 +200,7 @@ function StyledDropdown({
   groupLabel,
   selectedStyle = "blue",
 }: DropdownProps) {
+  const accentColor = "#1b5e6a";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -231,15 +232,21 @@ function StyledDropdown({
 
   return (
     <div ref={ref} className="relative w-full">
-      <button type="button" disabled={disabled} onClick={() => !disabled && setOpen((p) => !p)} className={`flex h-[38px] w-full items-center justify-between rounded-md border px-3 text-left text-[14px] focus:outline-none focus:ring-0 ${disabled ? "cursor-not-allowed border-[#d7dce8] bg-[#f1f3f8] text-[#9ca3af]" : open ? "border-[#3b82f6] bg-white text-[#1f2937]" : "border-[#cfd5e3] bg-white text-[#1f2937]"}`}>
-        <span className={value ? "text-[#1f2937]" : "text-[#6b7280]"}>{value || placeholder}</span>
-        <ChevronDown size={14} className={`text-[#3b82f6] transition-transform ${open ? "rotate-180" : ""}`} />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((p) => !p)}
+        className={`flex h-[34px] w-full items-center justify-between rounded border px-3 text-left text-[13px] transition-colors hover:border-gray-400 ${disabled ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400" : "border-gray-300 bg-white text-gray-800"}`}
+        style={open && !disabled ? { borderColor: accentColor, boxShadow: `0 0 0 1px ${accentColor}` } : {}}
+      >
+        <span className={value ? "text-gray-800" : "text-gray-500"}>{value || placeholder}</span>
+        <ChevronDown size={14} className={`transition-transform ${open ? "rotate-180" : ""}`} style={{ color: accentColor }} />
       </button>
       {open && !disabled ? (
         <div className="absolute left-0 top-full z-[120] mt-1 w-full rounded-xl border border-[#d6dbe8] bg-white p-2 shadow-xl">
-          <div className="mb-2 flex items-center gap-2 rounded-lg border border-[#3b82f6] bg-white px-3 py-2">
-            <Search size={14} className="text-[#94a3b8]" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" className="w-full border-none bg-transparent text-[13px] text-[#334155] outline-none" />
+          <div className="mb-2 flex items-center gap-2 rounded-lg border bg-slate-50/50 px-3 py-1.5 transition-all focus-within:bg-white" style={{ borderColor: accentColor }}>
+            <Search size={14} className="text-slate-400" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" className="w-full border-none bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
           </div>
           {groupLabel ? <div className="px-2 pb-1 text-[13px] font-semibold text-[#475569]">{groupLabel}</div> : null}
           <div className="max-h-52 overflow-auto rounded-lg bg-white">
@@ -259,16 +266,10 @@ function StyledDropdown({
                           setOpen(false);
                           setQuery("");
                         }}
-                        className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[14px] transition-colors last:mb-0 ${
-                          value === opt
-                            ? selectedStyle === "blue"
-                              ? "bg-[#3b82f6] text-white"
-                              : "bg-[#e9edf6] text-[#475569]"
-                            : "text-[#475569] hover:bg-[#3b82f6] hover:text-white"
-                        }`}
+                        className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors last:mb-0 hover:bg-slate-50 ${value === opt ? "font-medium text-slate-900" : "text-slate-700"}`}
                       >
                         <span>{opt}</span>
-                        {value === opt ? <Check size={14} className={selectedStyle === "blue" ? "text-white" : "text-[#3b82f6]"} /> : null}
+                        {value === opt ? <Check size={14} style={{ color: accentColor }} /> : null}
                       </button>
                     ))}
                   </div>
@@ -286,21 +287,15 @@ function StyledDropdown({
                     setOpen(false);
                     setQuery("");
                   }}
-                  className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[14px] transition-colors last:mb-0 ${
-                    value === opt
-                      ? selectedStyle === "blue"
-                        ? "bg-[#3b82f6] text-white"
-                        : "bg-[#e9edf6] text-[#475569]"
-                      : "text-[#475569] hover:bg-[#3b82f6] hover:text-white"
-                  }`}
+                  className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors last:mb-0 hover:bg-slate-50 ${value === opt ? "font-medium text-slate-900" : "text-slate-700"}`}
                 >
                   <span>{opt}</span>
-                  {value === opt ? <Check size={14} className={selectedStyle === "blue" ? "text-white" : "text-[#3b82f6]"} /> : null}
+                  {value === opt ? <Check size={14} style={{ color: accentColor }} /> : null}
                 </button>
               ))
             )}
           </div>
-          {footerLabel && onFooterClick ? <button type="button" onClick={() => { setOpen(false); setQuery(""); onFooterClick(); }} className="mt-2 flex w-full items-center gap-2 border-t border-[#e2e8f0] px-2 pt-2 text-[14px] text-[#3b82f6] hover:text-[#2563eb]"><PlusCircle size={14} />{footerLabel}</button> : null}
+          {footerLabel && onFooterClick ? <button type="button" onClick={() => { setOpen(false); setQuery(""); onFooterClick(); }} className="mt-2 flex w-full items-center gap-2 border-t border-slate-100 px-2 pt-2 text-[13px] font-medium transition-colors hover:opacity-90" style={{ color: accentColor }}><PlusCircle size={14} />{footerLabel}</button> : null}
         </div>
       ) : null}
     </div>
@@ -320,6 +315,7 @@ function MultiSelectPlansDropdown({
   placeholder: string;
   disabled?: boolean;
 }) {
+  const accentColor = "#1b5e6a";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -359,20 +355,17 @@ function MultiSelectPlansDropdown({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((prev) => !prev)}
-        className={`flex min-h-[38px] w-full items-center justify-between rounded-md border px-2 text-left text-[14px] ${
-          disabled
-            ? "cursor-not-allowed border-[#d7dce8] bg-[#f1f3f8] text-[#9ca3af]"
-            : open
-              ? "border-[#3b82f6] bg-white text-[#1f2937]"
-              : "border-[#cfd5e3] bg-white text-[#1f2937]"
+        className={`flex min-h-[34px] w-full items-center justify-between rounded border px-2 text-left text-[13px] transition-colors hover:border-gray-400 ${
+          disabled ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400" : "border-gray-300 bg-white text-gray-800"
         }`}
+        style={open && !disabled ? { borderColor: accentColor, boxShadow: `0 0 0 1px ${accentColor}` } : {}}
       >
         <div className="flex flex-1 flex-wrap items-center gap-1 py-1">
           {values.length === 0 ? (
-            <span className="px-1 text-[#6b7280]">{placeholder}</span>
+            <span className="px-1 text-gray-500">{placeholder}</span>
           ) : (
             values.map((value) => (
-              <span key={value} className="inline-flex items-center gap-1 rounded bg-[#e9edf6] px-2 py-1 text-[14px] text-[#334155]">
+              <span key={value} className="inline-flex items-center gap-1 rounded bg-[#e9edf6] px-2 py-1 text-[13px] text-[#334155]">
                 {value}
                 <button
                   type="button"
@@ -389,18 +382,18 @@ function MultiSelectPlansDropdown({
             ))
           )}
         </div>
-        <ChevronDown size={14} className={`text-[#3b82f6] transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={14} className={`transition-transform ${open ? "rotate-180" : ""}`} style={{ color: accentColor }} />
       </button>
 
       {open && !disabled ? (
         <div className="absolute left-0 top-full z-[120] mt-1 w-full rounded-xl border border-[#d6dbe8] bg-white p-2 shadow-xl">
-          <div className="mb-2 flex items-center gap-2 rounded-lg border border-[#3b82f6] bg-white px-3 py-2">
-            <Search size={14} className="text-[#94a3b8]" />
+          <div className="mb-2 flex items-center gap-2 rounded-lg border bg-slate-50/50 px-3 py-1.5 transition-all focus-within:bg-white" style={{ borderColor: accentColor }}>
+            <Search size={14} className="text-slate-400" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search"
-              className="w-full border-none bg-transparent text-[13px] text-[#334155] outline-none"
+              className="w-full border-none bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400"
             />
           </div>
 
@@ -414,7 +407,7 @@ function MultiSelectPlansDropdown({
                     key={option}
                     type="button"
                     onClick={() => addValue(option)}
-                    className="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[14px] text-[#475569] transition-colors last:mb-0 hover:bg-[#3b82f6] hover:text-white"
+                    className="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] text-slate-700 transition-colors last:mb-0 hover:bg-slate-50"
                   >
                     <span>{option}</span>
                   </button>
@@ -500,16 +493,6 @@ export default function NewAddonPage() {
     applyImageFile(event.target.files?.[0]);
     event.target.value = "";
   };
-
-  useEffect(() => {
-    const header = document.querySelector("header") as HTMLElement | null;
-    const main = document.querySelector("main") as HTMLElement | null;
-    const prevHeader = header?.style.display ?? "";
-    const prevPadding = main?.style.padding ?? "";
-    if (header) header.style.display = "none";
-    if (main) main.style.padding = "0";
-    return () => { if (header) header.style.display = prevHeader; if (main) main.style.padding = prevPadding; };
-  }, []);
 
   useEffect(() => {
     const load = () => {
@@ -692,48 +675,56 @@ export default function NewAddonPage() {
     if (names.length > 0) setField("product", names[0]);
   };
 
+  const labelRequiredClass = "mb-1 block text-[13px] font-normal text-[#ef4444]";
+  const labelClass = "mb-1 block text-[13px] font-normal text-gray-700";
+  const inputBaseClass = "h-[34px] w-full rounded border border-gray-300 bg-white px-3 text-[13px] outline-none focus:border-blue-400 transition-all disabled:cursor-not-allowed disabled:bg-gray-100";
+  const textareaBaseClass = "w-full rounded border border-gray-300 bg-white p-2 text-[13px] outline-none focus:border-blue-400 transition-all disabled:cursor-not-allowed disabled:bg-gray-100 resize-none";
+
   return (
-    <div className="min-h-[calc(100vh-100px)] w-full overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+    <div className="w-full min-h-screen flex flex-col bg-gray-50 overflow-x-hidden">
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
         <h1 className="text-[18px] font-semibold text-slate-900">{isEditMode ? "Edit Addon" : "New Addon"}</h1>
-        <button onClick={handleCancel} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-gray-50">
-          Close
+        <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600 transition-colors" aria-label="Close">
+          <X size={20} />
         </button>
       </div>
 
-      <div className="space-y-6 p-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50">
+	        <div className="w-full max-w-[1120px] px-6 py-8">
+	          <div className="overflow-visible rounded-lg bg-transparent">
+	            <div className="space-y-6 p-6">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_280px]">
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
             <div className="w-full max-w-[520px]">
-              <label className="mb-1 block text-sm font-medium text-red-600">Product*</label>
+              <label className={labelRequiredClass}>Product*</label>
               <StyledDropdown value={form.product} options={products} onChange={(v) => setField("product", v)} placeholder="Select Product" footerLabel="New Product" onFooterClick={() => setNewProductOpen(true)} />
             </div>
             <div className="md:col-span-1" />
 
             <div className={`w-full max-w-[520px] ${inputsDisabled ? "opacity-60" : ""}`}>
-              <label className="mb-1 block text-sm font-medium text-red-600">Addon Name*</label>
-              <input type="text" value={form.addonName} disabled={inputsDisabled} onChange={(e) => setField("addonName", e.target.value)} className="w-full rounded-md border border-gray-300 p-2 text-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100" />
+              <label className={labelRequiredClass}>Addon Name*</label>
+              <input type="text" value={form.addonName} disabled={inputsDisabled} onChange={(e) => setField("addonName", e.target.value)} className={inputBaseClass} />
             </div>
             <div className={`w-full max-w-[520px] ${inputsDisabled ? "opacity-60" : ""}`}>
-              <label className="mb-1 block text-sm font-medium text-red-600">Addon Code*</label>
-              <input type="text" value={form.addonCode} disabled={inputsDisabled} onChange={(e) => setField("addonCode", e.target.value)} className="w-full rounded-md border border-gray-300 p-2 text-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100" />
+              <label className={labelRequiredClass}>Addon Code*</label>
+              <input type="text" value={form.addonCode} disabled={inputsDisabled} onChange={(e) => setField("addonCode", e.target.value)} className={inputBaseClass} />
             </div>
 
             <div className={`w-full max-w-[520px] ${inputsDisabled ? "opacity-60" : ""}`}>
-              <label className="mb-1 block text-sm font-medium text-slate-600">Addon Description</label>
-              <textarea value={form.description} disabled={inputsDisabled} onChange={(e) => setField("description", e.target.value)} className="h-20 w-full resize-none rounded-md border border-gray-300 p-2 text-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100" />
+              <label className={labelClass}>Addon Description</label>
+              <textarea value={form.description} disabled={inputsDisabled} onChange={(e) => setField("description", e.target.value)} className={`h-20 ${textareaBaseClass}`} />
             </div>
             <div className={`w-full max-w-[520px] ${inputsDisabled ? "opacity-60" : ""}`}>
-              <label className="mb-1 block text-sm font-medium text-red-600">Addon Type*</label>
+              <label className={labelRequiredClass}>Addon Type*</label>
               <div className="mt-2 flex gap-4">
-                <label className="flex cursor-pointer items-center text-sm"><input type="radio" name="addonType" checked={form.addonType === "One-time"} disabled={inputsDisabled} onChange={() => setField("addonType", "One-time")} className="mr-2 accent-blue-600 disabled:cursor-not-allowed" />One-time</label>
-                <label className="flex cursor-pointer items-center text-sm"><input type="radio" name="addonType" checked={form.addonType === "Recurring"} disabled={inputsDisabled} onChange={() => setField("addonType", "Recurring")} className="mr-2 accent-blue-600 disabled:cursor-not-allowed" />Recurring</label>
+                <label className="flex cursor-pointer items-center text-[13px] text-gray-700"><input type="radio" name="addonType" checked={form.addonType === "One-time"} disabled={inputsDisabled} onChange={() => setField("addonType", "One-time")} style={{ accentColor: "#1b5e6a" }} className="mr-2 disabled:cursor-not-allowed" />One-time</label>
+                <label className="flex cursor-pointer items-center text-[13px] text-gray-700"><input type="radio" name="addonType" checked={form.addonType === "Recurring"} disabled={inputsDisabled} onChange={() => setField("addonType", "Recurring")} style={{ accentColor: "#1b5e6a" }} className="mr-2 disabled:cursor-not-allowed" />Recurring</label>
               </div>
             </div>
 
             {form.addonType === "Recurring" ? (
               <div className={`w-full max-w-[520px] ${inputsDisabled ? "opacity-60" : ""}`}>
-                <label className="mb-1 block text-sm font-medium text-red-600">Pricing Interval*</label>
+                <label className={labelRequiredClass}>Pricing Interval*</label>
                 <StyledDropdown value={form.billingFrequency} options={BILLING_INTERVALS} onChange={(v) => setField("billingFrequency", v)} placeholder="Select interval" disabled={inputsDisabled} />
               </div>
             ) : null}
@@ -782,7 +773,7 @@ export default function NewAddonPage() {
               >
                 <ImageIcon size={42} className="mb-3 text-[#8a8aa0]" />
                 <p className="text-[14px] text-[#4b5563]">Drag image(s) here or</p>
-                <span className="text-[14px] text-[#2563eb]">Browse images</span>
+                <span className="text-[14px] text-[#156372]">Browse images</span>
               </div>
             )}
           </div>
@@ -811,7 +802,7 @@ export default function NewAddonPage() {
           <div className={`space-y-6 py-2 ${inputsDisabled ? "opacity-60" : ""}`}>
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
               <div className="w-full max-w-[520px]">
-                <label className="mb-1 block text-sm font-medium text-red-600">Pricing Model*</label>
+                <label className={labelRequiredClass}>Pricing Model*</label>
                 <StyledDropdown
                   value={form.pricingModel}
                   options={PRICING_MODELS}
@@ -840,7 +831,7 @@ export default function NewAddonPage() {
               </div>
               {!isFlatPricing ? (
                 <div className="w-full max-w-[520px]">
-                  <label className="mb-1 block text-sm font-medium text-red-600">Unit Name*</label>
+                  <label className={labelRequiredClass}>Unit Name*</label>
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
                       <StyledDropdown value={form.unit} options={unitOptions} onChange={(v) => setField("unit", v)} placeholder="Select Unit" disabled={inputsDisabled} />
@@ -1103,9 +1094,24 @@ export default function NewAddonPage() {
         ) : null}
       </div>
 
-      <div className="flex gap-3 border-t bg-gray-50 px-6 py-4">
-        <button onClick={handleSave} disabled={inputsDisabled} className="rounded bg-[#1b5e6a] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#0f4e5a] disabled:cursor-not-allowed disabled:opacity-50">{isEditMode ? "Save Changes" : "Save"}</button>
-        <button onClick={handleCancel} className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+	            <div className="flex gap-3 border-t border-gray-200 bg-transparent px-6 py-4">
+              <button
+                onClick={handleSave}
+                disabled={inputsDisabled}
+                className="cursor-pointer transition-all text-white px-8 py-1.5 rounded-lg border-[#0D4A52] border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px] flex items-center gap-2 text-[13px] font-semibold disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:border-b-[4px]"
+                style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+              >
+                {isEditMode ? "Save Changes" : "Save"}
+              </button>
+              <button
+                onClick={handleCancel}
+                className="cursor-pointer transition-all bg-white text-slate-600 px-8 py-1.5 rounded-lg border-slate-200 border border-b-[4px] hover:bg-slate-50 active:border-b-[2px] active:translate-y-[2px] text-[13px] font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <NewProductModal isOpen={newProductOpen} onClose={() => setNewProductOpen(false)} onSaveSuccess={onNewProductSaved} />
