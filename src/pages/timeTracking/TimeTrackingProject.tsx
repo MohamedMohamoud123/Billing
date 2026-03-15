@@ -7,10 +7,13 @@ import NewCustomViewForm from "./NewCustomViewForm";
 import NewLogEntryForm from "./NewLogEntryForm";
 import BulkUpdateModal, { BulkFieldOption } from "../Expense/shared/BulkUpdateModal";
 import ProjectsCustomizeColumnsModal from "./components/ProjectsCustomizeColumnsModal";
+import { useCurrency } from "../../hooks/useCurrency";
 
 export default function TimeTrackingProject() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { code: rawCurrencyCode } = useCurrency();
+  const baseCurrencyCode = rawCurrencyCode ? rawCurrencyCode.split(' ')[0].substring(0, 3).toUpperCase() : "KES";
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedView, setSelectedView] = useState("All");
   const [showCustomViewForm, setShowCustomViewForm] = useState(false);
