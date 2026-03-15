@@ -151,6 +151,7 @@ export default function CustomerApproval() {
 
             <div ref={newDropdownRef} className="relative flex items-center">
               <button
+                onClick={() => navigate('/time-tracking/customer-approvals/new')}
                 className="flex h-9 items-center gap-1.5 rounded-l-md border-none bg-[#408dfb] px-3.5 text-sm font-semibold text-white hover:bg-[#307deb] cursor-pointer"
               >
                 <Plus size={15} />
@@ -168,7 +169,7 @@ export default function CustomerApproval() {
               {showNewDropdown && (
                 <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
                   <button
-                    onClick={() => { setShowNewDropdown(false); }}
+                    onClick={() => { navigate('/time-tracking/customer-approvals/new'); setShowNewDropdown(false); }}
                     className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
                   >
                     <Plus size={14} />

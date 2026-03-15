@@ -301,13 +301,13 @@ export default function WeeklyTimeLog() {
                     <td className="p-3">
                       <select
                         className="w-full h-11 px-3 border border-slate-200 rounded text-[13px] text-slate-700 bg-white focus:border-[#2563eb] outline-none cursor-pointer appearance-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
-                        value={typeof row.task === 'string' ? row.task : (row.task?.taskName || row.task?.name || '')}
+                        value={row.task}
                         onChange={(e) => updateRow(row.id, "task", e.target.value)}
                         disabled={!row.project}
                       >
                         <option value="">Select task</option>
                         {tasks.filter(task => task != null).map((task, index) => {
-                          let taskName = typeof task === 'string' ? task : (task.taskName || task.name || 'Untitled');
+                          let taskName = typeof task === 'string' ? task : ((task as any).taskName || (task as any).name || 'Untitled');
                           return <option key={index} value={taskName}>{taskName}</option>;
                         })}
                       </select>
@@ -428,7 +428,7 @@ export default function WeeklyTimeLog() {
                           minutes: minutes || 0,
                           description: '',
                           billable: row.billable,
-                          task: typeof row.task === 'string' ? row.task : (row.task?.taskName || row.task?.name || ''),
+                          task: row.task,
                         });
                       }
                     }

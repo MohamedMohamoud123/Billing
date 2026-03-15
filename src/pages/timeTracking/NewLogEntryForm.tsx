@@ -420,7 +420,8 @@ export default function NewLogEntryForm({
                 </a>
               </>
             )}
-          </div>\n          {/* User Field */}
+          </div>
+          {/* User Field */}
           <div className="mb-5">
             <label className="text-sm font-medium text-[#ef4444] block mb-1.5">
               User<span className="text-red-500">*</span>
@@ -458,7 +459,7 @@ export default function NewLogEntryForm({
               value={logEntryData.notes}
               onChange={(e) => setLogEntryData({ ...logEntryData, notes: e.target.value })}
               placeholder="Add notes"
-              rows="4"
+              rows={4}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-md text-sm outline-none resize-y font-inherit focus:border-blue-500"
             />
           </div>

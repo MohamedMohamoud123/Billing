@@ -17,6 +17,7 @@ import ImportProjectTasks from "./ImportProjectTasks";
 import TimeTrackingProject from "./TimeTrackingProject";
 import Aptouvals from "./aprovals/aptouvals";
 import CustomerApproval from "./CustomerApproval/CustomerApproval";
+import NewCustomerApproval from "./CustomerApproval/NewCustomerApproval";
 
 
 
@@ -1183,6 +1184,7 @@ export default function TimeTrackingPage() {
         <Route path="timesheet/import" element={canCreateTimeTracking ? <ImportTimesheets /> : <AccessDenied />} />
         <Route path="approvals" element={<Aptouvals />} />
         <Route path="customer-approvals" element={<CustomerApproval />} />
+        <Route path="customer-approvals/new" element={<NewCustomerApproval />} />
         <Route
           path="*"
           element={<ProjectsPage />}
