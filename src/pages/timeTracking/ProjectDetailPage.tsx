@@ -1077,12 +1077,12 @@ export default function ProjectDetailPage() {
                   style={{
                     padding: "10px 14px",
                     border: "none",
-                    borderBottom: activeTab === tab ? "2px solid #2563eb" : "2px solid transparent",
+                    borderBottom: (!showCommentsPanel && activeTab === tab) ? "2px solid #2563eb" : "2px solid transparent",
                     backgroundColor: "transparent",
                     cursor: "pointer",
                     fontSize: "13px",
-                    fontWeight: activeTab === tab ? "600" : "400",
-                    color: activeTab === tab ? "#111827" : "#6b7280"
+                    fontWeight: (!showCommentsPanel && activeTab === tab) ? "600" : "400",
+                    color: (!showCommentsPanel && activeTab === tab) ? "#111827" : "#6b7280"
                   }}
                 >
                   {tab}
@@ -1098,9 +1098,12 @@ export default function ProjectDetailPage() {
                 gap: "6px",
                 border: "none",
                 background: "transparent",
-                color: "#2563eb",
+                color: "#111827",
                 fontSize: "13px",
-                cursor: "pointer"
+                cursor: "pointer",
+                fontWeight: showCommentsPanel ? "600" : "500",
+                borderBottom: showCommentsPanel ? "2px solid #2563eb" : "2px solid transparent",
+                padding: "10px 14px"
               }}
             >
               <MessageSquare size={14} />
@@ -1111,8 +1114,8 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={{ padding: "20px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
-        {showCommentsPanel && (
-          <div style={{ backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #e5e7eb", padding: "20px", marginBottom: "20px" }}>
+        {showCommentsPanel ? (
+          <div style={{ backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #e5e7eb", padding: "20px" }}>
             <div style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", marginBottom: "16px" }}>
               <div style={{ display: "flex", gap: "10px", padding: "8px 10px", borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
                 <button
@@ -1223,7 +1226,7 @@ export default function ProjectDetailPage() {
               )}
             </div>
           </div>
-        )}
+        ) : (
         <>
           {activeTab === "Overview" && (
             <>
@@ -3062,6 +3065,7 @@ export default function ProjectDetailPage() {
             </div>
           )}
         </>
+        )}
       </div>
       {/* Add Users Modal */}
       {showAddUserModal && (
