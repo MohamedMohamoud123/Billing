@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { projectsAPI, timeEntriesAPI } from "../../services/api";
+import { projectsAPI, timeEntriesAPI, invoicesAPI, quotesAPI, creditNotesAPI, refundsAPI } from "../../services/api";
 import { toast } from "react-toastify";
 import { useCurrency } from "../../hooks/useCurrency";
 import NewLogEntryForm from "./NewLogEntryForm";
@@ -12,6 +12,11 @@ export default function ProjectDetailPage() {
   const { code: rawCurrencyCode } = useCurrency();
   const baseCurrencyCode = rawCurrencyCode ? rawCurrencyCode.split(' ')[0].substring(0, 3).toUpperCase() : "KES";
   const [project, setProject] = useState(null);
+  const [salesInvoices, setSalesInvoices] = useState<any[]>([]);
+  const [salesQuotes, setSalesQuotes] = useState<any[]>([]);
+  const [salesRetainerInvoices, setSalesRetainerInvoices] = useState<any[]>([]);
+  const [salesCreditNotes, setSalesCreditNotes] = useState<any[]>([]);
+  const [salesRefunds, setSalesRefunds] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("Overview");
   const [showLogEntryForm, setShowLogEntryForm] = useState(false);
   const [showTransactionDropdown, setShowTransactionDropdown] = useState(false);
@@ -164,6 +169,168 @@ export default function ProjectDetailPage() {
       setItemDescriptionSearch('');
     }
   }, [showProjectInvoiceInfo]);
+
+  const toKey = (value) => String(value ?? "").trim();
+  const toNameKey = (value) => String(value ?? "").trim().toLowerCase();
+
+  const isRetainerInvoice = (invoice) => {
+    const type = toNameKey(invoice?.invoiceType || invoice?.type || invoice?.kind || "");
+    const number = String(invoice?.retainerNumber || invoice?.invoiceNumber || invoice?.number || "")
+      .toUpperCase()
+      .trim();
+    return type.includes("retainer") || number.startsWith("RET-");
+  };
+
+  const matchesProject = (record, projectKey, projectNameKey) => {
+    if (!record) return false;
+    const directProjectId =
+      record?.projectId ||
+      record?.project?._id ||
+      record?.project?.id ||
+      record?.project ||
+      record?.project_code ||
+      record?.projectCode ||
+      record?.project_id ||
+      "";
+    if (projectKey && toKey(directProjectId) === projectKey) return true;
+
+    const directProjectName =
+      record?.projectName ||
+      record?.project?.projectName ||
+      record?.project?.name ||
+      record?.project_name ||
+      record?.projectTitle ||
+      record?.name ||
+      "";
+    if (projectNameKey && toNameKey(directProjectName) === projectNameKey) return true;
+
+    const projectsArray = Array.isArray(record?.projects) ? record.projects : [];
+    if (projectsArray.length > 0) {
+      const anyMatch = projectsArray.some((projectItem) => {
+        const projectItemId = projectItem?._id || projectItem?.id || projectItem?.projectId || projectItem?.project || "";
+        if (projectKey && toKey(projectItemId) === projectKey) return true;
+        const projectItemName = projectItem?.projectName || projectItem?.name || "";
+        return projectNameKey && toNameKey(projectItemName) === projectNameKey;
+      });
+      if (anyMatch) return true;
+    }
+
+    const items = Array.isArray(record?.items)
+      ? record.items
+      : Array.isArray(record?.lineItems)
+        ? record.lineItems
+        : Array.isArray(record?.rows)
+          ? record.rows
+          : [];
+    if (items.length > 0) {
+      return items.some((item) => {
+        const itemProjectId =
+          item?.projectId ||
+          item?.project?._id ||
+          item?.project?.id ||
+          item?.project ||
+          item?.project_id ||
+          "";
+        if (projectKey && toKey(itemProjectId) === projectKey) return true;
+        const itemProjectName = item?.projectName || item?.project?.projectName || item?.project?.name || "";
+        return projectNameKey && toNameKey(itemProjectName) === projectNameKey;
+      });
+    }
+
+    return false;
+  };
+
+  const uniqByKey = (rows) => {
+    const map = new Map<string, any>();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const key =
+        toKey(row?._id || row?.id) ||
+        toKey(row?.invoiceNumber || row?.number || row?.quoteNumber || row?.creditNoteNumber || row?.refundNumber) ||
+        `${toKey(row?.date || row?.createdAt)}-${Math.random().toString(36).slice(2)}`;
+      if (!map.has(key)) map.set(key, row);
+    });
+    return Array.from(map.values());
+  };
+
+  const readFallbackArray = (value) => (Array.isArray(value) ? value : []);
+
+  useEffect(() => {
+    if (!project) return;
+    let cancelled = false;
+
+    const loadSalesTransactions = async () => {
+      const projectKey = toKey(project?.id || project?.projectId || project?._id || projectId || "");
+      const projectNameKey = toNameKey(project?.projectName || project?.name || "");
+
+      const [invoiceRes, quoteRes, creditRes, refundRes] = await Promise.all([
+        invoicesAPI.getAll({ limit: 10000 }).catch(() => null),
+        quotesAPI.getAll({ limit: 10000 }).catch(() => null),
+        creditNotesAPI.getAll({ limit: 10000 }).catch(() => null),
+        refundsAPI.getAll({ limit: 10000 }).catch(() => null),
+      ]);
+
+      const rawInvoices = uniqByKey([
+        ...(Array.isArray(invoiceRes?.data) ? invoiceRes.data : []),
+        ...readFallbackArray(project?.salesInvoices),
+        ...readFallbackArray(project?.invoices),
+      ]);
+      const rawQuotes = uniqByKey([
+        ...(Array.isArray(quoteRes?.data) ? quoteRes.data : []),
+        ...readFallbackArray(project?.quotes),
+        ...readFallbackArray(project?.salesQuotes),
+      ]);
+      const rawCreditNotes = uniqByKey([
+        ...(Array.isArray(creditRes?.data) ? creditRes.data : []),
+        ...readFallbackArray(project?.creditNotes),
+        ...readFallbackArray(project?.salesCreditNotes),
+      ]);
+      const rawRefunds = uniqByKey([
+        ...(Array.isArray(refundRes?.data) ? refundRes.data : []),
+        ...readFallbackArray(project?.refunds),
+        ...readFallbackArray(project?.salesRefunds),
+      ]);
+
+      const matchedInvoices = rawInvoices.filter((row) => matchesProject(row, projectKey, projectNameKey));
+      const matchedQuotes = rawQuotes.filter((row) => matchesProject(row, projectKey, projectNameKey));
+      const matchedCreditNotes = rawCreditNotes.filter((row) => matchesProject(row, projectKey, projectNameKey));
+      const matchedRefunds = rawRefunds.filter((row) => matchesProject(row, projectKey, projectNameKey));
+
+      const retainerInvoices = matchedInvoices.filter((row) => isRetainerInvoice(row));
+      const regularInvoices = matchedInvoices.filter((row) => !isRetainerInvoice(row));
+
+      if (cancelled) return;
+      setSalesInvoices(regularInvoices);
+      setSalesRetainerInvoices(retainerInvoices);
+      setSalesQuotes(matchedQuotes);
+      setSalesCreditNotes(matchedCreditNotes);
+      setSalesRefunds(matchedRefunds);
+    };
+
+    loadSalesTransactions();
+
+    const onStorage = (event) => {
+      const key = event?.key || "";
+      const watched = [
+        "taban_books_invoices",
+        "taban_books_quotes",
+        "taban_books_credit_notes",
+        "taban_books_sales_receipts",
+        "taban_books_refunds",
+      ];
+      if (!key || watched.includes(key)) {
+        loadSalesTransactions();
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", loadSalesTransactions);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", loadSalesTransactions);
+    };
+  }, [project, projectId]);
 
   // Load comments for this project
   useEffect(() => {
@@ -567,14 +734,6 @@ export default function ProjectDetailPage() {
       return String(value);
     }
   };
-
-  const getArray = (value) => (Array.isArray(value) ? value : []);
-
-  const salesInvoices = getArray(project?.salesInvoices || project?.invoices);
-  const salesQuotes = getArray(project?.quotes || project?.salesQuotes);
-  const salesRetainerInvoices = getArray(project?.retainerInvoices || project?.retainers);
-  const salesCreditNotes = getArray(project?.creditNotes || project?.salesCreditNotes);
-  const salesRefunds = getArray(project?.refunds || project?.salesRefunds);
 
   const currencyCode = project?.currency || baseCurrencyCode;
   const formatMoney = (value: any) =>
