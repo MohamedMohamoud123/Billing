@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
-import { X, Search, ArrowUpDown, ChevronRight, Download, Upload, Settings, RefreshCw, Edit3, Eye, EyeOff, Info, ChevronDown, Play, Pause, Square, Trash2, Plus, MoreVertical, SlidersHorizontal, LayoutGrid, List } from 'lucide-react';
+import { X, Search, ArrowUpDown, ChevronRight, Download, Upload, Settings, RefreshCw, Edit3, Eye, EyeOff, Info, ChevronDown, Play, Pause, Square, Trash2, Plus, MoreVertical, MoreHorizontal, SlidersHorizontal, LayoutGrid, List } from 'lucide-react';
 import { projectsAPI, timeEntriesAPI } from "../../services/api";
 import toast from "react-hot-toast";
 import { usePermissions } from "../../hooks/usePermissions";

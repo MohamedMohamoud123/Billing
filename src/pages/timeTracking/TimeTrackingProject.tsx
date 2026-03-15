@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { X, Search, ArrowUpDown, ChevronRight, ChevronDown, Download, Upload, Settings, Eye, EyeOff, Info, List, LayoutGrid, SlidersHorizontal, MoreVertical, Plus, Pause, Play, Square, Trash2, AlertTriangle } from "lucide-react";
+import { X, Search, ArrowUpDown, ChevronRight, ChevronDown, Download, Upload, Settings, Eye, EyeOff, Info, List, LayoutGrid, SlidersHorizontal, MoreVertical, MoreHorizontal, Plus, Pause, Play, Square, Trash2, AlertTriangle, Clock, Receipt } from "lucide-react";
 import { projectsAPI, timeEntriesAPI, customersAPI, usersAPI } from "../../services/api";
 import { toast } from "react-toastify";
 import NewCustomViewForm from "./NewCustomViewForm";
 import NewLogEntryForm from "./NewLogEntryForm";
-import BulkUpdateModal from "../Expense/shared/BulkUpdateModal";
+import BulkUpdateModal, { BulkFieldOption } from "../Expense/shared/BulkUpdateModal";
 import ProjectsCustomizeColumnsModal from "./components/ProjectsCustomizeColumnsModal";
 
 export default function TimeTrackingProject() {
@@ -663,7 +663,7 @@ export default function TimeTrackingProject() {
   };
 
   // Field options for bulk update modal.
-  const projectFieldOptions = useMemo(() => ([
+  const projectFieldOptions = useMemo<BulkFieldOption[]>(() => ([
     {
       value: "customer",
       label: "Customer Name",
@@ -1710,7 +1710,6 @@ export default function TimeTrackingProject() {
       URL.revokeObjectURL(url);
     }
   };
-
   return (
     <div className="flex flex-col w-full relative h-[calc(100vh-64px)] overflow-hidden">
       {/* Header */}
@@ -1814,7 +1813,7 @@ export default function TimeTrackingProject() {
             <div ref={newDropdownRef} className="relative flex items-center">
               <button
                 onClick={() => navigate('/time-tracking/projects/new')}
-                className="flex h-9 items-center gap-1.5 rounded-l-md border-none bg-emerald-500 px-3.5 text-sm font-semibold text-white hover:bg-emerald-600"
+                className="flex h-9 items-center gap-1.5 rounded-l-md border-none bg-[#408dfb] px-3.5 text-sm font-semibold text-white hover:bg-[#307deb] cursor-pointer"
               >
                 <Plus size={15} />
                 New
@@ -1824,14 +1823,14 @@ export default function TimeTrackingProject() {
                   e.stopPropagation();
                   setShowNewDropdown(!showNewDropdown);
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-r-md border-none border-l border-l-white/30 bg-emerald-500 text-white hover:bg-emerald-600"
+                className="flex h-9 w-9 items-center justify-center rounded-r-md border-none border-l border-white/20 bg-[#408dfb] text-white hover:bg-[#307deb] cursor-pointer"
               >
                 <ChevronDown size={14} />
               </button>
             </div>
 
-            <button className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white p-0 text-gray-500 hover:bg-gray-100">
-              <MoreVertical size={16} />
+            <button className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-[#f4f4f4] p-0 text-gray-700 hover:bg-gray-200 cursor-pointer ml-1">
+              <MoreHorizontal size={18} />
             </button>
           </div>
         </div>
@@ -2002,7 +2001,7 @@ export default function TimeTrackingProject() {
                       setShowProjectFields(true);
                       setShowTimerModal(true);
                     }}
-                    className="rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 hover:bg-gray-50"
+                    className="flex items-center gap-2 rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 transition-colors hover:bg-[#e5e7eb]"
                   >
                     Log Time
                   </button>
@@ -2033,7 +2032,7 @@ export default function TimeTrackingProject() {
                         },
                       });
                     }}
-                    className="rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 hover:bg-gray-50"
+                    className="flex items-center gap-2 rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 transition-colors hover:bg-[#e5e7eb]"
                   >
                     Create Expense
                   </button>
