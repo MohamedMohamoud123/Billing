@@ -61,6 +61,8 @@ export default function CustomerApproval() {
     { id: "Rejected", label: "Rejected" },
   ];
 
+  const selectedViewLabel = views.find(v => v.id === selectedView)?.label || "All Customer Approvals";
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -108,15 +110,15 @@ export default function CustomerApproval() {
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               className="flex items-center gap-2 border-none bg-transparent p-0 text-[32px] font-semibold text-gray-800 hover:text-gray-900 cursor-pointer"
             >
-              {views.find(v => v.id === selectedView)?.label}
-              <ChevronDown size={14} className="text-[#156372]" />
+              {selectedViewLabel}
+              <ChevronDown className={`transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} size={24} />
             </button>
             {isDropdownOpen && (
-              <div className="absolute left-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
-                {views.map((view) => (
+              <div className="absolute left-0 top-full z-[1200] mt-2 min-w-[240px] rounded-md border border-gray-200 bg-white py-2 shadow-xl">
+                {views.map(view => (
                   <button
                     key={view.id}
-                    onClick={() => { setSelectedView(view.id); setIsDropdownOpen(false); }}
+                    onClick={() => { setSelectedView(view.id as any); setIsDropdownOpen(false); }}
                     className={`mx-2 mb-1 flex w-[calc(100%-16px)] items-center justify-between rounded border px-3 py-2 text-left text-sm ${selectedView === view.id ? "border-[#156372] bg-[#156372]/10 text-gray-800" : "border-transparent text-gray-700 hover:bg-gray-50"} border-none cursor-pointer`}
                   >
                     {view.label}
