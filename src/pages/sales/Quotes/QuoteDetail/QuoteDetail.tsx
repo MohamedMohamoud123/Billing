@@ -384,7 +384,7 @@ const QuoteDetail = () => {
     if (quoteId) {
       localStorage.setItem(`quote_activity_logs_${quoteId}`, JSON.stringify(nextLogs));
       try {
-        await updateQuote(quoteId, { activityLogs: nextLogs });
+        await updateQuote(quoteId, { activityLogs: nextLogs } as any);
       } catch (error) {
         console.error("Error persisting activity logs:", error);
       }
@@ -505,7 +505,7 @@ const QuoteDetail = () => {
             resolvedActivityLogs = [seedEntry];
             localStorage.setItem(`quote_activity_logs_${quoteId}`, JSON.stringify(resolvedActivityLogs));
             try {
-              await updateQuote(quoteId, { activityLogs: resolvedActivityLogs });
+              await updateQuote(quoteId, { activityLogs: resolvedActivityLogs } as any);
             } catch (error) {
               console.error("Error seeding activity logs:", error);
             }
@@ -978,8 +978,8 @@ const QuoteDetail = () => {
     let taxLabel = explicitTaxName;
     if (!taxLabel) {
       const rates = Array.from(new Set((quoteData?.items || [])
-        .map((item) => toNumber(item?.taxRate))
-        .filter((rate) => rate > 0)));
+        .map((item: any) => toNumber(item?.taxRate))
+        .filter((rate: number) => rate > 0))) as number[];
       if (rates.length === 1) {
         const rateValue = rates[0];
         const rateText = Number.isInteger(rateValue) ? rateValue.toFixed(0) : rateValue.toFixed(2);
@@ -2150,7 +2150,7 @@ const QuoteDetail = () => {
       return;
     }
 
-    const validFiles = Array.from(files).filter(file => {
+    const validFiles = Array.from(files as ArrayLike<File>).filter((file: File) => {
       if (file.size > 10 * 1024 * 1024) {
         toast.error(`File ${file.name} is too large. Maximum size is 10MB.`);
         return false;
@@ -2201,6 +2201,7 @@ const QuoteDetail = () => {
       const attachedFilesPayload = updatedAttachments
         .filter((attachment) => attachment.url)
         .map((attachment) => ({
+          id: attachment.id,
           name: attachment.name,
           url: attachment.url,
           size: Number(attachment.size || 0),
@@ -2257,6 +2258,7 @@ const QuoteDetail = () => {
       const attachedFilesPayload = updatedAttachments
         .filter((attachment) => attachment.url)
         .map((attachment) => ({
+          id: attachment.id,
           name: attachment.name,
           url: attachment.url,
           size: Number(attachment.size || 0),
@@ -2323,6 +2325,7 @@ const QuoteDetail = () => {
     setIsSavingComment(true);
     try {
       const commentsPayload = updatedComments.map((entry) => ({
+        id: entry.id,
         text: entry.text,
         author: entry.author || "User",
         timestamp: entry.timestamp,
@@ -2364,11 +2367,11 @@ const QuoteDetail = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,.csv';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
+    input.onchange = (e: any) => {
+      const file = e.target.files?.[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = async (event) => {
+        reader.onload = async (event: any) => {
           try {
             const importedData = JSON.parse(event.target.result);
             if (Array.isArray(importedData)) {
@@ -2459,8 +2462,8 @@ const QuoteDetail = () => {
           onClick={() => navigate("/sales/quotes")}
           className="px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
           style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-          onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-          onMouseLeave={(e) => e.target.style.opacity = "1"}
+          onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+          onMouseLeave={(e: any) => e.target.style.opacity = "1"}
         >
           Back to Quotes
         </button>
@@ -3315,8 +3318,8 @@ const QuoteDetail = () => {
                         <button
                           className="flex items-center gap-2 px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors shadow-md"
                           style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                          onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                          onMouseLeave={(e) => e.target.style.opacity = "1"}
+                          onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                          onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                           onClick={() => setIsCustomizeDropdownOpen(!isCustomizeDropdownOpen)}
                         >
                           <Settings size={16} />
@@ -3420,7 +3423,7 @@ const QuoteDetail = () => {
                           ))
                         ) : (
                           <tr>
-                            <td colSpan="5" style={{ padding: "24px", textAlign: "center", color: "#666", fontSize: "14px" }}>
+                            <td colSpan={5} style={{ padding: "24px", textAlign: "center", color: "#666", fontSize: "14px" }}>
                               No items added
                             </td>
                           </tr>
@@ -3669,7 +3672,7 @@ const QuoteDetail = () => {
                             ))
                           ) : (
                             <tr>
-                              <td colSpan="5" className="py-8 px-4 text-center text-sm text-gray-500">No items added</td>
+                              <td colSpan={5} className="py-8 px-4 text-center text-sm text-gray-500">No items added</td>
                             </tr>
                           )}
                         </tbody>
@@ -3945,8 +3948,8 @@ const QuoteDetail = () => {
                 <button
                   className="px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                   style={{ background: (!bulkUpdateField || !bulkUpdateValue) ? "#9ca3af" : "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => { if (bulkUpdateField && bulkUpdateValue) e.target.style.opacity = "0.9" }}
-                  onMouseLeave={(e) => { if (bulkUpdateField && bulkUpdateValue) e.target.style.opacity = "1" }}
+                  onMouseEnter={(e: any) => { if (bulkUpdateField && bulkUpdateValue) e.target.style.opacity = "0.9" }}
+                  onMouseLeave={(e: any) => { if (bulkUpdateField && bulkUpdateValue) e.target.style.opacity = "1" }}
                   onClick={handleBulkUpdateSubmit}
                   disabled={!bulkUpdateField || !bulkUpdateValue}
                 >
@@ -3992,8 +3995,8 @@ const QuoteDetail = () => {
                 <button
                   className="w-full sm:w-auto px-6 py-2.5 text-white rounded-md text-sm font-medium cursor-pointer hover:opacity-90 transition-colors"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={handleConfirmMarkAsSent}
                 >
                   Mark as Sent
@@ -4023,8 +4026,8 @@ const QuoteDetail = () => {
                 <button
                   className="px-4 py-2 text-white border-none rounded-md text-sm font-medium cursor-pointer transition-all flex items-center gap-2"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={handleConfirmDelete}
                 >
                   <Trash2 size={16} />
@@ -4241,7 +4244,7 @@ const QuoteDetail = () => {
                     textDecoration: isUnderline ? "underline" : isStrikethrough ? "line-through" : "none",
                     fontSize: `${fontSize}px`,
                   }}
-                  onInput={(e) => setEmailData({ ...emailData, body: e.target.textContent })}
+                  onInput={(e: any) => setEmailData({ ...emailData, body: e.target.textContent })}
                   suppressContentEditableWarning={true}
                 >
                   {/* Logo */}
@@ -4428,8 +4431,8 @@ const QuoteDetail = () => {
                 <button
                   className="px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={() => {
                     if (!emailData.sendTo) {
                       toast.error("Please enter a recipient email address.");
@@ -4557,8 +4560,8 @@ const QuoteDetail = () => {
                     <button
                       className="px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
                       style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                      onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                      onMouseLeave={(e) => e.target.style.opacity = "1"}
+                      onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                      onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                       onClick={handleCopyLink}
                     >
                       Copy Link
@@ -4570,8 +4573,8 @@ const QuoteDetail = () => {
                     <button
                       className="px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
                       style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                      onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                      onMouseLeave={(e) => e.target.style.opacity = "1"}
+                      onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                      onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                       onClick={handleGenerateLink}
                     >
                       Generate Link
@@ -4910,8 +4913,8 @@ const QuoteDetail = () => {
                   <button
                     className="flex items-center gap-2 px-4 py-2 text-white rounded-md text-sm font-medium cursor-pointer transition-colors"
                     style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                    onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                    onMouseLeave={(e) => e.target.style.opacity = "1"}
+                    onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                    onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   >
                     <Plus size={16} />
                     New
@@ -4980,8 +4983,8 @@ const QuoteDetail = () => {
                 <button
                   className="p-2 text-white rounded transition-colors"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={() => setIsOrganizationAddressModalOpen(false)}
                 >
                   <X size={20} />
@@ -5004,8 +5007,8 @@ const QuoteDetail = () => {
                         <button
                           className="absolute -top-2 -right-2 p-1 text-white rounded-full transition-colors"
                           style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                          onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                          onMouseLeave={(e) => e.target.style.opacity = "1"}
+                          onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                          onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                           onClick={() => {
                             setLogoPreview(null);
                             setLogoFile(null);
@@ -5040,8 +5043,8 @@ const QuoteDetail = () => {
                       <button
                         className="px-4 py-2 text-white rounded-md text-sm font-medium transition-colors"
                         style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                        onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                        onMouseLeave={(e) => e.target.style.opacity = "1"}
+                        onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                        onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                         onClick={() => organizationAddressFileInputRef.current?.click()}
                       >
                         Upload Logo
@@ -5140,8 +5143,8 @@ const QuoteDetail = () => {
                 <button
                   className="px-4 py-2 text-white rounded-md text-sm font-medium transition-colors"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={() => {
                     void updateOrganizationProfile(organizationData);
                     toast.success("Organization address updated.");
@@ -5174,8 +5177,8 @@ const QuoteDetail = () => {
                 <button
                   className="p-2 text-white rounded transition-colors"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={() => setIsTermsAndConditionsModalOpen(false)}
                 >
                   <X size={20} />
@@ -5230,8 +5233,8 @@ const QuoteDetail = () => {
                 <button
                   className="px-4 py-2 text-white rounded-md text-sm font-medium transition-colors"
                   style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
-                  onMouseEnter={(e) => e.target.style.opacity = "0.9"}
-                  onMouseLeave={(e) => e.target.style.opacity = "1"}
+                  onMouseEnter={(e: any) => e.target.style.opacity = "0.9"}
+                  onMouseLeave={(e: any) => e.target.style.opacity = "1"}
                   onClick={() => {
                     toast.success("Terms and conditions updated.");
                     setIsTermsAndConditionsModalOpen(false);

@@ -8902,6 +8902,7 @@ export default function CustomerDetail() {
                                             setIsZohoMailIntegrationModalOpen(false);
                                             // Add your integration logic here
                                             toast.success("Zoho Mail integration enabled!");
+
                                         }}
                                         className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 cursor-pointer transition-colors"
                                     >

@@ -464,67 +464,57 @@ const defaultTxSeries = [
   { id: "series-cn", _id: "series-cn", module: "credit-notes", prefix: "CN-", nextNumber: 1, status: "Active" },
 ];
 
+export const recordEvent = async (type: string, data: any, source: string = "user") => {
+  try {
+    const events = readLocalCollection(LOCAL_EVENTS_KEY);
+    const now = new Date();
+    const eventId = `8628362000${Math.floor(Math.random() * 900000000) + 100000000}`;
+    const newEvent = {
+      id: `evt_${Date.now()}`,
+      event_id: eventId,
+      event_type: type,
+      created_time: now.toISOString(),
+      occurred_at: now.toISOString(), // For backward compatibility with previous mock
+      event_time: now.toISOString().split('T')[0],
+      event_time_formatted: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(now),
+      event_source: source,
+      source: source, // For backward compatibility
+      data: data
+    };
+    events.unshift(newEvent);
+    writeLocalCollection(LOCAL_EVENTS_KEY, events);
+    return { success: true, data: newEvent };
+  } catch (error) {
+    console.error("Failed to record event", error);
+    return { success: false };
+  }
+};
+
 const defaultEvents = [
   {
     id: "evt_001",
     event_id: "8628362000000109578",
-    event_type: "Customer Updated",
-    occurred_at: "2026-03-14T10:39:27+03:00",
-    source: "User",
+    event_type: "customer_updated",
+    created_time: "2026-03-14T10:39:27+0100",
+    occurred_at: "2026-03-14T10:39:27+0100",
+    event_time: "2026-03-14",
+    event_time_formatted: "14 Mar 2026",
+    event_source: "user",
+    source: "user",
     data: {
       customer: {
-        id: "cus_001",
-        displayName: "Taban Enterprise",
-        email: "contact@taban.example",
-        status: "Active",
+        updated_time: "2026-03-14T10:39:27+0100",
+        display_name: "hgv ccc",
+        company_name: "dd",
+        email: "252forme@gmail.com",
+        status: "active",
+        currency_code: "USD",
+        outstanding_receivable_amount: 2453.28,
         billing_address: {
-          address: "Main Rd, Mogadishu",
+          country: "Algeria",
           city: "Mogadishu",
-          country: "Somalia"
+          street: "Main Rd, Mogadishu"
         }
-      }
-    }
-  },
-  {
-    id: "evt_002",
-    event_id: "8628362000000109551",
-    event_type: "Invoice Created",
-    occurred_at: "2026-03-14T10:30:15+03:00",
-    source: "User",
-    data: {
-      invoice: {
-        invoice_number: "INV-001",
-        customer_name: "John Doe",
-        total: 500,
-        currency: "USD"
-      }
-    }
-  },
-  {
-    id: "evt_003",
-    event_id: "8628362000000109532",
-    event_type: "Payment Received",
-    occurred_at: "2026-03-14T09:15:00+03:00",
-    source: "System",
-    data: {
-      payment: {
-        payment_number: "PAY-001",
-        amount_received: 200,
-        payment_mode: "Bank Transfer"
-      }
-    }
-  },
-  {
-    id: "evt_004",
-    event_id: "8628362000000109511",
-    event_type: "Subscription Activated",
-    occurred_at: "2026-03-14T08:12:00+03:00",
-    source: "Scheduler",
-    data: {
-      subscription: {
-        id: "sub_001",
-        plan_name: "Basic Plan",
-        status: "Active"
       }
     }
   }
@@ -631,6 +621,7 @@ export const customersAPI = {
     }
 
     const created = writeCustomerLocal(input);
+    recordEvent("customer_created", { customer: created });
     return { success: true, data: created, message: "Customer saved locally" };
   },
   update: async (id: string, data: any) => {
@@ -640,6 +631,7 @@ export const customersAPI = {
     if (!updated) {
       return { success: false, message: "Customer not found", data: null };
     }
+    recordEvent("customer_updated", { customer: updated });
     return { success: true, data: updated, message: "Customer updated locally" };
   },
   delete: async (id: string) => {
@@ -650,6 +642,7 @@ export const customersAPI = {
       return { success: false, message: "Customer not found", data: null };
     }
     db.customers.remove(customerId);
+    recordEvent("customer_deleted", { customer_id: customerId, customer_name: buildCustomerName(existing) });
     return { success: true, data: { id: customerId }, message: "Customer deleted locally" };
   },
   bulkUpdate: async (ids: string[], data: any) => {
@@ -822,6 +815,7 @@ export const itemsAPI = {
     };
     items.unshift(created);
     writeLocalCollection(ITEMS_STORAGE_KEY, items);
+    recordEvent("item_created", { item: created });
     return { success: true, data: created };
   },
   update: async (id: string, data: any) => {
@@ -839,6 +833,7 @@ export const itemsAPI = {
     };
     items[idx] = updated;
     writeLocalCollection(ITEMS_STORAGE_KEY, items);
+    recordEvent("item_updated", { item: updated });
     return { success: true, data: updated };
   },
   delete: async (id: string) => {
@@ -846,6 +841,7 @@ export const itemsAPI = {
     const items = readLocalCollection(ITEMS_STORAGE_KEY);
     const filtered = items.filter((row: any) => String(row?.id || row?._id) !== itemId);
     writeLocalCollection(ITEMS_STORAGE_KEY, filtered);
+    recordEvent("item_deleted", { item_id: itemId });
     return { success: true, data: { id: itemId } };
   },
 };
@@ -1002,6 +998,21 @@ export const invoicesAPI = {
     const next = (all.pagination?.total || 0) + 1;
     return { success: true, data: { nextNumber: `${prefix || "INV-"}${String(next).padStart(5, "0")}` } };
   },
+  create: async (data: any) => {
+    const res = await invoicesLocal.create(data);
+    if (res.success) recordEvent("invoice_created", { invoice: res.data });
+    return res;
+  },
+  update: async (id: string, data: any) => {
+    const res = await invoicesLocal.update(id, data);
+    if (res.success) recordEvent("invoice_updated", { invoice: res.data });
+    return res;
+  },
+  delete: async (id: string) => {
+    const res = await invoicesLocal.delete(id);
+    if (res.success) recordEvent("invoice_deleted", { invoice_id: id });
+    return res;
+  },
   sendEmail: async (id: string, data: any) => ({
     success: true,
     data: { id, queued: true, type: "invoice", ...data },
@@ -1029,6 +1040,21 @@ export const paymentsReceivedAPI = {
     });
     const { data, pagination } = paginateRows(filterRowsByParams(filtered, params), params);
     return { success: true, data, pagination };
+  },
+  create: async (data: any) => {
+    const res = await paymentsReceivedLocal.create(data);
+    if (res.success) recordEvent("payment_received", { payment: res.data });
+    return res;
+  },
+  update: async (id: string, data: any) => {
+    const res = await paymentsReceivedLocal.update(id, data);
+    if (res.success) recordEvent("payment_updated", { payment: res.data });
+    return res;
+  },
+  delete: async (id: string) => {
+    const res = await paymentsReceivedLocal.delete(id);
+    if (res.success) recordEvent("payment_deleted", { payment_id: id });
+    return res;
   },
 };
 
@@ -1082,6 +1108,21 @@ export const quotesAPI = {
     const all = await quotesLocal.getAll({ limit: 100000 });
     const next = (all.pagination?.total || 0) + 1;
     return { success: true, data: { nextNumber: `${prefix || "QU-"}${String(next).padStart(5, "0")}` } };
+  },
+  create: async (data: any) => {
+    const res = await quotesLocal.create(data);
+    if (res.success) recordEvent("quote_created", { quote: res.data });
+    return res;
+  },
+  update: async (id: string, data: any) => {
+    const res = await quotesLocal.update(id, data);
+    if (res.success) recordEvent("quote_updated", { quote: res.data });
+    return res;
+  },
+  delete: async (id: string) => {
+    const res = await quotesLocal.delete(id);
+    if (res.success) recordEvent("quote_deleted", { quote_id: id });
+    return res;
   },
   sendEmail: async (id: string, data: any) => ({
     success: true,
@@ -1161,6 +1202,7 @@ export const expensesAPI = {
       expense_id: data?.expense_id || data?._id || data?.id,
     };
     const response = await expensesLocal.create(payload);
+    if (response.success) recordEvent("expense_created", { expense: response.data });
     return {
       ...response,
       code: response?.success ? 0 : 1,
@@ -1169,6 +1211,7 @@ export const expensesAPI = {
   },
   update: async (id: string, data: any) => {
     const response = await expensesLocal.update(id, data);
+    if (response.success) recordEvent("expense_updated", { expense: response.data });
     return {
       ...response,
       code: response?.success ? 0 : 1,
@@ -1177,6 +1220,7 @@ export const expensesAPI = {
   },
   delete: async (id: string) => {
     const response = await expensesLocal.delete(id);
+    if (response.success) recordEvent("expense_deleted", { expense_id: id });
     return {
       ...response,
       code: response?.success ? 0 : 1,

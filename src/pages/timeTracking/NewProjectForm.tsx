@@ -1,11 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { customersAPI, projectsAPI } from "../../services/api";
 import { getCurrentUser } from "../../services/auth";
 import toast from "react-hot-toast";
-import NewCustomerForm from "./NewCustomerForm";
 import { Search, Download, Plus, X, ChevronDown, Check } from "lucide-react";
 import { useCurrency } from "../../hooks/useCurrency";
+
+type ProjectUserRow = {
+  id: number;
+  name: string;
+  email: string;
+  userId?: string;
+  costPerHour: string;
+  isEditable: boolean;
+  budgetHours?: string;
+};
+
+type ProjectTaskRow = {
+  id: number;
+  taskName: string;
+  description: string;
+  billable: boolean;
+  budgetHours?: string;
+};
 
 export default function NewProjectForm() {
   const navigate = useNavigate();
@@ -41,9 +59,14 @@ export default function NewProjectForm() {
     { value: "task-hours", label: "Based on Task Hours" },
     { value: "staff-hours", label: "Based on Staff Hours" }
   ];
-  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [isNewCustomerQuickActionOpen, setIsNewCustomerQuickActionOpen] = useState(false);
+  const [customerQuickActionBaseIds, setCustomerQuickActionBaseIds] = useState([]);
+  const [isRefreshingCustomersQuickAction, setIsRefreshingCustomersQuickAction] = useState(false);
+  const [isAutoSelectingCustomerFromQuickAction, setIsAutoSelectingCustomerFromQuickAction] = useState(false);
+  const [customerQuickActionFrameKey, setCustomerQuickActionFrameKey] = useState(0);
+  const [isReloadingCustomerFrame, setIsReloadingCustomerFrame] = useState(false);
   const [showAdvancedSearchModal, setShowAdvancedSearchModal] = useState(false);
   const [advancedSearchType, setAdvancedSearchType] = useState("Display Name");
   const [advancedSearchValue, setAdvancedSearchValue] = useState("");
@@ -58,32 +81,36 @@ export default function NewProjectForm() {
   const [userSearch, setUserSearch] = useState({}); // Search term for each user dropdown
 
   // Load customers from database
+  const normalizeCustomers = (response) => {
+    const data = Array.isArray(response) ? response : (response?.data || []);
+    return data.map(customer => ({
+      id: customer._id || customer.id,
+      _id: customer._id || customer.id,
+      name: customer.name || customer.displayName || '',
+      displayName: customer.name || customer.displayName || '',
+      companyName: customer.companyName || customer.company || '',
+      firstName: customer.firstName || customer.name?.split(' ')[0] || '',
+      lastName: customer.lastName || customer.name?.split(' ').slice(1).join(' ') || '',
+      email: customer.email || '',
+      phone: customer.phone || customer.workPhone || customer.mobile || '',
+      workPhone: customer.workPhone || customer.phone || '',
+      mobile: customer.mobile || customer.phone || '',
+      ...customer // Keep all other fields
+    }));
+  };
+
+  const reloadCustomersForProject = async () => {
+    const response = await customersAPI.getAll();
+    const transformedCustomers = normalizeCustomers(response);
+    setCustomers(transformedCustomers);
+    return transformedCustomers;
+  };
+
   useEffect(() => {
     const fetchCustomers = async () => {
       setLoadingCustomers(true);
       try {
-        const response = await customersAPI.getAll();
-        // Handle response format: { success: true, data: [...] } or direct array
-        const data = Array.isArray(response)
-          ? response
-          : (response?.data || []);
-
-        // Transform database customers to match frontend format
-        const transformedCustomers = data.map(customer => ({
-          id: customer._id || customer.id,
-          name: customer.name || customer.displayName || '',
-          displayName: customer.name || customer.displayName || '',
-          companyName: customer.companyName || customer.company || '',
-          firstName: customer.firstName || customer.name?.split(' ')[0] || '',
-          lastName: customer.lastName || customer.name?.split(' ').slice(1).join(' ') || '',
-          email: customer.email || '',
-          phone: customer.phone || customer.workPhone || customer.mobile || '',
-          workPhone: customer.workPhone || customer.phone || '',
-          mobile: customer.mobile || customer.phone || '',
-          ...customer // Keep all other fields
-        }));
-
-        setCustomers(transformedCustomers);
+        await reloadCustomersForProject();
       } catch (error) {
         console.error("Error loading customers:", error);
         toast.error("Failed to load customers: " + (error.message || "Unknown error"));
@@ -192,7 +219,7 @@ export default function NewProjectForm() {
   }, []);
 
   // Initialize users with logged-in user as default
-  const getInitialUsers = () => {
+  const getInitialUsers = (): ProjectUserRow[] => {
     const currentUser = getCurrentUser();
     if (currentUser) {
       return [{
@@ -201,16 +228,17 @@ export default function NewProjectForm() {
         email: currentUser.email || "",
         userId: currentUser.id,
         costPerHour: "0",
-        isEditable: false
+        isEditable: false,
+        budgetHours: ""
       }];
     }
     return [];
   };
 
-  const [users, setUsers] = useState(getInitialUsers);
+  const [users, setUsers] = useState<ProjectUserRow[]>(getInitialUsers);
 
-  const [tasks, setTasks] = useState([
-    { id: 1, taskName: "Task Name", description: "Description", billable: true }
+  const [tasks, setTasks] = useState<ProjectTaskRow[]>([
+    { id: 1, taskName: "Task Name", description: "Description", billable: true, budgetHours: "" }
   ]);
 
   // Filter users based on search
@@ -224,7 +252,18 @@ export default function NewProjectForm() {
 
   const addUser = () => {
     const newUserId = users.length + 1;
-    setUsers([...users, { id: newUserId, name: "", email: "", costPerHour: "0", isEditable: true }]);
+    setUsers([
+      ...users,
+      {
+        id: newUserId,
+        name: "",
+        email: "",
+        userId: "",
+        costPerHour: "0",
+        isEditable: true,
+        budgetHours: ""
+      }
+    ]);
   };
 
   const removeUser = (id) => {
@@ -236,7 +275,10 @@ export default function NewProjectForm() {
   };
 
   const addTask = () => {
-    setTasks([...tasks, { id: tasks.length + 1, taskName: "", description: "", billable: false, budgetHours: "" }]);
+    setTasks([
+      ...tasks,
+      { id: tasks.length + 1, taskName: "", description: "", billable: false, budgetHours: "" }
+    ]);
   };
 
   const removeTask = (id) => {
@@ -324,6 +366,63 @@ export default function NewProjectForm() {
     setAdvancedSearchResults([]);
   };
 
+  const getEntityId = (entity) => {
+    const raw = entity?._id || entity?.id;
+    return raw ? String(raw) : "";
+  };
+
+  const pickNewestEntity = (entities) => {
+    const toTime = (value) => {
+      const time = new Date(value || 0).getTime();
+      return Number.isFinite(time) ? time : 0;
+    };
+    return [...entities].sort((a, b) => {
+      const aTime = Math.max(
+        toTime(a?.createdAt),
+        toTime(a?.created_at),
+        toTime(a?.updatedAt),
+        toTime(a?.updated_at)
+      );
+      const bTime = Math.max(
+        toTime(b?.createdAt),
+        toTime(b?.created_at),
+        toTime(b?.updatedAt),
+        toTime(b?.updated_at)
+      );
+      return bTime - aTime;
+    })[0];
+  };
+
+  const openCustomerQuickAction = async () => {
+    setShowCustomerDropdown(false);
+    setIsRefreshingCustomersQuickAction(true);
+    const latestCustomers = await reloadCustomersForProject();
+    setCustomerQuickActionBaseIds(latestCustomers.map((c) => getEntityId(c)).filter(Boolean));
+    setIsRefreshingCustomersQuickAction(false);
+    setIsNewCustomerQuickActionOpen(true);
+  };
+
+  const tryAutoSelectNewCustomerFromQuickAction = async () => {
+    if (!isNewCustomerQuickActionOpen || isAutoSelectingCustomerFromQuickAction) return;
+    setIsAutoSelectingCustomerFromQuickAction(true);
+    try {
+      const latestCustomers = await reloadCustomersForProject();
+      const baselineIds = new Set(customerQuickActionBaseIds);
+      const newCustomers = latestCustomers.filter((c) => {
+        const entityId = getEntityId(c);
+        return entityId && !baselineIds.has(entityId);
+      });
+      if (newCustomers.length > 0) {
+        const newlyCreatedCustomer = pickNewestEntity(newCustomers) || newCustomers[newCustomers.length - 1];
+        handleSelectCustomer(newlyCreatedCustomer);
+        setCustomerQuickActionBaseIds(latestCustomers.map((c) => getEntityId(c)).filter(Boolean));
+        setIsNewCustomerQuickActionOpen(false);
+      }
+    } finally {
+      setIsAutoSelectingCustomerFromQuickAction(false);
+    }
+  };
+
   // Pagination helpers
   const itemsPerPage = 10;
   const totalPages = Math.ceil(advancedSearchResults.length / itemsPerPage);
@@ -352,7 +451,7 @@ export default function NewProjectForm() {
         (user) => getUserIdentifier(user) === String(formData.projectManagerApproverId || "").trim()
       );
 
-      const newProject = {
+      const newProject: any = {
         name: formData.projectName,
         projectNumber: formData.projectCode || undefined,
         description: formData.description || '',
@@ -444,30 +543,26 @@ export default function NewProjectForm() {
 
 
   return (
-    <div className="w-full h-full bg-[#f8fafc] overflow-y-auto relative z-[1]">
-      <div className="w-full bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-[1200px] mx-auto px-6 py-4 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-800 m-0">
-            New Project
-          </h2>
-          <button
-            onClick={() => navigate("/time-tracking/projects")}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+    <div className="w-full min-h-screen flex flex-col bg-gray-50 overflow-x-hidden">
+      <div className="border-b border-gray-200 bg-white px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+        <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 m-0">New Project</h1>
+        <button
+          onClick={() => navigate("/time-tracking/projects")}
+          className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded"
+          aria-label="Close project form"
+        >
+          <X size={18} />
+        </button>
       </div>
 
-      <div className="max-w-[1200px] mx-auto p-6">
-        {/* Project Details Section */}
-        <div className="bg-white rounded-lg shadow-sm p-8 mb-6">
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-gray-50">
+          <div className="w-full max-w-4xl px-4 sm:px-6 py-5 sm:py-8 overflow-x-hidden">
+            <div className="space-y-8">
+              <div className="space-y-6">
+                <h3 className="text-[15px] font-semibold text-gray-800">Project Details</h3>
 
-          <h3 className="text-base font-semibold text-gray-800 mb-4 border-b border-gray-200 pb-2">
-            Project Details
-          </h3>
-
-          <div className="grid grid-cols-1 gap-y-6">
+                <div className="grid grid-cols-1 gap-y-6">
             {/* Project Name */}
             <div className="flex flex-col sm:flex-row sm:items-center">
               <label className="text-sm font-medium text-[#ef4444] w-full sm:w-[200px] mb-1 sm:mb-0">
@@ -562,8 +657,7 @@ export default function NewProjectForm() {
                             <div className="text-gray-500 text-sm mb-3">NO RESULTS FOUND</div>
                             <button
                               onClick={() => {
-                                setShowCustomerDropdown(false);
-                                setShowNewCustomerForm(true);
+                                openCustomerQuickAction();
                               }}
                               className="text-[#156372] hover:text-[#0D4A52] font-medium text-sm flex items-center justify-center gap-2 w-full"
                             >
@@ -595,8 +689,7 @@ export default function NewProjectForm() {
                       {filteredCustomers.length > 0 && (
                         <button
                           onClick={() => {
-                            setShowCustomerDropdown(false);
-                            setShowNewCustomerForm(true);
+                            openCustomerQuickAction();
                           }}
                           className="p-3 border-t border-gray-100 text-[#156372] hover:bg-[#156372]/10 font-medium text-sm flex items-center justify-center gap-2 w-full transition-colors sticky bottom-0 bg-white"
                         >
@@ -698,7 +791,7 @@ export default function NewProjectForm() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Max. 2000 characters"
-                  rows="4"
+                  rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-[#156372] focus:ring-1 focus:ring-[#156372] transition-colors resize-y"
                 />
               </div>
@@ -707,10 +800,8 @@ export default function NewProjectForm() {
         </div>
 
         {/* Budget Section */}
-        <div className="bg-white rounded-lg shadow-sm p-8 mb-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-6">
-            Budget
-          </h3>
+        <div className="space-y-6">
+          <h3 className="text-[15px] font-semibold text-gray-800">Budget</h3>
 
           <div className="grid grid-cols-1 gap-y-6">
             {/* Cost Budget */}
@@ -848,8 +939,8 @@ export default function NewProjectForm() {
         )}
 
       {/* Users Section */}
-      <div className="bg-white rounded-lg shadow-sm p-8 mb-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-6">Users</h3>
+      <div className="space-y-6">
+        <h3 className="text-[15px] font-semibold text-gray-800">Users</h3>
 
         <div className="overflow-x-auto mb-4 border border-gray-200 rounded-lg">
           <table className="w-full border-collapse">
@@ -1037,7 +1128,7 @@ export default function NewProjectForm() {
         </button>
       </div>
 
-    <div className="mt-8 pt-8 border-t border-gray-100">
+    <div className="mt-8 pt-8 border-t border-gray-100 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center">
         <label className="text-sm font-medium text-gray-700 w-full sm:w-[300px] mb-2 sm:mb-0 flex items-center gap-1">
           Enable Approvals for time entries?
@@ -1112,13 +1203,13 @@ export default function NewProjectForm() {
       )}
 
       {/* Project Tasks Section */}
-      <div className="bg-white rounded-lg shadow-sm p-8 mb-6">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-bold text-gray-800 m-0">Project Tasks</h3>
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h3 className="text-[15px] font-semibold text-gray-800 m-0">Project Tasks</h3>
           <button
             type="button"
             onClick={() => setShowImportTasksModal(true)}
-            className="text-[#10b981] hover:text-[#059669] text-sm flex items-center gap-1.5 hover:underline bg-transparent border-none cursor-pointer font-medium"
+            className="text-[#10b981] hover:text-[#059669] text-[13px] flex items-center gap-1.5 hover:underline bg-transparent border-none cursor-pointer font-medium"
           >
             <Download className="w-4 h-4" />
             Import project tasks from existing projects
@@ -1220,7 +1311,7 @@ export default function NewProjectForm() {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex justify-start gap-4 p-8 bg-white rounded-lg shadow-sm border border-gray-100 mb-10">
+      <div className="flex justify-start gap-4 mb-10">
         <button
           type="button"
           onClick={handleSave}
@@ -1235,27 +1326,80 @@ export default function NewProjectForm() {
         >
           Cancel
         </button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    </div>
-
-    {/* New Customer Form Modal */}
-    {showNewCustomerForm && (
-      <NewCustomerForm
-        onClose={() => setShowNewCustomerForm(false)}
-        onSave={(newCustomer) => {
-          // Trigger a refresh of the customer list
-          window.dispatchEvent(new Event('customerUpdated'));
-          setFormData({
-            ...formData,
-            customerName: newCustomer.name || newCustomer.displayName,
-            customerId: newCustomer.id || newCustomer._id
-          });
-          setShowNewCustomerForm(false);
-          toast.success("Customer created successfully!");
+    {/* Quick New Customer Modal */}
+    {typeof document !== "undefined" && document.body && createPortal(
+      <div
+        className={`fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-150 ${isNewCustomerQuickActionOpen ? "bg-black bg-opacity-50 opacity-100" : "bg-transparent opacity-0 pointer-events-none"}`}
+        onClick={() => {
+          setIsNewCustomerQuickActionOpen(false);
+          reloadCustomersForProject();
         }}
-      />
+      >
+        <div
+          className="bg-white rounded-lg shadow-xl w-[96vw] h-[94vh] max-w-[1400px] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-5 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">New Customer (Quick Action)</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isReloadingCustomerFrame || isAutoSelectingCustomerFromQuickAction}
+                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  setIsReloadingCustomerFrame(true);
+                  setCustomerQuickActionFrameKey(prev => prev + 1);
+                }}
+              >
+                {isReloadingCustomerFrame ? "Reloading..." : "Reload Form"}
+              </button>
+              <button
+                type="button"
+                disabled={isRefreshingCustomersQuickAction || isAutoSelectingCustomerFromQuickAction}
+                className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={async () => {
+                  setIsRefreshingCustomersQuickAction(true);
+                  await reloadCustomersForProject();
+                  setIsRefreshingCustomersQuickAction(false);
+                }}
+              >
+                {isRefreshingCustomersQuickAction ? "Refreshing..." : "Refresh Customers"}
+              </button>
+            </div>
+            <button
+              type="button"
+              className="w-8 h-8 bg-[#2563eb] text-white rounded flex items-center justify-center"
+              onClick={() => {
+                setIsNewCustomerQuickActionOpen(false);
+                reloadCustomersForProject();
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="flex-1 p-2 bg-gray-100">
+            <iframe
+              key={customerQuickActionFrameKey}
+              title="New Customer Quick Action"
+              src="/sales/customers/new?embed=1"
+              loading="eager"
+              onLoad={async () => {
+                if (isReloadingCustomerFrame) {
+                  setIsReloadingCustomerFrame(false);
+                }
+                await tryAutoSelectNewCustomerFromQuickAction();
+              }}
+              className="w-full h-full bg-white rounded border border-gray-200"
+            />
+          </div>
+        </div>
+      </div>,
+      document.body
     )}
 
     {/* Advanced Customer Search Modal */}
@@ -1472,6 +1616,8 @@ export default function NewProjectForm() {
         </div>
       </div>
     )}
+      </div>
+    </div>
   </div>
 );
 }

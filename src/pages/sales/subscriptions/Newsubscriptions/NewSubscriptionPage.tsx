@@ -2089,7 +2089,7 @@ const NewSubscriptionPage = () => {
                 <h1 className="text-lg font-medium text-slate-800">{isEditMode ? "Edit Subscription" : "New Subscription"}</h1>
             </div>
 
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
                 <div className="px-8 py-8 max-w-6xl pb-32">
                     <div className="flex flex-col gap-10">
 
@@ -2101,14 +2101,14 @@ const NewSubscriptionPage = () => {
                             <div className="flex-1 space-y-5 max-w-3xl">
                                 {/* Customer Name Row */}
                                 <div className="flex items-center gap-8">
-                                    <label className="text-[13px] font-normal text-[#d9534f] w-36 shrink-0">Customer Name*</label>
+                                    <label className="text-[13px] font-medium text-[#ef4444] w-36 shrink-0">Customer Name*</label>
                                     <div className="flex items-stretch gap-0 flex-1 relative" ref={customerDropdownRef}>
                                         <div className="relative flex-1">
                                             <button
                                                 onClick={() => setIsCustomerDropdownOpen(!isCustomerDropdownOpen)}
-                                                className={`w-full h-[34px] px-3 border border-[#3b82f6] rounded-l rounded-r-none text-[13px] outline-none text-left bg-white flex items-center justify-between ${!formData.customerName ? 'text-gray-400' : 'text-gray-800'}`}
+                                                className={`w-full h-[34px] px-3 border border-gray-300 rounded-l-md rounded-r-none text-[13px] outline-none text-left bg-white flex items-center justify-between ${!formData.customerName ? 'text-gray-400' : 'text-gray-800'}`}
                                             >
-                                                <span>{formData.customerName || "Select a customer"}</span>
+                                                <span>{formData.customerName || "Select or add a customer"}</span>
                                                 <ChevronDown size={14} className="text-gray-400" />
                                             </button>
 
@@ -2164,7 +2164,7 @@ const NewSubscriptionPage = () => {
                                                 </div>
                                             )}
                                         </div>
-                                        <button className="h-[34px] w-[34px] bg-[#10a37f] text-white rounded-r rounded-l-none border border-[#10a37f] border-l-0 shadow-sm hover:bg-[#0d8a6b] transition-colors flex items-center justify-center">
+                                        <button className="h-10 w-10 bg-[#156372] text-white rounded-r hover:bg-[#0D4A52] flex items-center justify-center border border-[#156372] border-l-0">
                                             <Search size={16} />
                                         </button>
                                         {(formData.customerId || formData.customerName) && (
