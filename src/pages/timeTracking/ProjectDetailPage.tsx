@@ -914,7 +914,7 @@ export default function ProjectDetailPage() {
 
                         try {
                           // Create cloned project data
-                          const clonedProjectData = {
+                          const clonedProjectData: any = {
                             name: (project.projectName || project.name || "Project") + " (Clone)",
                             description: project.description || '',
                             status: project.status || 'planning',
@@ -1581,7 +1581,7 @@ export default function ProjectDetailPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan="4" style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                        <td colSpan={4} style={{ padding: "20px", textAlign: "center", color: "#666" }}>
                           No users added
                         </td>
                       </tr>
@@ -2028,7 +2028,7 @@ export default function ProjectDetailPage() {
                     <tbody>
                       {filteredEntries.length === 0 ? (
                         <tr>
-                          <td colSpan="9" style={{ padding: "40px", textAlign: "center", color: "#6b7280", fontSize: "14px" }}>
+                          <td colSpan={9} style={{ padding: "40px", textAlign: "center", color: "#6b7280", fontSize: "14px" }}>
                             There are no timesheets.
                           </td>
                         </tr>
@@ -2291,7 +2291,7 @@ export default function ProjectDetailPage() {
                     <tbody>
                       {filteredExpenses.length === 0 ? (
                         <tr>
-                          <td colSpan="8" style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                          <td colSpan={8} style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                             There are no expenses.
                           </td>
                         </tr>
@@ -2471,7 +2471,7 @@ export default function ProjectDetailPage() {
                       <tbody>
                         {filteredSalesInvoices.length === 0 ? (
                           <tr>
-                            <td colSpan="7" style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            <td colSpan={7} style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                               There are no invoices.
                             </td>
                           </tr>
@@ -2588,7 +2588,7 @@ export default function ProjectDetailPage() {
                       <tbody>
                         {filteredSalesQuotes.length === 0 ? (
                           <tr>
-                            <td colSpan="5" style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            <td colSpan={5} style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                               There are no quotes.
                             </td>
                           </tr>
@@ -2677,7 +2677,7 @@ export default function ProjectDetailPage() {
                       <tbody>
                         {filteredSalesRetainerInvoices.length === 0 ? (
                           <tr>
-                            <td colSpan="6" style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            <td colSpan={6} style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                               There are no retainer invoices.
                             </td>
                           </tr>
@@ -2795,7 +2795,7 @@ export default function ProjectDetailPage() {
                       <tbody>
                         {filteredSalesCreditNotes.length === 0 ? (
                           <tr>
-                            <td colSpan="7" style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            <td colSpan={7} style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                               There are no credit notes.
                             </td>
                           </tr>
@@ -2885,7 +2885,7 @@ export default function ProjectDetailPage() {
                       <tbody>
                         {filteredSalesRefunds.length === 0 ? (
                           <tr>
-                            <td colSpan="5" style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                            <td colSpan={5} style={{ padding: "28px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
                               There are no refunds.
                             </td>
                           </tr>
@@ -3737,8 +3737,12 @@ export default function ProjectDetailPage() {
                     fontWeight: '500',
                     transition: 'background-color 0.2s'
                   }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = '#0D4A52'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = '#156372'}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#0D4A52';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#156372';
+                  }}
                 >
                   Update
                 </button>
