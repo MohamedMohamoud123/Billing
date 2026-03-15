@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Search, X, Plus, ChevronDown, ChevronUp, Settings, Info, BriefcaseBusiness, Check } from "lucide-react";
 import { toast } from "react-toastify";
 import { getCustomers, getInvoiceById, saveInvoice, updateInvoice } from "../../salesModel";
@@ -31,6 +31,7 @@ const LS_LOCATIONS_CACHE_KEY = "taban_locations_cache";
 
 export default function NewRetailInvoice() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { accentColor } = useOrganizationBranding();
   const isEditMode = Boolean(id);
@@ -129,6 +130,7 @@ export default function NewRetailInvoice() {
 
   const customerDropdownRef = useRef<HTMLDivElement | null>(null);
   const quickCustomerFileInputRef = useRef<HTMLInputElement | null>(null);
+  const prefillFromProjectRef = useRef(false);
 
   const [rows, setRows] = useState<LineRow[]>([
     { id: Date.now(), description: "", taxId: "", amount: 0 },
@@ -533,6 +535,56 @@ export default function NewRetailInvoice() {
       console.error("Error loading projects for selected customer:", error);
     }
   };
+
+  useEffect(() => {
+    if (prefillFromProjectRef.current) return;
+    if (isEditMode) return;
+    const state = location.state as any;
+    if (!state || state.source !== "timeTrackingProjects") return;
+
+    const customerIdFromState = String(state.customerId || state.project?.customerId || "").trim();
+    const customerNameFromState = String(state.customerName || state.project?.customerName || "").trim();
+    const projectIdFromState = String(state.projectId || state.project?.id || state.project?.projectId || "").trim();
+    const projectNameFromState = String(state.projectName || state.project?.projectName || state.project?.name || "").trim();
+
+    const applyCustomer = async () => {
+      if (customerIdFromState) {
+        setCustomerId(customerIdFromState);
+        await loadProjectsForCustomer(customerIdFromState);
+        return;
+      }
+      if (customerNameFromState) {
+        const match =
+          customers.find((c: any) => String(c?._id || c?.id || "") === customerIdFromState) ||
+          customers.find(
+            (c: any) =>
+              String(c?.displayName || c?.name || c?.companyName || "").trim().toLowerCase() ===
+              customerNameFromState.toLowerCase()
+          );
+        if (match) {
+          setCustomerId(String(match._id || match.id || ""));
+          await loadProjectsForCustomer(String(match._id || match.id || ""));
+        }
+      }
+    };
+
+    applyCustomer();
+
+    if (projectIdFromState) {
+      setProjectId(projectIdFromState);
+    } else if (projectNameFromState) {
+      const matchProject = projects.find(
+        (p: any) =>
+          String(p?.id || p?._id || "").trim() === projectIdFromState ||
+          String(p?.name || p?.projectName || "").trim().toLowerCase() === projectNameFromState.toLowerCase()
+      );
+      if (matchProject) {
+        setProjectId(String(matchProject.id || matchProject._id || ""));
+      }
+    }
+
+    prefillFromProjectRef.current = true;
+  }, [location.state, customers, projects, isEditMode]);
 
   const handleCustomerSelect = async (customer: any) => {
     const selectedId = String(customer._id || customer.id || "");

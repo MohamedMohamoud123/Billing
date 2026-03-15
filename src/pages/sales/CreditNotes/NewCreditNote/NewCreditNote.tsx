@@ -325,6 +325,7 @@ export default function NewCreditNote() {
   const [customerSearchResults, setCustomerSearchResults] = useState<Customer[]>([]);
   const [customerSearchPage, setCustomerSearchPage] = useState(1);
   const [customerSearchCriteriaOpen, setCustomerSearchCriteriaOpen] = useState(false);
+  const prefillFromProjectRef = useRef(false);
 
   const [isSalespersonDropdownOpen, setIsSalespersonDropdownOpen] = useState(false);
   const [salespersonSearch, setSalespersonSearch] = useState("");
@@ -746,6 +747,40 @@ export default function NewCreditNote() {
 
     loadData();
   }, [id, isEditMode]);
+
+  useEffect(() => {
+    if (prefillFromProjectRef.current) return;
+    if (isEditMode) return;
+    const state = location.state as any;
+    if (!state || state.source !== "timeTrackingProjects") return;
+
+    const customerId = String(state.customerId || state.project?.customerId || "").trim();
+    const customerName = String(state.customerName || state.project?.customerName || "").trim();
+    const currency = String(state.currency || "").trim();
+
+    if (customerId || customerName) {
+      const matchedCustomer =
+        customers.find((c: any) => String(c?.id || c?._id || "") === customerId) ||
+        customers.find(
+          (c: any) =>
+            String(c?.name || c?.displayName || "").trim().toLowerCase() ===
+            customerName.toLowerCase()
+        );
+      if (matchedCustomer) {
+        setSelectedCustomer(matchedCustomer);
+      } else if (customerName) {
+        setSelectedCustomer({ id: customerId || "unknown", name: customerName, displayName: customerName } as any);
+      }
+
+      setFormData((prev: any) => ({
+        ...prev,
+        customerName: customerName || prev.customerName,
+        currency: currency || prev.currency,
+      }));
+    }
+
+    prefillFromProjectRef.current = true;
+  }, [location.state, customers, isEditMode]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

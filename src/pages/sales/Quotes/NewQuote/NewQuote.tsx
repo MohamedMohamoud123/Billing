@@ -92,6 +92,7 @@ const NewQuote = () => {
     contactPersons: []
   });
   const hasAppliedCloneRef = useRef(false);
+  const prefillFromProjectRef = useRef(false);
   const discountMode = enabledSettings?.discountSettings?.discountType ?? "transaction";
   const showTransactionDiscount = discountMode === "transaction";
   const showShippingCharges = enabledSettings?.chargeSettings?.shippingCharges !== false;
@@ -1287,6 +1288,101 @@ const NewQuote = () => {
     };
     fetchAndSetProject();
   }, [location.state?.selectedProject, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (prefillFromProjectRef.current) return;
+    if (isEditMode) return;
+    const state = location.state as any;
+    if (!state || state.source !== "timeTrackingProjects") return;
+
+    const customerId = String(state.customerId || state.project?.customerId || "").trim();
+    const customerName = String(state.customerName || state.project?.customerName || "").trim();
+    const projectId = String(state.projectId || state.project?.id || state.project?.projectId || "").trim();
+    const projectName = String(state.projectName || state.project?.projectName || state.project?.name || "").trim();
+    const currency = String(state.currency || "").trim();
+    const rawProjects = Array.isArray(state.projects) ? state.projects : [];
+
+    if (customerId || customerName) {
+      const matchedCustomer =
+        customers.find((c: any) => String(c?.id || c?._id || "") === customerId) ||
+        customers.find(
+          (c: any) =>
+            String(c?.name || c?.displayName || "").trim().toLowerCase() ===
+            customerName.toLowerCase()
+        );
+      if (matchedCustomer) {
+        setSelectedCustomer(matchedCustomer);
+      } else if (customerName) {
+        setSelectedCustomer({ id: customerId || undefined, name: customerName, displayName: customerName } as any);
+      }
+
+      if (customerId) {
+        setSelectedCustomerIdForProjects(customerId);
+      }
+
+      setFormData((prev: any) => ({
+        ...prev,
+        customerName: customerName || prev.customerName,
+        currency: currency || prev.currency,
+      }));
+    }
+
+    if (projectName) {
+      setFormData((prev: any) => ({
+        ...prev,
+        projectName: projectName || prev.projectName,
+      }));
+    }
+
+    if (rawProjects.length > 0) {
+      const mappedItems = rawProjects.map((project: any, index: number) => {
+        const method = String(project?.billingMethod || "").toLowerCase();
+        const rateSource =
+          method === "fixed"
+            ? project?.totalProjectCost ?? project?.billingRate ?? project?.rate ?? 0
+            : project?.billingRate ?? project?.rate ?? 0;
+        const rate = Number(rateSource) || 0;
+        const quantity = 1;
+        const projectRef = project?.id || project?.projectId || project?.project || "";
+        return {
+          id: Date.now() + index,
+          itemType: "item",
+          itemDetails: project?.projectName || project?.name || "Project",
+          quantity,
+          rate,
+          tax: "",
+          taxRate: 0,
+          amount: rate * quantity,
+          description: project?.description || "",
+          stockOnHand: 0,
+          reportingTags: [],
+          projectId: projectRef,
+          project: projectRef,
+          projectName: project?.projectName || project?.name || "",
+        };
+      });
+
+      setFormData((prev: any) => ({
+        ...prev,
+        items: mappedItems.length > 0 ? mappedItems : prev.items,
+        currency: currency || prev.currency,
+      }));
+    }
+
+    if (projectId || projectName) {
+      const matchedProject =
+        projects.find((p: any) => (projectId && String(p?._id || p?.id || "") === projectId)) ||
+        projects.find(
+          (p: any) =>
+            String(p?.projectName || p?.name || "").trim().toLowerCase() === projectName.toLowerCase()
+        );
+      if (matchedProject) {
+        setSelectedProject(matchedProject);
+      }
+    }
+
+    prefillFromProjectRef.current = true;
+  }, [location.state, customers, projects, isEditMode]);
 
   const formatDate = (date) => {
     if (!date) return "";
