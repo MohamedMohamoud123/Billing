@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { projectsAPI, customersAPI } from "../../services/api";
 import { getCurrentUser } from "../../services/auth";
-import toast from "react-hot-toast";
+import { toast } from "react-toastify";
 import NewCustomerForm from "./NewCustomerForm";
 import { useCurrency } from "../../hooks/useCurrency";
 
@@ -36,6 +36,25 @@ export default function EditProjectForm() {
   const [availableUsers, setAvailableUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [customerId, setCustomerId] = useState(null);
+  const normalizeCustomers = (response) => {
+    const data = Array.isArray(response) ? response : (response?.data || []);
+    return data.map((customer) => ({
+      id: customer._id || customer.id,
+      _id: customer._id || customer.id,
+      name: customer.name || customer.displayName || customer.companyName || "",
+      displayName: customer.displayName || customer.name || "",
+      companyName: customer.companyName || customer.company || "",
+      email: customer.email || "",
+      ...customer
+    }));
+  };
+  const getCustomerLabel = (customer) =>
+    String(
+      customer?.name ||
+      customer?.displayName ||
+      customer?.companyName ||
+      ""
+    ).trim();
   const normalizeTaskRows = (rawTasks = []) => {
     return rawTasks.map((task, index) => ({
       ...task,
@@ -45,9 +64,16 @@ export default function EditProjectForm() {
       billable: task?.billable ?? false,
     }));
   };
-  const filteredCustomers = customers.filter(c =>
-    c.name.toLowerCase().includes(customerSearch.toLowerCase())
-  );
+  const filteredCustomers = customers.filter((c) => {
+    const search = customerSearch.toLowerCase();
+    const haystack = [
+      c.name,
+      c.displayName,
+      c.companyName,
+      c.email
+    ].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(search);
+  });
 
   // Load customers from database
   useEffect(() => {
@@ -55,8 +81,7 @@ export default function EditProjectForm() {
       setLoadingCustomers(true);
       try {
         const response = await customersAPI.getAll();
-        const data = Array.isArray(response) ? response : (response?.data || []);
-        setCustomers(data);
+        setCustomers(normalizeCustomers(response));
       } catch (error) {
         console.error("Error loading customers:", error);
         toast.error("Failed to load customers");
@@ -317,8 +342,10 @@ export default function EditProjectForm() {
                     type="text"
                     value={formData.customerName || customerSearch}
                     onChange={(e) => {
-                      setCustomerSearch(e.target.value);
-                      setFormData({ ...formData, customerName: e.target.value });
+                      const nextValue = e.target.value;
+                      setCustomerSearch(nextValue);
+                      setFormData({ ...formData, customerName: nextValue });
+                      setCustomerId(null);
                       setShowCustomerDropdown(true);
                     }}
                     onFocus={() => setShowCustomerDropdown(true)}
@@ -462,7 +489,7 @@ export default function EditProjectForm() {
                             <div
                               key={customer._id || customer.id}
                               onClick={() => {
-                                setFormData({ ...formData, customerName: customer.name });
+                                setFormData({ ...formData, customerName: getCustomerLabel(customer) });
                                 setCustomerId(customer._id || customer.id);
                                 setCustomerSearch("");
                                 setShowCustomerDropdown(false);
@@ -1006,6 +1033,10 @@ export default function EditProjectForm() {
               }
 
               try {
+                const selectedCustomer = customers.find(
+                  (customer) => String(customer?._id || customer?.id || "") === String(customerId || "")
+                );
+                const selectedCustomerName = getCustomerLabel(selectedCustomer) || formData.customerName || "";
                 // Prepare update data
                 const updateData = {
                   name: formData.projectName,
@@ -1020,6 +1051,10 @@ export default function EditProjectForm() {
                 // Add customer if provided and valid
                 if (customerId) {
                   updateData.customer = customerId;
+                  updateData.customerId = customerId;
+                  if (selectedCustomerName) {
+                    updateData.customerName = selectedCustomerName;
+                  }
                 }
 
                 // Map assigned users if they have valid IDs

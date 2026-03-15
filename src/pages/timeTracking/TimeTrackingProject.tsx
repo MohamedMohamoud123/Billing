@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { X, Search, ArrowUpDown, ChevronRight, ChevronDown, Download, Upload, Settings, Eye, EyeOff, Info, List, LayoutGrid, SlidersHorizontal, MoreVertical, Plus, Pause, Play, Square, Trash2 } from "lucide-react";
+import { X, Search, ArrowUpDown, ChevronRight, ChevronDown, Download, Upload, Settings, Eye, EyeOff, Info, List, LayoutGrid, SlidersHorizontal, MoreVertical, Plus, Pause, Play, Square, Trash2, AlertTriangle } from "lucide-react";
 import { projectsAPI, timeEntriesAPI, customersAPI, usersAPI } from "../../services/api";
-import toast from "react-hot-toast";
+import { toast } from "react-toastify";
 import NewCustomViewForm from "./NewCustomViewForm";
 import NewLogEntryForm from "./NewLogEntryForm";
 import BulkUpdateModal from "../Expense/shared/BulkUpdateModal";
@@ -70,6 +70,7 @@ export default function TimeTrackingProject() {
   const [isCreatingTaskInline, setIsCreatingTaskInline] = useState(false);
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [appliedAdvancedSearch, setAppliedAdvancedSearch] = useState<any | null>(null);
   const [searchModalData, setSearchModalData] = useState({
     projectName: "",
@@ -100,27 +101,41 @@ export default function TimeTrackingProject() {
         : (response?.data || []);
 
       // Transform database projects to match frontend format
-      const transformedProjects = data.map(project => ({
-        id: project._id || project.id,
-        projectName: project.name || project.projectName,
-        projectNumber: project.projectNumber || project.id,
-        customerName: project.customer?.name || project.customerName,
-        customerId: project.customer?._id || project.customerId,
-        description: project.description || '',
-        startDate: project.startDate || '',
-        endDate: project.endDate || '',
-        status: project.status || 'planning',
-        budget: project.budget || 0,
-        currency: project.currency || 'USD',
-        billable: project.billable !== undefined ? project.billable : true,
-        billingRate: project.billingRate || 0,
-        billingMethod: project.billingMethod || 'hourly',
-        assignedTo: project.assignedTo || [],
-        tags: project.tags || [],
-        tasks: project.tasks || [],
-        users: project.assignedTo || [],
-        ...project // Keep all other fields
-      }));
+      const transformedProjects = data.map(project => {
+        const customerId =
+          project?.customer?._id ||
+          project?.customer?.id ||
+          project?.customerId ||
+          project?.customer ||
+          "";
+        const customerName =
+          project?.customer?.name ||
+          project?.customerName ||
+          (customerId ? customerNameLookup.get(String(customerId)) : "") ||
+          "";
+
+        return {
+          id: project._id || project.id,
+          projectName: project.name || project.projectName,
+          projectNumber: project.projectNumber || project.id,
+          customerName,
+          customerId,
+          description: project.description || '',
+          startDate: project.startDate || '',
+          endDate: project.endDate || '',
+          status: project.status || 'planning',
+          budget: project.budget || 0,
+          currency: project.currency || 'USD',
+          billable: project.billable !== undefined ? project.billable : true,
+          billingRate: project.billingRate || 0,
+          billingMethod: project.billingMethod || 'hourly',
+          assignedTo: project.assignedTo || [],
+          tags: project.tags || [],
+          tasks: project.tasks || [],
+          users: project.assignedTo || [],
+          ...project // Keep all other fields
+        };
+      });
 
       setProjects(transformedProjects);
     } catch (error) {
@@ -209,13 +224,27 @@ export default function TimeTrackingProject() {
 
   // Get billing method display text
   const getBillingMethodText = (method) => {
+    const normalized = String(method || "").toLowerCase();
     const methodMap = {
-      'fixed': 'Fixed Price',
+      'fixed': 'Fixed Cost for Project',
+      'project-hours': 'Based on Project Hours',
+      'task-hours': 'Based on Task Hours',
+      'staff-hours': 'Based on Staff Hours',
       'hourly': 'Hourly Rate',
       'hourly-task': 'Hourly Rate Per Task',
       'milestone': 'Milestone'
     };
-    return methodMap[method] || method || '--';
+    return methodMap[normalized] || method || '--';
+  };
+
+  const getProjectRateDisplay = (project) => {
+    const method = String(project?.billingMethod || "").toLowerCase();
+    const fallback = project?.billingRate ?? project?.rate;
+    if (method === "fixed") {
+      const fixedValue = project?.totalProjectCost ?? fallback;
+      return fixedValue !== undefined && fixedValue !== null && fixedValue !== "" ? fixedValue : "--";
+    }
+    return fallback !== undefined && fallback !== null && fallback !== "" ? fallback : "--";
   };
 
   // Helper function to calculate elapsed time from start timestamp
@@ -652,7 +681,10 @@ export default function TimeTrackingProject() {
       label: "Billing Method",
       type: "select",
       options: [
-        { value: "fixed", label: "Fixed Price" },
+        { value: "fixed", label: "Fixed Cost for Project" },
+        { value: "project-hours", label: "Based on Project Hours" },
+        { value: "task-hours", label: "Based on Task Hours" },
+        { value: "staff-hours", label: "Based on Staff Hours" },
         { value: "hourly", label: "Hourly Rate" },
         { value: "hourly-task", label: "Hourly Rate Per Task" },
         { value: "milestone", label: "Milestone" },
@@ -696,7 +728,18 @@ export default function TimeTrackingProject() {
     },
   ]), [customerBulkOptions, userBulkOptions]);
 
-  const isValidObjectId = (value: string) => /^[0-9a-fA-F]{24}$/.test(String(value || ""));
+  const customerNameLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    customerBulkOptions.forEach((opt: any) => {
+      if (!opt) return;
+      const id = String((opt as any).value || "").trim();
+      const label = String((opt as any).label || "").trim();
+      if (id) map.set(id, label);
+    });
+    return map;
+  }, [customerBulkOptions]);
+
+  const isValidSelection = (value: string) => String(value || "").trim().length > 0;
 
   // Handle bulk update
   const handleBulkUpdate = async (field, value, selectedOption) => {
@@ -721,7 +764,7 @@ export default function TimeTrackingProject() {
       normalizedValue = parsedValue;
     }
 
-    if ((field === "customer" || field === "assignedTo") && normalizedValue && !isValidObjectId(normalizedValue)) {
+    if ((field === "customer" || field === "assignedTo") && normalizedValue && !isValidSelection(normalizedValue)) {
       alert("Please select a valid value from the dropdown.");
       return;
     }
@@ -729,6 +772,9 @@ export default function TimeTrackingProject() {
     const updateData: any = {};
     if (field === "assignedTo") {
       updateData.assignedTo = normalizedValue ? [normalizedValue] : [];
+    } else if (field === "customer") {
+      updateData.customer = normalizedValue;
+      updateData.customerId = normalizedValue;
     } else {
       updateData[field] = normalizedValue;
     }
@@ -739,9 +785,18 @@ export default function TimeTrackingProject() {
         return String(choice) === String(normalizedValue);
       })
       : null;
-    const displayValue = selectedChoice
+    let displayValue = selectedChoice
       ? (typeof selectedChoice === "object" ? selectedChoice.label : selectedChoice)
       : normalizedValue;
+    if (field === "customer") {
+      const lookedUpName = customerNameLookup.get(String(normalizedValue || ""));
+      if (lookedUpName) {
+        displayValue = lookedUpName;
+      }
+      if (displayValue) {
+        updateData.customerName = String(displayValue);
+      }
+    }
 
     setIsBulkActionLoading(true);
     try {
@@ -756,9 +811,9 @@ export default function TimeTrackingProject() {
         throw new Error("No selected projects were updated.");
       }
 
-      setSuccessMessage(
-        `Successfully updated ${succeededCount} project${succeededCount > 1 ? "s" : ""} - ${fieldLabel} set to "${displayValue}".`
-      );
+      const successText = `Successfully updated ${succeededCount} project${succeededCount > 1 ? "s" : ""} - ${fieldLabel} set to "${displayValue}".`;
+      setSuccessMessage(successText);
+      toast.success(successText);
       setTimeout(() => setSuccessMessage(""), 5000);
 
       if (failedCount > 0) {
@@ -799,9 +854,9 @@ export default function TimeTrackingProject() {
         throw new Error("No selected projects were updated.");
       }
 
-      setSuccessMessage(
-        `The selected Project${succeededCount > 1 ? "s have" : " has"} been marked as ${successText}.`
-      );
+      const successTextValue = `The selected Project${succeededCount > 1 ? "s have" : " has"} been marked as ${successText}.`;
+      setSuccessMessage(successTextValue);
+      toast.success(successTextValue);
       setTimeout(() => setSuccessMessage(""), 5000);
 
       if (failedCount > 0) {
@@ -819,18 +874,13 @@ export default function TimeTrackingProject() {
     }
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedProjects.length === 0) {
-      alert("Please select at least one project to delete.");
-      return;
-    }
-
-    const confirmMessage = `Are you sure you want to delete ${selectedProjects.length} project${selectedProjects.length > 1 ? 's' : ''}? This action cannot be undone.`;
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-
+  const handleConfirmBulkDelete = async () => {
     if (isBulkActionLoading) return;
+    if (selectedProjects.length === 0) {
+      toast.error("Please select at least one project to delete.");
+      setShowDeleteModal(false);
+      return;
+    }
 
     const selectedIds = selectedProjects.map((id) => String(id));
 
@@ -847,9 +897,9 @@ export default function TimeTrackingProject() {
         throw new Error("No selected projects were deleted.");
       }
 
-      setSuccessMessage(
-        `Successfully deleted ${succeededCount} project${succeededCount > 1 ? "s" : ""}.`
-      );
+      const successText = `Successfully deleted ${succeededCount} project${succeededCount > 1 ? "s" : ""}.`;
+      setSuccessMessage(successText);
+      toast.success(successText);
       setTimeout(() => setSuccessMessage(""), 5000);
 
       if (failedCount > 0) {
@@ -859,12 +909,83 @@ export default function TimeTrackingProject() {
       setSelectedProjects([]);
       await refreshProjects();
       window.dispatchEvent(new Event("projectUpdated"));
+      setShowDeleteModal(false);
     } catch (error: any) {
       console.error("Error deleting selected projects:", error);
       toast.error(error?.message || "Failed to delete selected projects.");
     } finally {
       setIsBulkActionLoading(false);
     }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedProjects.length === 0) {
+      alert("Please select at least one project to delete.");
+      return;
+    }
+
+    setShowDeleteModal(true);
+  };
+
+  const handleBulkCreateInvoice = () => {
+    if (selectedProjects.length === 0) {
+      toast.error("Please select at least one project.");
+      return;
+    }
+
+    const selectedRows = projects.filter((row) => selectedProjects.includes(row.id));
+    if (selectedRows.length === 0) {
+      toast.error("Selected projects could not be found.");
+      return;
+    }
+
+    const customerIds = Array.from(
+      new Set(
+        selectedRows
+          .map((row) =>
+            String(
+              row?.customerId ||
+              row?.customer?._id ||
+              row?.customer?.id ||
+              row?.customer ||
+              ""
+            ).trim()
+          )
+          .filter(Boolean)
+      )
+    );
+
+    if (customerIds.length > 1) {
+      toast.error("Please select projects for the same customer to create a single invoice.");
+      return;
+    }
+
+    const customerId = customerIds[0] || "";
+    const customerName =
+      selectedRows.find((row) => String(row?.customerId || "") === customerId)?.customerName ||
+      selectedRows[0]?.customerName ||
+      "";
+
+    const payloadProjects = selectedRows.map((row) => ({
+      id: row.id,
+      projectName: row.projectName,
+      billingMethod: row.billingMethod,
+      billingRate: row.billingRate,
+      totalProjectCost: row.totalProjectCost,
+      customerId: row.customerId || customerId,
+      customerName: row.customerName || customerName,
+      currency: row.currency,
+    }));
+
+    navigate("/sales/invoices/new", {
+      state: {
+        source: "timeTrackingProjects",
+        customerId,
+        customerName,
+        projects: payloadProjects,
+      },
+    });
+    toast.info("Invoice draft created from selected project(s). Review before saving.");
   };
 
   // Sort options for projects
@@ -923,8 +1044,10 @@ export default function TimeTrackingProject() {
 
       // Filter by search term
       if (searchTerm) {
-        return project.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          project.customerName.toLowerCase().includes(searchTerm.toLowerCase());
+        const projectName = String(project.projectName || "").toLowerCase();
+        const customerName = String(project.customerName || "").toLowerCase();
+        const query = searchTerm.toLowerCase();
+        return projectName.includes(query) || customerName.includes(query);
       }
       return true;
     });
@@ -1687,22 +1810,57 @@ export default function TimeTrackingProject() {
 
       {selectedProjects.length > 0 && (
         <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 sticky top-0 z-30 shadow-sm">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowBulkUpdateModal(true)}
               className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
               Bulk Update
             </button>
+            <button
+              onClick={handleBulkCreateInvoice}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Create Invoice
+            </button>
+            <button
+              onClick={() => handleBulkStatusUpdate("active", "Active")}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Mark as Active
+            </button>
+            <button
+              onClick={() => handleBulkStatusUpdate("inactive", "Inactive")}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Mark as Inactive
+            </button>
+            <button
+              onClick={() => handleBulkStatusUpdate("completed", "Completed")}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Mark as Completed
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-100"
+            >
+              Delete
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
             <span className="rounded bg-[#156372] px-2 py-0.5 text-xs font-semibold text-white">{selectedProjects.length}</span>
             <span className="text-sm text-gray-700">Selected</span>
+            <span className="text-xs text-gray-400">Esc</span>
+            <button
+              onClick={() => setSelectedProjects([])}
+              className="text-red-500 hover:text-red-600"
+              aria-label="Clear selection"
+              title="Clear selection"
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button
-            onClick={() => setSelectedProjects([])}
-            className="flex items-center gap-1 border-none bg-transparent text-xs text-gray-500"
-          >
-            Esc <X size={14} />
-          </button>
         </div>
       )}
 
@@ -1719,49 +1877,13 @@ export default function TimeTrackingProject() {
                         className="border-none bg-transparent p-0 text-[#156372]"
                         onClick={(e) => {
                           e.stopPropagation();
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setProjectsColumnsMenuPos({
-                            top: rect.bottom + 8,
-                            left: rect.left,
-                          });
-                          setShowProjectsColumnsMenu((open) => !open);
+                          setShowProjectsColumnsMenu(false);
+                          setShowProjectsCustomizeModal(true);
                         }}
-                        aria-haspopup="menu"
-                        aria-expanded={showProjectsColumnsMenu}
+                        aria-label="Customize Columns"
                       >
                         <SlidersHorizontal size={14} />
                       </button>
-                      {showProjectsColumnsMenu && (
-                        <div
-                          role="menu"
-                          className="fixed w-52 rounded-md border border-gray-200 bg-white shadow-lg z-[2000] projects-columns-menu"
-                          style={{ top: projectsColumnsMenuPos.top, left: projectsColumnsMenuPos.left }}
-                        >
-                          <button
-                            type="button"
-                            className="projects-columns-item"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowProjectsColumnsMenu(false);
-                              setShowProjectsCustomizeModal(true);
-                            }}
-                          >
-                            <LayoutGrid size={14} className="projects-columns-icon" />
-                            Customize Columns
-                          </button>
-                          <button
-                            type="button"
-                            className="projects-columns-item"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowProjectsColumnsMenu(false);
-                            }}
-                          >
-                            <List size={14} className="projects-columns-icon" />
-                            Clip Text
-                          </button>
-                        </div>
-                      )}
                     </div>
                     <div className="projects-select-header-checkbox">
                       <input
@@ -1804,7 +1926,7 @@ export default function TimeTrackingProject() {
                     <td className="px-4 py-3 text-sm text-gray-800" onClick={() => navigate(`/time-tracking/projects/${project.id}`)}>{project.customerName || '--'}</td>
                     <td className="px-4 py-3 text-sm text-[#156372]" onClick={() => navigate(`/time-tracking/projects/${project.id}`)}>{project.projectName || '--'}</td>
                     <td className="px-4 py-3 text-sm text-gray-800" onClick={() => navigate(`/time-tracking/projects/${project.id}`)}>{getBillingMethodText(project.billingMethod)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-800" onClick={() => navigate(`/time-tracking/projects/${project.id}`)}>{project.billingRate ?? project.rate ?? '--'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-800" onClick={() => navigate(`/time-tracking/projects/${project.id}`)}>{getProjectRateDisplay(project)}</td>
                     <td className="px-4 py-3" />
                   </tr>
                 ))}
@@ -2062,6 +2184,15 @@ export default function TimeTrackingProject() {
         </div>
       )}
 
+      <BulkUpdateModal
+        isOpen={showBulkUpdateModal}
+        onClose={() => setShowBulkUpdateModal(false)}
+        onUpdate={(field, value, selectedField) => handleBulkUpdate(field, value, selectedField)}
+        title="Bulk Update Projects"
+        fieldOptions={projectFieldOptions}
+        entityName="projects"
+      />
+
       <ProjectsCustomizeColumnsModal
         isOpen={showProjectsCustomizeModal}
         columns={projectColumnOptions}
@@ -2069,6 +2200,44 @@ export default function TimeTrackingProject() {
         onSave={(nextKeys) => setSelectedProjectColumns(nextKeys)}
         onClose={() => setShowProjectsCustomizeModal(false)}
       />
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[2000] flex items-start justify-center bg-black/40 pt-20">
+          <div className="w-full max-w-[520px] overflow-hidden rounded-xl bg-white shadow-[0_20px_60px_rgba(0,0,0,0.2)]">
+            <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                  <AlertTriangle size={16} />
+                </div>
+                <div className="text-[15px] font-semibold text-slate-800">Delete project?</div>
+              </div>
+              <button
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-5 py-4 text-sm text-slate-600">
+              You cannot retrieve this project once it has been deleted.
+            </div>
+            <div className="flex items-center gap-3 border-t border-gray-100 px-5 py-4">
+              <button
+                className="rounded-md bg-[#156372] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4e59]"
+                onClick={handleConfirmBulkDelete}
+              >
+                Delete
+              </button>
+              <button
+                className="rounded-md border border-gray-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-gray-50"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Preferences Modal */}
       {showPreferencesModal && (

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { projectsAPI, timeEntriesAPI } from "../../services/api";
-import toast from "react-hot-toast";
+import { toast } from "react-toastify";
 import { useCurrency } from "../../hooks/useCurrency";
 import NewLogEntryForm from "./NewLogEntryForm";
-import { ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Search, ArrowUpDown, X, MessageSquare, Briefcase, User, Calendar, Plus, Paperclip, Minus, Check, Trash2, MoreVertical, Edit3 } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Search, ArrowUpDown, X, MessageSquare, Briefcase, User, Plus, Paperclip, Minus, Check, Trash2, MoreVertical, Edit3 } from "lucide-react";
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
@@ -18,6 +18,7 @@ export default function ProjectDetailPage() {
   const [hoveredTransaction, setHoveredTransaction] = useState(null);
   const transactionDropdownRef = useRef(null);
   const [showMoreDropdown, setShowMoreDropdown] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hoveredMoreOption, setHoveredMoreOption] = useState(null);
   const moreDropdownRef = useRef(null);
   const sortDataDropdownRef = useRef(null);
@@ -100,6 +101,48 @@ export default function ProjectDetailPage() {
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
   const [expandedAccountCategories, setExpandedAccountCategories] = useState({});
+
+  const handleCreateInvoiceFromProject = () => {
+    if (!project) {
+      toast.error("Project details are not ready yet.");
+      return;
+    }
+
+    const customerId =
+      project.customerId ||
+      project.customer?._id ||
+      project.customer?.id ||
+      project.customer ||
+      "";
+    const customerName =
+      project.customerName ||
+      project.customer?.displayName ||
+      project.customer?.companyName ||
+      project.customer?.name ||
+      "";
+
+    const payloadProject = {
+      id: project.id || project.projectId || project._id,
+      projectName: project.projectName || project.name || "Project",
+      billingMethod: project.billingMethod,
+      billingRate: project.billingRate,
+      totalProjectCost: project.totalProjectCost || project.budget || project.totalCost || project.billingRate || 0,
+      customerId,
+      customerName,
+      currency: project.currency || baseCurrencyCode,
+    };
+
+    navigate("/sales/invoices/new", {
+      state: {
+        source: "timeTrackingProjects",
+        customerId,
+        customerName,
+        projects: [payloadProject],
+      },
+    });
+
+    toast.info("Invoice draft created from the project. Review before saving.");
+  };
 
   // Close dropdowns when modal closes
   useEffect(() => {
@@ -492,6 +535,60 @@ export default function ProjectDetailPage() {
   const salesCreditNotes = getArray(project?.creditNotes || project?.salesCreditNotes);
   const salesRefunds = getArray(project?.refunds || project?.salesRefunds);
 
+  const currencyCode = project?.currency || baseCurrencyCode;
+  const formatMoney = (value: any) =>
+    `${currencyCode} ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const rawBillingMethod = String(project?.billingMethod || "").toLowerCase();
+  const billingMethodLabel =
+    rawBillingMethod === "fixed" || rawBillingMethod === "fixed_cost" || rawBillingMethod === "fixed cost for project"
+      ? "Fixed Cost for Project"
+      : rawBillingMethod === "project-hours"
+        ? "Hourly Rate Per Project"
+        : rawBillingMethod === "task-hours"
+          ? "Hourly Rate Per Task"
+          : rawBillingMethod === "staff-hours"
+            ? "Hourly Rate Per Staff"
+            : rawBillingMethod === "hourly"
+              ? "Hourly Rate"
+              : (project?.billingMethod || "Hourly Rate");
+
+  const billingRate = Number(project?.billingRate || 0);
+  const totalProjectCost = Number(
+    project?.totalProjectCost ??
+    project?.budget ??
+    project?.totalCost ??
+    (rawBillingMethod === "fixed" ? billingRate : 0)
+  );
+
+  const billedFromInvoices = salesInvoices.reduce(
+    (sum, invoice) => sum + Number(invoice?.amount || invoice?.total || 0),
+    0
+  );
+
+  const loggedAmount =
+    rawBillingMethod === "fixed"
+      ? totalProjectCost
+      : (hoursData.loggedMinutes / 60) * billingRate;
+  const billableAmount =
+    rawBillingMethod === "fixed"
+      ? totalProjectCost
+      : (hoursData.billableMinutes / 60) * billingRate;
+  const billedAmount =
+    rawBillingMethod === "fixed"
+      ? billedFromInvoices
+      : (hoursData.billedMinutes / 60) * billingRate;
+  const unbilledAmount =
+    rawBillingMethod === "fixed"
+      ? Math.max(totalProjectCost - billedFromInvoices, 0)
+      : (hoursData.unbilledMinutes / 60) * billingRate;
+  const totalExpensesAmount = expenses.reduce(
+    (sum, expense) => sum + Number(expense?.amount || expense?.total || 0),
+    0
+  );
+  const actualCost = totalExpensesAmount;
+  const actualRevenue = billedAmount;
+
   const filterByStatus = (items, status) => {
     if (!items || status === "All") return items;
     return items.filter((item) => {
@@ -505,6 +602,20 @@ export default function ProjectDetailPage() {
   const filteredSalesRetainerInvoices = filterByStatus(salesRetainerInvoices, retainerInvoicesStatusFilter);
   const filteredSalesCreditNotes = filterByStatus(salesCreditNotes, creditNotesStatusFilter);
   const filteredSalesRefunds = filterByStatus(salesRefunds, refundsStatusFilter);
+
+  const handleDeleteProject = async () => {
+    if (!projectId) return;
+    try {
+      await projectsAPI.delete(projectId);
+      toast.success("Project deleted successfully.");
+      window.dispatchEvent(new Event('projectUpdated'));
+      setShowDeleteModal(false);
+      navigate('/time-tracking/projects');
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      toast.error("Failed to delete project");
+    }
+  };
 
   return (
     <div style={{ width: "100%", backgroundColor: "#f8fafc", minHeight: "100vh" }}>
@@ -524,7 +635,7 @@ export default function ProjectDetailPage() {
               </span>
             </div>
             <div className="flex items-center gap-2 ml-auto">
-              {isCompletedProject ? (
+                            {isCompletedProject ? (
                 <>
 
               <button
@@ -577,18 +688,8 @@ export default function ProjectDetailPage() {
                 Mark as Active
               </button>
               <button
-                onClick={async () => {
-                  if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-                    try {
-                      await projectsAPI.delete(projectId);
-                      toast.success('Project deleted successfully.');
-                      window.dispatchEvent(new Event('projectUpdated'));
-                      navigate('/time-tracking/projects');
-                    } catch (error) {
-                      console.error('Error deleting project:', error);
-                      toast.error('Failed to delete project');
-                    }
-                  }
+                onClick={() => {
+                  setShowDeleteModal(true);
                 }}
                 className="px-4 py-2 border border-gray-200 rounded bg-white cursor-pointer text-sm hover:bg-gray-50"
               >
@@ -655,7 +756,7 @@ export default function ProjectDetailPage() {
                                 navigate('/sales/quotes/new');
                                 break;
                               case 'Create Invoice':
-                                navigate('/sales/invoices/new');
+                                handleCreateInvoiceFromProject();
                                 break;
                               case 'Create Retainer Invoice':
                                 navigate('/sales/recurring-invoices/new');
@@ -742,7 +843,7 @@ export default function ProjectDetailPage() {
                 </button>
 
                 {/* More Dropdown Menu */}
-                {showMoreDropdown && (
+                                {showMoreDropdown && (
                   <div className="absolute top-full right-0 mt-1 bg-white rounded-md shadow-lg min-w-[200px] z-[1000] border border-gray-200 overflow-hidden">
                     {/* Invoice Preferences */}
                     <div
@@ -901,20 +1002,10 @@ export default function ProjectDetailPage() {
                     {/* Delete */}
                     <div
                       className="px-4 py-2.5 text-sm text-gray-800 cursor-pointer hover:bg-[#ef4444] hover:text-white transition-colors"
-                      onClick={async (e) => {
+                      onClick={(e) => {
                         e.stopPropagation();
                         setShowMoreDropdown(false);
-                        if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-                          try {
-                            await projectsAPI.delete(projectId);
-                            toast.success("Project deleted successfully.");
-                            window.dispatchEvent(new Event('projectUpdated'));
-                            navigate('/time-tracking/projects');
-                          } catch (error) {
-                            console.error("Error deleting project:", error);
-                            toast.error("Failed to delete project");
-                          }
-                        }
+                        setShowDeleteModal(true);
                       }}
                     >
                       Delete
@@ -954,14 +1045,28 @@ export default function ProjectDetailPage() {
                 </button>
               ))}
             </div>
-            <div />
+            <button
+              type="button"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                border: "none",
+                background: "transparent",
+                color: "#6b7280",
+                fontSize: "13px",
+                cursor: "pointer"
+              }}
+            >
+              <MessageSquare size={14} />
+              Comments
+            </button>
           </div>
         </div>
       </div>
 
       <div style={{ display: "flex", gap: "20px", padding: "20px" }}>
         {/* Left Sidebar - Project Details */}
-        {false && (
         <div style={{
           width: "280px",
           backgroundColor: "#fff",
@@ -972,77 +1077,87 @@ export default function ProjectDetailPage() {
           boxShadow: "none"
         }}>
           {/* Project Header */}
-          <div style={{ marginBottom: "24px" }}>
+          <div style={{ marginBottom: "20px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "4px" }}>
               <div style={{ marginTop: "4px" }}>
-                <Briefcase size={20} style={{ color: "#4b5563" }} />
+                <Briefcase size={18} style={{ color: "#4b5563" }} />
               </div>
               <div>
-                <div style={{ fontSize: "20px", fontWeight: "600", color: "#1f2937", lineHeight: "1.2" }}>
-                  {project.projectName || "taban"}
-                </div>
-                <div style={{ fontSize: "13px", color: "#6b7280", marginTop: "4px" }}>
-                  {project.customerName || "fsdv"}
+                <div style={{ fontSize: "18px", fontWeight: "600", color: "#1f2937", lineHeight: "1.2" }}>
+                  {project.projectName || "Project"}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* User/Client Link */}
-          <div style={{ marginBottom: "24px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{
-              width: "24px",
-              display: "flex",
-              justifyContent: "center"
-            }}>
-              <User size={20} style={{ color: "#4b5563" }} />
+          {/* Customer Link */}
+          <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ width: "24px", display: "flex", justifyContent: "center" }}>
+              <User size={18} style={{ color: "#4b5563" }} />
             </div>
             <div>
-              <span style={{ color: "#2563eb", fontWeight: "500", fontSize: "15px", cursor: "pointer" }}>
-                {project.customerName || "KOWNI"}
+              <span style={{ color: "#2563eb", fontWeight: "500", fontSize: "14px", cursor: "pointer" }}>
+                {project.customerName || "Customer"}
               </span>
             </div>
           </div>
 
           {/* Divider */}
-          <div style={{ height: "1px", backgroundColor: "#e5e7eb", margin: "0 0 24px 0" }}></div>
+          <div style={{ height: "1px", backgroundColor: "#e5e7eb", margin: "0 0 16px 0" }}></div>
 
           {/* Details List */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {/* Project Code */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* Billing Method */}
             <div>
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>
-                Project Code
+              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
+                Billing Method
               </div>
-              <div style={{ fontSize: "14px", color: "#374151", fontWeight: "400" }}>
-                {project.projectCode || "afv"}
+              <div style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>
+                {billingMethodLabel}
               </div>
             </div>
 
-            {/* Billing Method */}
+            {/* Total Project Cost */}
             <div>
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>
-                Billing Method
+              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
+                Total Project Cost
               </div>
-              <div style={{ fontSize: "14px", color: "#374151", fontWeight: "400" }}>
-                Hourly Rate Per Task
+              <div style={{ fontSize: "13px", color: "#111827", fontWeight: "600" }}>
+                {formatMoney(totalProjectCost)}
               </div>
             </div>
 
             {/* Watchlist */}
             <div>
-              <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>
+              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
                 Add to dashboard watchlist.
               </div>
-              <div style={{ fontSize: "13px" }}>
+              <div style={{ fontSize: "12px" }}>
                 <span style={{ color: "#374151" }}>Enabled</span>
                 <span style={{ color: "#9ca3af", margin: "0 6px" }}>-</span>
                 <span style={{ color: "#2563eb", cursor: "pointer" }}>Disable</span>
               </div>
             </div>
+
+            {/* Unbilled/Billed */}
+            <div>
+              <div style={{ fontSize: "12px", color: "#059669", marginBottom: "4px" }}>
+                ● Unbilled Amount
+              </div>
+              <div style={{ fontSize: "13px", color: "#059669", fontWeight: "600" }}>
+                {formatMoney(unbilledAmount)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "12px", color: "#ef4444", marginBottom: "4px" }}>
+                ● Billed Amount
+              </div>
+              <div style={{ fontSize: "13px", color: "#ef4444", fontWeight: "600" }}>
+                {formatMoney(billedAmount)}
+              </div>
+            </div>
           </div>
         </div>
-        )}
 
         {/* Main Content Area */}
         <div style={{ flex: 1 }}>
@@ -1098,22 +1213,10 @@ export default function ProjectDetailPage() {
                       Profitability Summary
                     </button>
                   </div>
-                  {hoursView === "Profitability Summary" ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-                      <span style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>{dateRange}</span>
-                      <ChevronDown size={14} color="#6b7280" />
-                      <Calendar size={14} color="#6b7280" style={{ marginLeft: "4px" }} />
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span style={{ fontSize: "13px", color: "#6b7280" }}>This Fiscal Year</span>
-                      <span style={{ fontSize: "13px", color: "#6b7280" }}>-</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-                        <span style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>Cash</span>
-                        <ChevronDown size={14} color="#6b7280" />
-                      </div>
-                    </div>
-                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
+                    <span style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>{dateRange}</span>
+                    <ChevronDown size={14} color="#6b7280" />
+                  </div>
                 </div>
 
                 {hoursView === "Profitability Summary" ? (
@@ -1238,62 +1341,32 @@ export default function ProjectDetailPage() {
                     {/* Divider Line */}
                     <div style={{ height: "1px", backgroundColor: "#f3f4f6", margin: "0 -24px 24px -24px" }}></div>
 
-                    {/* Summary Cards */}
+                    {/* Actuals Summary */}
                     <div style={{
-                      display: "flex",
-                      width: "100%",
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
                       gap: "24px"
                     }}>
-                      {/* Logged Hours Card */}
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>Logged Hours</div>
-                        <div style={{ fontSize: "16px", fontWeight: "600", color: "#156372", marginBottom: "4px" }}>
-                          {hoursData.logged}
-                        </div>
-                        <div style={{ fontSize: "14px", color: "#1f2937" }}>{baseCurrencyCode}0.00</div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>Actual Cost</div>
+                        <div style={{ fontSize: "16px", fontWeight: "600", color: "#111827" }}>{formatMoney(actualCost)}</div>
                       </div>
-
-                      {/* Billable Hours Card */}
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>Billable Hours</div>
-                        <div style={{ fontSize: "16px", fontWeight: "600", color: "#156372", marginBottom: "4px" }}>
-                          {hoursData.billable}
-                        </div>
-                        <div style={{ fontSize: "14px", color: "#1f2937" }}>{baseCurrencyCode}0.00</div>
-                      </div>
-
-                      {/* Billed Hours Card */}
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>Billed Hours</div>
-                        <div style={{ fontSize: "16px", fontWeight: "600", color: "#156372", marginBottom: "4px" }}>
-                          {hoursData.billed}
-                        </div>
-                        <div style={{ fontSize: "14px", color: "#1f2937" }}>{baseCurrencyCode}0.00</div>
-                      </div>
-
-                      {/* Unbilled Hours Card */}
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>Unbilled Hours</div>
-                        <div style={{ fontSize: "16px", fontWeight: "600", color: "#156372", marginBottom: "4px" }}>
-                          {hoursData.unbilled}
-                        </div>
-                        <div style={{ fontSize: "14px", color: "#1f2937" }}>{baseCurrencyCode}0.00</div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>Actual Revenue</div>
+                        <div style={{ fontSize: "16px", fontWeight: "600", color: "#111827" }}>{formatMoney(actualRevenue)}</div>
                       </div>
                     </div>
                   </>
                 ) : (
                   <>
-                    {/* Project Hours - Bar Chart */}
+                    {/* Project Hours - Logged Hours Line Chart */}
                     <div style={{
                       height: "300px",
                       position: "relative",
-                      marginBottom: "24px"
+                      marginBottom: "12px"
                     }}>
                       <div style={{
-                        display: "flex",
-                        height: "260px",
-                        alignItems: "flex-end",
-                        justifyContent: "space-between",
+                        height: "240px",
                         paddingLeft: "40px",
                         paddingRight: "20px",
                         borderBottom: "1px solid #e5e7eb",
@@ -1310,106 +1383,96 @@ export default function ProjectDetailPage() {
                           justifyContent: "space-between",
                           fontSize: "11px",
                           color: "#9ca3af",
-                          paddingBottom: "10px"
+                          paddingBottom: "10px",
+                          width: "35px"
                         }}>
-                          <span>5 K</span>
-                          <span>4 K</span>
-                          <span>3 K</span>
-                          <span>2 K</span>
-                          <span>1 K</span>
+                          <span>8h</span>
+                          <span>6h</span>
+                          <span>4h</span>
+                          <span>2h</span>
                           <span>0</span>
                         </div>
 
-                        {/* Chart Bars - Mocking 12 months for "This Fiscal Year" look */}
-                        {['Jul 2025', 'Aug 2025', 'Sep 2025', 'Oct 2025', 'Nov 2025', 'Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'].map((month, i) => (
-                          <div key={i} style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: "6px",
-                            flex: 1,
-                            height: "100%",
-                            justifyContent: "flex-end"
-                          }}>
-                            <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "100%" }}>
-                              {/* Income Bar (Blue) */}
-                              <div style={{
-                                width: "8px",
-                                height: i === 0 ? "40px" : "2px", // Mock data for demo
-                                backgroundColor: "#60a5fa",
-                                borderRadius: "2px 2px 0 0"
-                              }}></div>
-                              {/* Expense Bar (Yellow) */}
-                              <div style={{
-                                width: "8px",
-                                height: "2px",
-                                backgroundColor: "#fbbf24",
-                                borderRadius: "2px 2px 0 0"
-                              }}></div>
-                            </div>
-                            <div style={{
-                              fontSize: "10px",
-                              color: "#9ca3af",
-                              textAlign: "center",
-                              lineHeight: "1.2",
-                              width: "30px"
-                            }}>
-                              {month.split(' ').map((part, idx) => (
-                                <div key={idx}>{part}</div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                        {/* Line Chart Area */}
+                        <div style={{
+                          height: "100%",
+                          paddingTop: "10px",
+                          paddingBottom: "30px",
+                          position: "relative",
+                          marginLeft: "40px"
+                        }}>
+                          <svg
+                            width="100%"
+                            height="100%"
+                            viewBox="0 0 600 220"
+                            preserveAspectRatio="none"
+                            style={{ position: "absolute", top: "10px", left: 0 }}
+                          >
+                            {/* Grid lines */}
+                            {[0, 1, 2, 3, 4].map(i => {
+                              const y = (i / 4) * 220;
+                              return (
+                                <line
+                                  key={i}
+                                  x1="0"
+                                  y1={y}
+                                  x2="600"
+                                  y2={y}
+                                  stroke="#f3f4f6"
+                                  strokeWidth="1"
+                                />
+                              );
+                            })}
+                            {/* Logged Hours line (flat until data exists) */}
+                            <polyline
+                              points="0,220 100,220 200,220 300,220 400,220 500,220 600,220"
+                              fill="none"
+                              stroke="#60a5fa"
+                              strokeWidth="2"
+                            />
+                          </svg>
 
-                      {/* Legend & Report Link */}
-                      <div style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginTop: "20px"
-                      }}>
-                        <div style={{ display: "flex", gap: "24px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <div style={{ width: "16px", height: "4px", backgroundColor: "#60a5fa", borderRadius: "2px" }}></div>
-                            <span style={{ fontSize: "13px", color: "#374151" }}>Income</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <div style={{ width: "16px", height: "4px", backgroundColor: "#fbbf24", borderRadius: "2px" }}></div>
-                            <span style={{ fontSize: "13px", color: "#374151" }}>Expense</span>
+                          {/* Date labels on X-axis */}
+                          <div style={{
+                            position: "absolute",
+                            bottom: "-25px",
+                            left: "0",
+                            right: "40px",
+                            display: "flex",
+                            justifyContent: "space-between"
+                          }}>
+                            {["09 Mar", "10 Mar", "11 Mar", "12 Mar", "13 Mar", "14 Mar", "15 Mar"].map((date, i) => (
+                              <span key={i} style={{ fontSize: "11px", color: "#9ca3af" }}>
+                                {date}
+                              </span>
+                            ))}
                           </div>
                         </div>
+                      </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", color: "#156372" }}>
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M2.5 11.5V6.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M7 11.5V2.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M11.5 11.5V4.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          <span style={{ fontSize: "13px" }}>Profitability Report</span>
+                      {/* Legend */}
+                      <div style={{
+                        display: "flex",
+                        gap: "12px",
+                        marginTop: "18px",
+                        paddingLeft: "40px"
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div style={{ width: "16px", height: "4px", backgroundColor: "#60a5fa", borderRadius: "2px" }}></div>
+                          <span style={{ fontSize: "13px", color: "#374151" }}>Logged Hours</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Divider Line */}
-                    <div style={{ height: "1px", backgroundColor: "#f3f4f6", margin: "0 -24px 24px -24px" }}></div>
-
-                    {/* Actual Cost & Revenue Cards - Clean layout matching design */}
+                    {/* Logged Hours Summary */}
                     <div style={{
-                      display: "flex",
-                      width: "100%"
+                      textAlign: "center",
+                      marginTop: "8px"
                     }}>
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", borderRight: "1px solid #f3f4f6" }}>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>Actual Cost</div>
-                        <div style={{ fontSize: "20px", fontWeight: "600", color: "#1f2937" }}>
-                          {baseCurrencyCode}0.00
-                        </div>
-                      </div>
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "8px" }}>Actual Revenue</div>
-                        <div style={{ fontSize: "20px", fontWeight: "600", color: "#1f2937" }}>
-                          {baseCurrencyCode}0.00
-                        </div>
+                      <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>Logged Hours</div>
+                      <div style={{ fontSize: "16px", color: "#2563eb", fontWeight: "600" }}>{hoursData.logged}</div>
+                      <div style={{ fontSize: "14px", color: "#111827", fontWeight: "500" }}>
+                        {formatMoney(loggedAmount)}
                       </div>
                     </div>
                   </>
@@ -1465,10 +1528,7 @@ export default function ProjectDetailPage() {
                         LOGGED HOURS
                       </th>
                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
-                        BILLED HOURS
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
-                        UNBILLED HOURS
+                        COST PER HOUR
                       </th>
                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
                         ROLE
@@ -1488,8 +1548,9 @@ export default function ProjectDetailPage() {
                               </div>
                             </td>
                             <td style={{ padding: "12px", fontSize: "14px", color: "#333" }}>{userHours.logged}</td>
-                            <td style={{ padding: "12px", fontSize: "14px", color: "#333" }}>{userHours.billed}</td>
-                            <td style={{ padding: "12px", fontSize: "14px", color: "#333" }}>{userHours.unbilled}</td>
+                            <td style={{ padding: "12px", fontSize: "14px", color: "#333" }}>
+                              {formatMoney(user.costPerHour || user.rate || 0)}
+                            </td>
                             <td style={{ padding: "12px", fontSize: "14px", color: "#333" }}>
                               {user.role || "Admin"}
                             </td>
@@ -1498,7 +1559,7 @@ export default function ProjectDetailPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan="5" style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                        <td colSpan="4" style={{ padding: "20px", textAlign: "center", color: "#666" }}>
                           No users added
                         </td>
                       </tr>
@@ -2276,9 +2337,9 @@ export default function ProjectDetailPage() {
                       borderRadius: "6px",
                       color: "#2563eb"
                     }}>
-                      <span style={{ cursor: "pointer" }}>�</span>
+                      <span style={{ cursor: "pointer" }}>‹</span>
                       <span>1 - {Math.min(3, filteredExpenses.length)}</span>
-                      <span style={{ cursor: "pointer" }}>�</span>
+                      <span style={{ cursor: "pointer" }}>›</span>
                     </div>
                   </div>
                 </div>
@@ -3662,9 +3723,60 @@ export default function ProjectDetailPage() {
           </div>
         );
       })()}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 pt-16">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-2xl border border-slate-200">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-3">
+              <div className="h-7 w-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[12px] font-bold">
+                !
+              </div>
+              <h3 className="text-[15px] font-semibold text-slate-800 flex-1">Delete project?</h3>
+              <button
+                type="button"
+                className="h-7 w-7 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                onClick={() => setShowDeleteModal(false)}
+                aria-label="Close"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="px-5 py-3 text-[13px] text-slate-600">
+              You cannot retrieve this project once it has been deleted.
+            </div>
+            <div className="flex items-center justify-start gap-2 border-t border-slate-100 px-5 py-3">
+              <button
+                type="button"
+                className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-[12px] hover:bg-blue-700"
+                onClick={handleDeleteProject}
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                className="px-4 py-1.5 rounded-md border border-slate-300 text-[12px] text-slate-700 hover:bg-slate-50"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

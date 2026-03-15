@@ -425,6 +425,16 @@ const groupedAccountOptions = [
   { group: "Other Current Asset", options: ["Advance Tax", "Employee Advance", "Goods In Transit", "Prepaid Expenses"] },
   { group: "Fixed Asset", options: ["Furniture and Equipment", "Office Equipment", "Computer Hardware"] },
 ];
+const shouldPrefillFromProjects = Boolean((location.state as any)?.source === "timeTrackingProjects");
+const createEmptyInvoiceItem = () => ({
+  id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  itemDetails: "",
+  quantity: 1,
+  rate: 0,
+  tax: "",
+  amount: 0
+});
+const initialInvoiceItems = [createEmptyInvoiceItem()];
 const [formData, setFormData] = useState<InvoiceFormState>({
   customerName: "",
   mobile: "",
@@ -441,7 +451,7 @@ const [formData, setFormData] = useState<InvoiceFormState>({
   subject: "",
   taxExclusive: "Tax Exclusive",
   selectedPriceList: "Select Price List",
-  items: [{ id: 1, itemDetails: "", quantity: 1, rate: 0, tax: "", amount: 0 }],
+  items: initialInvoiceItems,
   subTotal: 0,
   discount: 0,
   discountType: "percent",
@@ -457,7 +467,16 @@ const [formData, setFormData] = useState<InvoiceFormState>({
   attachedFiles: [],
   status: "draft"
 });
+const prefillAppliedRef = useRef(false);
 const [loadedInvoice, setLoadedInvoice] = useState<any>(null);
+const hasProjectItem = (item: any) =>
+  Boolean(
+    String(item?.projectId || item?.project || item?.projectName || "").trim()
+  );
+const standardLineItems = (formData.items || []).filter((item: any) => !hasProjectItem(item));
+const projectLineItems = (formData.items || []).filter((item: any) => hasProjectItem(item));
+const [projectEditTargetId, setProjectEditTargetId] = useState<string | number | null>(null);
+const [projectEditValue, setProjectEditValue] = useState("");
 const isCustomPaymentTerm = selectedPaymentTerm === "custom" || String(formData.receipt || "").toLowerCase() === "custom";
 const selectedPriceListOption = catalogPriceLists.find(
   (option) => option.name === ((formData as any).selectedPriceList || "")
@@ -540,6 +559,7 @@ useEffect(() => {
                 id: item?.id || item?._id || `item-${idx + 1}`,
                 itemId: item?.itemId || item?.productId,
                 itemDetails: String(item?.itemDetails || item?.name || item?.description || ""),
+                description: String(item?.description || item?.itemDetails || ""),
                 quantity,
                 rate,
                 tax: String(item?.tax || item?.taxId || item?.taxName || ""),
@@ -1086,6 +1106,85 @@ useEffect(() => {
 }, []);
 
 useEffect(() => {
+  if (prefillAppliedRef.current) return;
+  if (isEditMode) return;
+
+  const state = location.state as any;
+  if (!state || state.source !== "timeTrackingProjects") return;
+
+  const rawProjects = Array.isArray(state.projects) ? state.projects : [];
+  if (rawProjects.length === 0) return;
+
+  const customerId = String(state.customerId || rawProjects[0]?.customerId || "").trim();
+  const customerName = String(state.customerName || rawProjects[0]?.customerName || "").trim();
+
+  const matchedCustomer =
+    customers.find((c: any) => String(c?.id || c?._id || "") === customerId) ||
+    customers.find(
+      (c: any) =>
+        String(c?.name || c?.displayName || "").trim().toLowerCase() ===
+        String(customerName || "").trim().toLowerCase()
+    );
+
+  if (matchedCustomer) {
+    setSelectedCustomer(matchedCustomer);
+  } else if (customerName) {
+    setSelectedCustomer({ id: customerId || undefined, name: customerName, displayName: customerName });
+  }
+
+  const mappedItems = rawProjects.map((project: any, index: number) => {
+    const method = String(project?.billingMethod || "").toLowerCase();
+    const rateSource =
+      method === "fixed"
+        ? project?.totalProjectCost ?? project?.billingRate ?? project?.rate ?? 0
+        : project?.billingRate ?? project?.rate ?? 0;
+    const rate = Number(rateSource) || 0;
+    const quantity = 1;
+    const projectId = project?.id || project?.projectId || project?.project || "";
+    return {
+      id: Date.now() + index,
+      itemDetails: project?.projectName || project?.name || "Project",
+      quantity,
+      rate,
+      tax: "",
+      amount: rate * quantity,
+      description: project?.description || "",
+      projectId,
+      project: projectId,
+      projectName: project?.projectName || project?.name || "",
+    };
+  });
+
+  setFormData((prev) => {
+    const cleanedItems = mappedItems.filter((item) => {
+      const hasProject = String((item as any).projectId || (item as any).project || "").trim();
+      const hasDetails = String(item?.itemDetails || "").trim();
+      return hasProject || hasDetails;
+    });
+    const hasStandardItem = cleanedItems.some((item: any) => {
+      const hasProject = String((item as any).projectId || (item as any).project || (item as any).projectName || "").trim();
+      return !hasProject;
+    });
+    const mergedItems = hasStandardItem ? cleanedItems : [...cleanedItems, createEmptyInvoiceItem()];
+    const nextState = {
+      ...prev,
+      customerName: customerName || prev.customerName,
+      currency: String(rawProjects[0]?.currency || prev.currency || "USD"),
+      items: mergedItems.length > 0 ? mergedItems : prev.items,
+    } as InvoiceFormState;
+    const totals = calculateInvoiceTotalsFromData(nextState);
+    return {
+      ...nextState,
+      subTotal: totals.subTotal,
+      roundOff: totals.roundOff,
+      total: totals.total,
+    };
+  });
+
+  prefillAppliedRef.current = true;
+}, [location.state, customers, isEditMode]);
+
+useEffect(() => {
   const normalizeLocalTaxRow = (tax: any) => ({
     id: tax?._id || tax?.id,
     _id: tax?._id || tax?.id,
@@ -1469,7 +1568,7 @@ const handleRemoveItem = (id: number | string) => {
 };
 
 const handleSelectAllItems = () => {
-  setBulkSelectedItemIds(formData.items.map(item => item.id));
+  setBulkSelectedItemIds(standardLineItems.map(item => item.id));
 };
 
 const handleDeselectAllItems = () => {
@@ -1567,12 +1666,19 @@ const buildInvoicePayload = (statusValue: string) => {
     : "";
 
   const customer = customerDetails;
+  const customerDisplayName =
+    customer?.displayName ||
+    customer?.companyName ||
+    customer?.name ||
+    formData.customerName ||
+    "";
   const itemRows = (formData.items as any[]).filter((item) => item.itemType !== "header");
 
   const payload = {
     invoiceNumber: formData.invoiceNumber,
     customer: customer?.id || customer?._id || undefined,
     customerId: customer?.id || customer?._id || undefined,
+    customerName: customerDisplayName,
     date: formData.invoiceDate || new Date().toISOString(),
     dueDate: formData.dueDate,
     orderNumber: formData.orderNumber,
@@ -1603,7 +1709,7 @@ const buildInvoicePayload = (statusValue: string) => {
         taxAmount: Number(taxAmount.toFixed(2)),
         total: Number(baseAmount.toFixed(2)),
         amount: Number(baseAmount.toFixed(2)),
-        description: item.itemDetails || ""
+        description: item.description || item.itemDetails || ""
       };
     }),
 
@@ -2576,7 +2682,7 @@ return (
                           type="button"
                           className="mx-1 mt-1 flex w-[calc(100%-8px)] items-center justify-between rounded-md bg-[#4a89e8] px-3 py-2 text-left text-[13px] font-medium text-white"
                           onClick={() => {
-                            setBulkSelectedItemIds(formData.items.map((item) => item.id));
+                            setBulkSelectedItemIds(standardLineItems.map((item) => item.id));
                             setIsBulkUpdateLineItemsActive(true);
                             setActiveBulkUpdateAction("project");
                             setIsBulkActionsOpen(false);
@@ -2588,9 +2694,23 @@ return (
                         <button
                           type="button"
                           className="flex w-full items-center px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"
-                          onClick={() => { const allVisible = formData.items.length > 0 && formData.items.every((item) => itemsWithAdditionalInfo.has(item.id)); if (allVisible) { setItemsWithAdditionalInfo(new Set()); setActiveAdditionalInfoMenu(null); setAdditionalInfoSearch(""); } else { setItemsWithAdditionalInfo(new Set(formData.items.map((item) => item.id))); } setIsBulkActionsOpen(false); }}
+                          onClick={() => {
+                            const allVisible =
+                              standardLineItems.length > 0 &&
+                              standardLineItems.every((item) => itemsWithAdditionalInfo.has(item.id));
+                            if (allVisible) {
+                              setItemsWithAdditionalInfo(new Set());
+                              setActiveAdditionalInfoMenu(null);
+                              setAdditionalInfoSearch("");
+                            } else {
+                              setItemsWithAdditionalInfo(new Set(standardLineItems.map((item) => item.id)));
+                            }
+                            setIsBulkActionsOpen(false);
+                          }}
                         >
-                          {formData.items.length > 0 && formData.items.every((item) => itemsWithAdditionalInfo.has(item.id)) ? "Hide All Additional Information" : "Show All Additional Information"}
+                          {standardLineItems.length > 0 && standardLineItems.every((item) => itemsWithAdditionalInfo.has(item.id))
+                            ? "Hide All Additional Information"
+                            : "Show All Additional Information"}
                         </button>
                       </div>
                     )}
@@ -2605,9 +2725,9 @@ return (
                       className={`rounded-md bg-[#1fb374] px-3 py-1.5 text-[13px] font-medium text-white hover:bg-[#18a067] ${activeBulkUpdateAction === "project" ? "ring-2 ring-[#2f6fed] ring-offset-1" : ""}`}
                       onClick={() => {
                         setActiveBulkUpdateAction("project");
-                        const ids = bulkSelectedItemIds.length > 0 ? bulkSelectedItemIds : formData.items.map((item) => item.id);
+                        const ids = bulkSelectedItemIds.length > 0 ? bulkSelectedItemIds : standardLineItems.map((item) => item.id);
                         setBulkSelectedItemIds(ids);
-                        const firstSelected = formData.items.find((item: any) => ids.includes(item.id));
+                        const firstSelected = standardLineItems.find((item: any) => ids.includes(item.id));
                         setSelectedBulkProjectId(String((firstSelected as any)?.projectId || (firstSelected as any)?.project || ""));
                         setIsBulkUpdateProjectModalOpen(true);
                       }}
@@ -2619,9 +2739,9 @@ return (
                       className={`rounded-md bg-[#1fb374] px-3 py-1.5 text-[13px] font-medium text-white hover:bg-[#18a067] ${activeBulkUpdateAction === "reporting" ? "ring-2 ring-[#2f6fed] ring-offset-1" : ""}`}
                       onClick={() => {
                         setActiveBulkUpdateAction("reporting");
-                        const ids = bulkSelectedItemIds.length > 0 ? bulkSelectedItemIds : formData.items.map((item) => item.id);
+                        const ids = bulkSelectedItemIds.length > 0 ? bulkSelectedItemIds : standardLineItems.map((item) => item.id);
                         setBulkSelectedItemIds(ids);
-                        const firstSelected = formData.items.find((item: any) => ids.includes(item.id));
+                        const firstSelected = standardLineItems.find((item: any) => ids.includes(item.id));
                         const firstTags = Array.isArray((firstSelected as any)?.reportingTags) ? (firstSelected as any).reportingTags : [];
                         const initialValues: Record<string, string> = {};
                         normalizedReportingTags.forEach((tag: any) => {
@@ -2642,7 +2762,7 @@ return (
                       className={`rounded-md bg-[#1fb374] px-3 py-1.5 text-[13px] font-medium text-white hover:bg-[#18a067] ${activeBulkUpdateAction === "account" ? "ring-2 ring-[#2f6fed] ring-offset-1" : ""}`}
                       onClick={() => {
                         setActiveBulkUpdateAction("account");
-                        const ids = bulkSelectedItemIds.length > 0 ? bulkSelectedItemIds : formData.items.map((item) => item.id);
+                        const ids = bulkSelectedItemIds.length > 0 ? bulkSelectedItemIds : standardLineItems.map((item) => item.id);
                         setBulkSelectedItemIds(ids);
                         setIsBulkUpdateAccountModalOpen(true);
                       }}
@@ -2683,7 +2803,7 @@ return (
                   </tr>
                 </thead>
                 <tbody>
-                  {formData.items.map((item, index) => (
+                  {standardLineItems.map((item, index) => (
                     <React.Fragment key={item.id || `item-${index}`}>
                       <tr className="group border-b border-slate-200">
                         <td className="pt-6 text-center align-top">
@@ -3076,6 +3196,219 @@ return (
               </button>
             </div>
           </div>
+
+          {projectLineItems.length > 0 && (
+            <div className="mt-6 overflow-visible rounded-xl border border-slate-200 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <h2 className="text-[14px] font-semibold text-slate-800">Project Details</h2>
+              </div>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-white">
+                    <th className="w-10"></th>
+                    <th className="w-[300px] px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">ITEM DETAILS</th>
+                    <th className="w-24 px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">QUANTITY</th>
+                    <th className="w-32 px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+                      <div className="flex items-center justify-end gap-1">
+                        RATE <Grid3x3 size={12} className="text-slate-300" />
+                      </div>
+                    </th>
+                    {showItemDiscount && (
+                      <th className="w-24 px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">DISCOUNT</th>
+                    )}
+                    <th className="w-28 px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">TAX</th>
+                    <th className="w-28 px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">AMOUNT</th>
+                    <th className="w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectLineItems.map((item, index) => (
+                    <tr key={item.id || `project-item-${index}`} className="group border-b border-slate-200">
+                      <td className="pt-6 text-center align-top">
+                        <MoreVertical size={14} className="inline-block cursor-move text-slate-300" />
+                      </td>
+                      <td className="w-[300px] max-w-[300px] px-3 py-4">
+                        <div className="relative flex items-center gap-3">
+                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-100">
+                            <ImageIcon size={16} className="text-slate-300" />
+                          </div>
+                          <input
+                            type="text"
+                            className="w-full border-none bg-transparent py-1 text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                            value={item.itemDetails || item.projectName || "Project"}
+                            onChange={(e) => handleItemChange(item.id, "itemDetails", e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="ml-auto text-slate-400 hover:text-slate-600"
+                            onClick={() => {
+                              setProjectEditTargetId(item.id);
+                              setProjectEditValue(String(item.itemDetails || item.projectName || ""));
+                            }}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          {projectEditTargetId === item.id && (
+                            <div className="absolute right-0 top-full z-[150] mt-2 w-[260px] rounded-lg border border-slate-200 bg-white p-3 shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
+                              <div className="text-[12px] font-semibold text-slate-700">Project Details</div>
+                              <input
+                                type="text"
+                                className="mt-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-400"
+                                value={projectEditValue}
+                                onChange={(e) => setProjectEditValue(e.target.value)}
+                              />
+                              <div className="mt-3 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-[#2563eb] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#1d4ed8]"
+                                  onClick={() => {
+                                    handleItemChange(item.id, "itemDetails", projectEditValue);
+                                    handleItemChange(item.id, "projectName", projectEditValue);
+                                    setProjectEditTargetId(null);
+                                  }}
+                                >
+                                  Apply
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50"
+                                  onClick={() => setProjectEditTargetId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <textarea
+                          id={`project-desc-${item.id}`}
+                          placeholder="Add a description to your item"
+                          className="mt-2 h-16 w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-[12px] text-slate-600 outline-none focus:border-blue-300"
+                          value={item.description || ""}
+                          onChange={(e) => handleItemChange(item.id, "description", e.target.value)}
+                        />
+                      </td>
+                      <td className="px-3 align-top pt-4">
+                        <input
+                          type="number"
+                          className="h-9 w-full rounded-md border border-transparent bg-transparent px-2 text-right text-sm text-slate-700 outline-none transition hover:border-slate-200 focus:border-blue-300"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(item.id, "quantity", e.target.value)}
+                        />
+                      </td>
+                      <td className="px-3 align-top pt-4">
+                        <input
+                          type="number"
+                          className="h-9 w-full rounded-md border border-transparent bg-transparent px-2 text-right text-sm text-slate-700 outline-none transition hover:border-slate-200 focus:border-blue-300"
+                          value={item.rate}
+                          onChange={(e) => handleItemChange(item.id, "rate", e.target.value)}
+                        />
+                        <div className="border-t border-slate-100 pt-0.5 pr-2 text-right text-[11px] text-slate-300">0.00</div>
+                      </td>
+                      {showItemDiscount && (
+                        <td className="px-3 align-top pt-4">
+                          <div className="flex items-center justify-end overflow-hidden rounded-md border border-slate-200 bg-white">
+                            <input
+                              type="text"
+                              className="h-9 w-12 border-none px-1 text-right text-sm outline-none"
+                              value={item.discount || 0}
+                              onChange={(e) => handleItemChange(item.id, "discount", e.target.value)}
+                            />
+                            <div className="flex h-9 items-center border-l border-slate-200 bg-slate-50">
+                              <select
+                                className="h-full cursor-pointer appearance-none bg-transparent px-1 text-[11px] text-slate-600 outline-none"
+                                value={item.discountType || "percent"}
+                                onChange={(e) => handleItemChange(item.id, "discountType", e.target.value)}
+                              >
+                                <option value="percent">%</option>
+                                <option value="amount">{currencySymbol}</option>
+                              </select>
+                              <ChevronDown size={8} className="-ml-1 mr-1 pointer-events-none text-slate-400" />
+                            </div>
+                          </div>
+                          <div className="pt-0.5 pr-1 text-right text-[10px] text-slate-300">
+                            {item.discountType === "amount" ? Number(item.discount || 0).toFixed(2) : "0.00"}
+                          </div>
+                        </td>
+                      )}
+                      <td className="w-[120px] min-w-[120px] px-3 align-top pt-4">
+                        <div className="relative" ref={(el) => { taxDropdownRefs.current[item.id] = el; }}>
+                          <button
+                            type="button"
+                            className="flex h-9 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-2 text-left text-sm transition hover:border-blue-300"
+                            onClick={() => setOpenTaxDropdowns(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                          >
+                            <span className={`${item.tax ? "text-slate-700" : "text-slate-400"} truncate`}>
+                              {item.tax ? (getTaxDisplayLabel(getTaxBySelection(item.tax)) || "Select a Tax") : "Select a Tax"}
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                          </button>
+                          {openTaxDropdowns[item.id] && (
+                            <div className="absolute top-full left-0 mt-1 w-[220px] bg-white border border-gray-200 rounded-md shadow-xl z-[140]">
+                              <div className="p-2 border-b border-gray-100">
+                                <div className="relative">
+                                  <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                  <input
+                                    type="text"
+                                    placeholder="Search"
+                                    value={taxSearches[item.id] || ""}
+                                    onChange={(e) => setTaxSearches(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                    className="w-full h-8 pl-7 pr-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-48 overflow-y-auto py-1">
+                                <div className="px-3 pb-1 text-xs font-semibold text-gray-500">Taxes</div>
+                                {getFilteredTaxes(item.id).length > 0 ? (
+                                  getFilteredTaxes(item.id).map((tax, taxIndex) => (
+                                    <button
+                                      key={String((tax as any).id || (tax as any)._id || `tax-${taxIndex}`)}
+                                      type="button"
+                                      onClick={() => handleTaxSelect(item.id, String((tax as any).id || (tax as any)._id))}
+                                      className={`w-full px-3 py-1.5 text-sm text-left hover:bg-blue-50 ${String(item.tax || "") === String((tax as any).id || (tax as any)._id) ? "bg-blue-600 text-white hover:bg-blue-600" : "text-gray-700"}`}
+                                    >
+                                      {getTaxDisplayLabel(tax)}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="px-3 py-2 text-sm text-gray-500">No taxes found</div>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className="w-full px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 border-t border-gray-100 text-left flex items-center gap-2"
+                                onClick={() => {
+                                  setOpenTaxDropdowns(prev => ({ ...prev, [item.id]: false }));
+                                  setNewTaxTargetItemId(item.id);
+                                  setIsNewTaxQuickModalOpen(true);
+                                }}
+                              >
+                                <Plus size={13} />
+                                New Tax
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 pt-6 text-right align-top">
+                        <span className="text-sm font-semibold text-slate-800">
+                          {Number(item.amount || 0).toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="pt-6 text-center align-top opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X size={14} strokeWidth={3} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
 
           {/* Bottom Form Layout: Notes & Summary */}

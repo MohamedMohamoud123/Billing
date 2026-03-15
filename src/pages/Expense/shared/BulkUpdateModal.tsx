@@ -14,7 +14,7 @@ export interface BulkFieldOption {
 interface BulkUpdateModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onUpdate: (field: string, value: any, reason?: string) => void;
+    onUpdate: (field: string, value: any, selectedField?: BulkFieldOption) => void;
     title: string;
     fieldOptions: Array<string | BulkFieldOption>;
     entityName: string;
@@ -126,7 +126,7 @@ export default function BulkUpdateModal({ isOpen, onClose, onUpdate, title, fiel
     };
 
     const handleSubmit = () => {
-        onUpdate(field, value);
+        onUpdate(field, value, selectedField);
         onClose();
     };
 

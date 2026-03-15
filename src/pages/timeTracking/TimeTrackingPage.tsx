@@ -7228,6 +7228,7 @@ function TimesheetTable() {
 
 export default function TimeTrackingPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const {
     loading: permissionsLoading,
     canView,
@@ -7238,6 +7239,14 @@ export default function TimeTrackingPage() {
   const canViewTimeTracking = typeof canView === "function" ? canView("timesheets", "projects") : true;
   const canCreateTimeTracking = typeof canCreate === "function" ? canCreate("timesheets", "projects") : true;
   const canEditTimeTracking = typeof canEdit === "function" ? canEdit("timesheets", "projects") : true;
+
+  useEffect(() => {
+    const message = location.state?.toast;
+    if (message) {
+      toast.success(message);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.pathname, location.state, navigate]);
 
   if (permissionsLoading) {
     return (

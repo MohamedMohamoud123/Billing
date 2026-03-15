@@ -23,6 +23,74 @@ import { getInvoiceById, getInvoices } from "../../salesModel";
 import { invoicesAPI } from "../../../../services/api";
 import { applyEmailTemplate } from "../../../settings/emailTemplateUtils";
 
+const normalizeInvoiceItems = (sourceInvoice: any) => {
+  const coerceItems = (value: any) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      if (Array.isArray((value as any).data)) return (value as any).data;
+      if (Array.isArray((value as any).items)) return (value as any).items;
+    }
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") {
+          if (Array.isArray((parsed as any).data)) return (parsed as any).data;
+          if (Array.isArray((parsed as any).items)) return (parsed as any).items;
+          return Object.values(parsed);
+        }
+      } catch {
+        return [];
+      }
+      return [];
+    }
+    if (typeof value === "object") return Object.values(value);
+    return [];
+  };
+
+  const rawItems = [
+    ...coerceItems(sourceInvoice?.items),
+    ...coerceItems(sourceInvoice?.lineItems),
+    ...coerceItems(sourceInvoice?.line_items),
+    ...coerceItems(sourceInvoice?.itemDetails),
+    ...coerceItems(sourceInvoice?.projectDetails),
+    ...coerceItems(sourceInvoice?.invoiceItems),
+    ...coerceItems(sourceInvoice?.itemsList)
+  ];
+
+  return rawItems.map((item: any) => {
+    const quantity = Number(item?.quantity ?? item?.qty ?? item?.q ?? 0) || 0;
+    const rate = Number(item?.unitPrice ?? item?.rate ?? item?.price ?? item?.unit_price ?? item?.unitRate ?? 0) || 0;
+    const amountRaw = item?.amount ?? item?.total ?? item?.lineTotal ?? item?.line_total;
+    const amount = Number(amountRaw ?? quantity * rate) || 0;
+    const unit = String(item?.unit ?? item?.unitName ?? item?.uom ?? "pcs");
+    const projectName =
+      item?.projectName ||
+      (typeof item?.project === "object" ? item?.project?.name || item?.project?.projectName : "") ||
+      "";
+    const displayName = String(
+      item?.itemDetails ||
+      item?.name ||
+      item?.description ||
+      item?.item?.name ||
+      item?.itemName ||
+      projectName ||
+      "Item"
+    );
+
+    return {
+      ...item,
+      displayName,
+      displayQuantity: quantity,
+      displayRate: rate,
+      displayAmount: amount,
+      displayUnit: unit,
+      projectName
+    };
+  });
+};
+
 export default function SendInvoiceEmail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -440,15 +508,15 @@ export default function SendInvoiceEmail() {
       "N/A";
     const totalsMeta = getInvoiceTotalsMeta(invoiceData);
     const notes = invoiceData.customerNotes || invoiceData.notes || "";
-    const items = Array.isArray(invoiceData.items) ? invoiceData.items : [];
+    const items = normalizeInvoiceItems(invoiceData);
 
     const itemsHTML = items.length
       ? items.map((item: any, index: number) => {
-        const quantity = toNumber(item.quantity);
-        const rate = toNumber(item.rate ?? item.unitPrice ?? item.price);
-        const amount = toNumber(item.amount ?? item.total ?? (quantity * rate));
-        const unit = item.unit || item.unitName || "pcs";
-        const itemName = item.itemDetails || item.name || item.description || item.item?.name || item.itemName || "N/A";
+        const quantity = toNumber(item.displayQuantity ?? item.quantity);
+        const rate = toNumber(item.displayRate ?? item.rate ?? item.unitPrice ?? item.price);
+        const amount = toNumber(item.displayAmount ?? item.amount ?? item.total ?? (quantity * rate));
+        const unit = item.displayUnit || item.unit || item.unitName || "pcs";
+        const itemName = item.displayName || "N/A";
 
         return `
           <tr>

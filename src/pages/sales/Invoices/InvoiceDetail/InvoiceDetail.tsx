@@ -16,6 +16,74 @@ import {
 import { getInvoiceStatusDisplay } from "../../../../utils/invoiceUtils";
 import { getStatesByCountry } from "../../../../constants/locationData";
 
+const normalizeInvoiceItems = (sourceInvoice: any) => {
+  const coerceItems = (value: any) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      if (Array.isArray((value as any).data)) return (value as any).data;
+      if (Array.isArray((value as any).items)) return (value as any).items;
+    }
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") {
+          if (Array.isArray((parsed as any).data)) return (parsed as any).data;
+          if (Array.isArray((parsed as any).items)) return (parsed as any).items;
+          return Object.values(parsed);
+        }
+      } catch {
+        return [];
+      }
+      return [];
+    }
+    if (typeof value === "object") return Object.values(value);
+    return [];
+  };
+
+  const rawItems = [
+    ...coerceItems(sourceInvoice?.items),
+    ...coerceItems(sourceInvoice?.lineItems),
+    ...coerceItems(sourceInvoice?.line_items),
+    ...coerceItems(sourceInvoice?.itemDetails),
+    ...coerceItems(sourceInvoice?.projectDetails),
+    ...coerceItems(sourceInvoice?.invoiceItems),
+    ...coerceItems(sourceInvoice?.itemsList)
+  ];
+
+  return rawItems.map((item: any) => {
+    const quantity = Number(item?.quantity ?? item?.qty ?? item?.q ?? 0) || 0;
+    const rate = Number(item?.unitPrice ?? item?.rate ?? item?.price ?? item?.unit_price ?? item?.unitRate ?? 0) || 0;
+    const amountRaw = item?.amount ?? item?.total ?? item?.lineTotal ?? item?.line_total;
+    const amount = Number(amountRaw ?? quantity * rate) || 0;
+    const unit = String(item?.unit ?? item?.uom ?? item?.unitName ?? "pcs");
+    const projectName =
+      item?.projectName ||
+      (typeof item?.project === "object" ? item?.project?.name || item?.project?.projectName : "") ||
+      "";
+    const displayName = String(
+      item?.name ||
+      item?.itemDetails ||
+      item?.description ||
+      projectName ||
+      "Item"
+    );
+    const displayDescription = String(item?.description || item?.itemDescription || item?.itemDetails || "");
+
+    return {
+      ...item,
+      displayName,
+      displayDescription,
+      displayQuantity: quantity,
+      displayRate: rate,
+      displayAmount: amount,
+      displayUnit: unit,
+      projectName
+    };
+  });
+};
+
 
 
 export default function InvoiceDetail() { // Start of component
@@ -948,12 +1016,13 @@ export default function InvoiceDetail() { // Start of component
   const generateInvoiceHTML = () => {
     if (!invoice) return '';
 
-    const itemsHTML = invoice.items && invoice.items.length > 0 ? invoice.items.map((item, index) => {
-      const rate = parseFloat(item.rate || item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const amount = parseFloat(item.amount || (item.quantity || 0) * (item.rate || item.price || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const qty = parseFloat(item.quantity || 0).toFixed(2);
-      const unit = item.unit || 'pcs';
-      const itemName = item.itemDetails || item.name || item.description || 'N/A';
+    const displayItemsForHtml = normalizeInvoiceItems(invoice);
+    const itemsHTML = displayItemsForHtml.length > 0 ? displayItemsForHtml.map((item, index) => {
+      const rate = Number(item.displayRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const amount = Number(item.displayAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const qty = Number(item.displayQuantity || 0).toFixed(2);
+      const unit = item.displayUnit || 'pcs';
+      const itemName = item.displayName || 'N/A';
       return `
         <tr>
           <td class="col-number">${index + 1}</td>
@@ -1383,8 +1452,8 @@ export default function InvoiceDetail() { // Start of component
   };
 
   const handleSelectAll = (e) => {
-    if (e.target.checked && invoice.items) {
-      setSelectedItems(new Set(invoice.items.map((item, index) => item.id || index)));
+    if (e.target.checked) {
+      setSelectedItems(new Set(displayItems.map((item, index) => item.id || index)));
     } else {
       setSelectedItems(new Set());
     }
@@ -1398,7 +1467,7 @@ export default function InvoiceDetail() { // Start of component
     if (selectedItems.size === 0) return;
     if (window.confirm(`Are you sure you want to delete ${selectedItems.size} item(s)?`)) {
       const selectedIds = Array.from(selectedItems);
-      const updatedItems = invoice.items.filter((item, index) => !selectedIds.includes(item.id || index));
+      const updatedItems = displayItems.filter((item, index) => !selectedIds.includes(item.id || index));
       const updatedInvoice = { ...invoice, items: updatedItems };
       updateInvoice(id, updatedInvoice);
       setInvoice(updatedInvoice);
@@ -1685,6 +1754,9 @@ export default function InvoiceDetail() { // Start of component
   }
 
   const invoiceTotalsMeta = getInvoiceTotalsMeta(invoice);
+  const displayItems = normalizeInvoiceItems(invoice);
+  const hasProjectItems = displayItems.some((item) => Boolean(item.projectName || item.projectId || item.project));
+  const itemsTableTitle = hasProjectItems ? "Project Details" : "Item Table";
 
   return (
     <>
@@ -2341,6 +2413,7 @@ export default function InvoiceDetail() { // Start of component
 
               {/* Items Table - Dark Header */}
               <div className="mb-8">
+                <div className="text-sm font-semibold text-gray-700 mb-2">{itemsTableTitle}</div>
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-[#333333] text-white">
@@ -2352,22 +2425,22 @@ export default function InvoiceDetail() { // Start of component
                     </tr>
                   </thead>
                   <tbody>
-                    {invoice.items && invoice.items.length > 0 ? (
-                      invoice.items.map((item, index) => (
+                    {displayItems.length > 0 ? (
+                      displayItems.map((item, index) => (
                         <tr key={item.id || index} className="border-b border-gray-200">
                           <td className="py-4 px-3 text-sm text-gray-700 text-center align-top">{index + 1}</td>
                           <td className="py-4 px-4 text-sm text-gray-900 align-top">
-                            <div className="font-medium">{item.name || item.itemDetails || item.description || "Item"}</div>
-                            {item.description && item.description !== (item.name || item.itemDetails) && (
-                              <div className="text-xs text-gray-500 mt-1">{item.description}</div>
+                            <div className="font-medium">{item.displayName || "Item"}</div>
+                            {item.displayDescription && item.displayDescription !== item.displayName && (
+                              <div className="text-xs text-gray-500 mt-1">{item.displayDescription}</div>
                             )}
                           </td>
                           <td className="py-4 px-3 text-sm text-gray-700 text-center align-top">
-                            <div>{parseFloat(item.quantity || 0).toFixed(2)}</div>
-                            <div className="text-xs text-gray-500">{item.unit || 'pcs'}</div>
+                            <div>{Number(item.displayQuantity || 0).toFixed(2)}</div>
+                            <div className="text-xs text-gray-500">{item.displayUnit || 'pcs'}</div>
                           </td>
-                          <td className="py-4 px-3 text-sm text-gray-700 text-right align-top">{parseFloat(item.unitPrice || item.rate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-4 px-4 text-sm text-gray-900 text-right font-medium align-top">{parseFloat(item.total || item.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 px-3 text-sm text-gray-700 text-right align-top">{Number(item.displayRate || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 px-4 text-sm text-gray-900 text-right font-medium align-top">{Number(item.displayAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))
                     ) : (
