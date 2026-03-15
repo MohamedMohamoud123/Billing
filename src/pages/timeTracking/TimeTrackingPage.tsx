@@ -921,18 +921,11 @@ function TimesheetTable() {
               {showNewDropdown && (
                 <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
                   <button
-                    onClick={() => { setShowLogEntryForm(true); setShowNewDropdown(false); }}
+                    onClick={() => { navigate('/time-tracking/timesheet/weekly'); setShowNewDropdown(false); }}
                     className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
                   >
                     <Plus size={14} />
-                    New Log Entry
-                  </button>
-                  <button
-                    onClick={() => { navigate('/time-tracking/timesheet/import'); setShowNewDropdown(false); }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
-                  >
-                    <Upload size={14} />
-                    Import Timesheets
+                    New Weekly Time Log
                   </button>
                 </div>
               )}

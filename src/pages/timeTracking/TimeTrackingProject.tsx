@@ -1830,11 +1830,45 @@ export default function TimeTrackingProject() {
               >
                 <ChevronDown size={14} />
               </button>
+              {showNewDropdown && (
+                <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
+                  <button
+                    onClick={() => { navigate('/time-tracking/timesheet/weekly'); setShowNewDropdown(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    New Weekly Time Log
+                  </button>
+                </div>
+              )}
             </div>
 
-            <button className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-[#f4f4f4] p-0 text-gray-700 hover:bg-gray-200 cursor-pointer ml-1">
-              <MoreHorizontal size={18} />
-            </button>
+            <div ref={moreMenuRef} className="relative">
+              <button 
+                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-[#f4f4f4] p-0 text-gray-700 hover:bg-gray-200 cursor-pointer ml-1"
+              >
+                <MoreHorizontal size={18} />
+              </button>
+              {showMoreMenu && (
+                <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
+                  <button
+                    onClick={() => { setShowExportProjectsModal(true); setShowMoreMenu(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                  >
+                    <Download size={14} />
+                    Export Projects
+                  </button>
+                  <button
+                    onClick={() => { navigate('/time-tracking/projects/import'); setShowMoreMenu(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                  >
+                    <Upload size={14} />
+                    Import Projects
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

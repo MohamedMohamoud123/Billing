@@ -4208,6 +4208,13 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       )}
+      {showLogEntryForm && (
+        <NewLogEntryForm
+          onClose={() => setShowLogEntryForm(false)}
+          defaultProjectName={project?.projectName || project?.name || ""}
+          defaultDate={new Date()}
+        />
+      )}
     </div>
   );
 }

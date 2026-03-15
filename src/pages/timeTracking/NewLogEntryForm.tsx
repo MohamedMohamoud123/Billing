@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { X, ChevronDown, Clock } from "lucide-react";
 import api, { projectsAPI } from "../../services/api";
 import { getCurrentUser } from "../../services/auth";
 import toast from "react-hot-toast";
 
 const timeEntriesAPI = (api as any).timeEntriesAPI;
 
-export default function NewLogEntryForm({ onClose, defaultProjectName = "", defaultDate = null }) {
+export default function NewLogEntryForm({
+  onClose,
+  defaultProjectName = "",
+  defaultDate = null,
+  onStartTimer = undefined,
+}) {
   const navigate = useNavigate();
   const [useStartEndTime, setUseStartEndTime] = useState(false);
   const [showTaskDropdown, setShowTaskDropdown] = useState(false);
@@ -64,7 +70,9 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
         setProjects(data.map(p => ({
           id: p._id || p.id,
           projectName: p.name || p.projectName,
-          tasks: p.tasks || []
+          tasks: p.tasks || [],
+          billingRate: p.billingRate || 0,
+          currency: p.currency || "USD"
         })));
       } catch (error) {
         console.error("Error loading projects:", error);
@@ -133,6 +141,47 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
     }
   }, [logEntryData.startTime, logEntryData.endTime, useStartEndTime]);
 
+  const resolvedTimeSpent = (() => {
+    if (useStartEndTime && logEntryData.startTime && logEntryData.endTime) {
+      const duration = calculateDuration(logEntryData.startTime, logEntryData.endTime);
+      return duration || logEntryData.timeSpent;
+    }
+    return logEntryData.timeSpent;
+  })();
+
+  const displayTimeSpent = resolvedTimeSpent && resolvedTimeSpent.includes(":") ? resolvedTimeSpent : "00:00";
+  const [spentHours, spentMinutes] = displayTimeSpent.split(":").map((value) => Number(value) || 0);
+  const totalHours = spentHours + spentMinutes / 60;
+  const costPerHour = Number(selectedProject?.billingRate || 0);
+  const totalCost = totalHours * costPerHour;
+  const currencyCode = String(selectedProject?.currency || "USD").substring(0, 3).toUpperCase();
+
+  const handleStartTimer = () => {
+    const projectName = logEntryData.projectName || defaultProjectName;
+    const timerState = {
+      isTimerRunning: true,
+      startTime: Date.now(),
+      elapsedTime: 0,
+      pausedElapsedTime: 0,
+      timerNotes: logEntryData.notes || "",
+      associatedProject: projectName,
+      selectedProjectForTimer: projectName,
+      selectedTaskForTimer: logEntryData.taskName || "",
+      isBillable: logEntryData.billable !== undefined ? logEntryData.billable : true,
+    };
+    try {
+      localStorage.setItem("timerState", JSON.stringify(timerState));
+      window.dispatchEvent(new CustomEvent("timerStateUpdated"));
+      toast.success("Timer started.");
+    } catch {
+      // ignore storage errors
+    }
+    if (typeof onStartTimer === "function") {
+      onStartTimer(timerState);
+    }
+    onClose();
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[2000] p-5"
@@ -155,9 +204,10 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
           </div>
           <button
             onClick={onClose}
-            className="bg-transparent border-none text-2xl cursor-pointer text-gray-900 p-1 leading-none hover:text-gray-600"
+            className="bg-transparent border-none cursor-pointer text-gray-900 p-1 leading-none hover:text-gray-600"
+            aria-label="Close"
           >
-            ×
+            <X size={18} />
           </button>
         </div>
 
@@ -165,7 +215,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
         <div className="p-6">
           {/* Date Field */}
           <div className="mb-5">
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+            <label className="text-sm font-medium text-[#ef4444] block mb-1.5">
               Date<span className="text-red-500">*</span>
             </label>
             <input
@@ -178,7 +228,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
 
           {/* Project Name Field */}
           <div className="mb-5">
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+            <label className="text-sm font-medium text-[#ef4444] block mb-1.5">
               Project Name<span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -200,13 +250,15 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
                   </option>
                 ))}
               </select>
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">▼</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                <ChevronDown size={14} />
+              </span>
             </div>
           </div>
 
           {/* Task Name Field */}
           <div className="mb-5">
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+            <label className="text-sm font-medium text-[#ef4444] block mb-1.5">
               Task Name<span className="text-red-500">*</span>
             </label>
             <div className="relative" ref={taskDropdownRef}>
@@ -251,7 +303,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
                     className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500"
                     style={{ transform: showTaskDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
                   >
-                    ▼
+                    <ChevronDown size={14} />
                   </span>
                   {showTaskDropdown && logEntryData.projectName && (
                     <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -312,7 +364,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
 
           {/* Time Spent Field */}
           <div className="mb-5">
-            <label className="text-sm font-medium text-gray-700 flex items-center gap-1.5 mb-1.5">
+            <label className="text-sm font-medium text-[#ef4444] flex items-center gap-1.5 mb-1.5">
               Time Spent<span className="text-red-500">*</span>
               <div className="w-[18px] h-[18px] rounded-full border border-gray-300 flex items-center justify-center text-xs text-gray-500 cursor-help">?</div>
             </label>
@@ -333,7 +385,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
                   }}
                   className="text-sm text-blue-500 no-underline flex items-center gap-1.5 hover:text-blue-600"
                 >
-                  <span>🕐</span>
+                  <Clock size={14} className="text-blue-500" />
                   <span>Set start and end time instead</span>
                 </a>
               </>
@@ -363,31 +415,14 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
                   }}
                   className="text-sm text-blue-500 no-underline flex items-center gap-1.5 hover:text-blue-600"
                 >
-                  <span>🕐</span>
+                  <Clock size={14} className="text-blue-500" />
                   <span>Enter time duration instead</span>
                 </a>
               </>
             )}
-          </div>
-
-          {/* Billable Checkbox */}
+          </div>\n          {/* User Field */}
           <div className="mb-5">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={logEntryData.billable}
-                onChange={(e) => setLogEntryData({ ...logEntryData, billable: e.target.checked })}
-                className="w-[18px] h-[18px] cursor-pointer accent-blue-500"
-              />
-              <span className="text-sm text-gray-700">
-                Billable
-              </span>
-            </label>
-          </div>
-
-          {/* User Field */}
-          <div className="mb-5">
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+            <label className="text-sm font-medium text-[#ef4444] block mb-1.5">
               User<span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -401,7 +436,16 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
                 <option value="user2">user2</option>
                 <option value="user3">user3</option>
               </select>
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">▼</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                <ChevronDown size={14} />
+              </span>
+            </div>
+          </div>
+
+          <div className="mb-5 text-sm text-gray-800">
+            <div className="font-medium text-gray-700">Total Cost</div>
+            <div className="mt-1 text-gray-700">
+              {currencyCode} {totalCost.toFixed(2)} for {displayTimeSpent} hours (Cost Per Hour: {currencyCode} {costPerHour.toFixed(2)})
             </div>
           </div>
 
@@ -420,13 +464,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3 pt-4 border-t border-gray-200">
-            <button
-              onClick={onClose}
-              className="flex-1 px-6 py-3 border border-gray-300 rounded-md bg-white cursor-pointer text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
+          <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
             <button
               onClick={async () => {
                 // Validate required fields
@@ -514,10 +552,23 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
                   toast.error("Failed to save time entry: " + (error.message || "Unknown error"));
                 }
               }}
-              className="flex-1 px-6 py-3 border-none rounded-md text-white cursor-pointer text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ background: "linear-gradient(90deg, #156372 0%, #0D4A52 100%)" }}
+              className="px-5 py-2.5 border-none rounded-md text-white cursor-pointer text-sm font-semibold hover:opacity-90 transition-opacity"
+              style={{ background: "#2563eb" }}
             >
               Save
+            </button>
+            <button
+              type="button"
+              onClick={handleStartTimer}
+              className="px-5 py-2.5 border border-gray-300 rounded-md bg-white cursor-pointer text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Start Timer
+            </button>
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 border border-gray-300 rounded-md bg-white cursor-pointer text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
             </button>
           </div>
         </div>
@@ -525,5 +576,7 @@ export default function NewLogEntryForm({ onClose, defaultProjectName = "", defa
     </div>
   );
 }
+
+
 
 
