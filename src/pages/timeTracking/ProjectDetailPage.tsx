@@ -1075,7 +1075,7 @@ export default function ProjectDetailPage() {
       <div style={{ padding: "20px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
         {activeTab === "Overview" && (
           <>
-            <div style={{ display: "flex", gap: "20px", alignItems: "flex-start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: "20px", alignItems: "start" }}>
               {/* Left Sidebar - Project Details */}
               <div style={{
                 width: "280px",
