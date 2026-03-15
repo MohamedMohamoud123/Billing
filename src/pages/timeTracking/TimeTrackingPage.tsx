@@ -904,17 +904,17 @@ function TimesheetTable() {
             <div className="relative flex items-center">
               <button
                 onClick={() => setShowLogEntryForm(true)}
-                className="flex h-9 items-center gap-1.5 rounded-l-md border-none bg-emerald-500 px-3.5 text-sm font-semibold text-white hover:bg-emerald-600 cursor-pointer"
+                className="flex h-9 items-center gap-1.5 rounded-l-md border-none bg-[#408dfb] px-3.5 text-sm font-semibold text-white hover:bg-[#307deb] cursor-pointer"
               >
                 <Plus size={15} />
-                New
+                New Log Entry
               </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowNewDropdown(!showNewDropdown);
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-r-md border-none border-l border-l-white/30 bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer"
+                className="flex h-9 w-9 items-center justify-center rounded-r-md border-none border-l border-white/20 bg-[#408dfb] text-white hover:bg-[#307deb] cursor-pointer"
               >
                 <ChevronDown size={14} />
               </button>
@@ -940,9 +940,9 @@ function TimesheetTable() {
 
             <button 
               onClick={() => setShowMoreMenu(!showMoreMenu)}
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white p-0 text-gray-500 hover:bg-gray-100 cursor-pointer"
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-[#f4f4f4] p-0 text-gray-700 hover:bg-gray-200 cursor-pointer ml-1"
             >
-              <MoreVertical size={16} />
+              <MoreHorizontal size={18} />
             </button>
             {showMoreMenu && (
               <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">

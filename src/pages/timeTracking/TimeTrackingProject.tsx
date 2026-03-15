@@ -1116,6 +1116,35 @@ export default function TimeTrackingProject() {
     return typeMap[hoursBudgetType] || hoursBudgetType;
   };
 
+  const getLoggedHoursDisplay = (project) => {
+    const raw =
+      project?.loggedHours ??
+      project?.loggedTime ??
+      project?.totalLoggedHours ??
+      project?.totalHours ??
+      project?.loggedMinutes ??
+      project?.totalMinutes ??
+      project?.hoursLogged ??
+      project?.timeLogged;
+
+    if (typeof raw === "string" && raw.includes(":")) return raw;
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      if (raw > 0 && raw <= 24 && String(raw).includes(".")) {
+        const totalMinutes = Math.round(raw * 60);
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      }
+      if (raw > 0 && raw < 1000) {
+        const h = Math.floor(raw);
+        const m = Math.round((raw - h) * 60);
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      }
+    }
+    if (typeof raw === "string" && raw.trim()) return raw;
+    return "00:00";
+  };
+
   // Export tasks function
   const exportTasks = (format, projectsToExport) => {
     // Collect all tasks from all projects
@@ -1941,11 +1970,74 @@ export default function TimeTrackingProject() {
             </table>
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5 p-6">
+          <div className="flex flex-wrap items-start gap-5 p-6">
             {filteredAndSortedProjects.map((project) => (
-              <div key={project.id} className="cursor-pointer rounded-lg border border-gray-200 bg-white p-5 hover:shadow" onClick={() => navigate(`/time-tracking/projects/${project.id}`)}>
-                <div className="mb-2 text-lg font-semibold text-[#156372]">{project.projectName}</div>
-                <div className="text-sm text-gray-600">{project.customerName || '--'}</div>
+              <div
+                key={project.id}
+                className="w-[260px] cursor-pointer rounded-lg border border-gray-200 bg-white px-5 py-6 shadow-sm transition-shadow hover:shadow"
+                onClick={() => navigate(`/time-tracking/projects/${project.id}`)}
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-[26px] font-semibold text-[#2563eb]">
+                    {project.projectName || "--"}
+                  </div>
+                  <div className="mt-2 text-sm text-[#2563eb]">
+                    {project.customerName || "--"}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-col items-center text-center">
+                  <div className="text-[18px] font-medium text-gray-900">Logged Hours</div>
+                  <div className="mt-1 text-sm text-gray-700">{getLoggedHoursDisplay(project)}</div>
+                </div>
+
+                <div className="my-5 border-t border-gray-200" />
+
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedProjectForTimer(project.projectName || project.name || "");
+                      setShowProjectFields(true);
+                      setShowTimerModal(true);
+                    }}
+                    className="rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 hover:bg-gray-50"
+                  >
+                    Log Time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const customerId =
+                        project.customerId ||
+                        project.customer?._id ||
+                        project.customer?.id ||
+                        project.customer ||
+                        "";
+                      const customerName =
+                        project.customerName ||
+                        project.customer?.displayName ||
+                        project.customer?.companyName ||
+                        project.customer?.name ||
+                        "";
+                      navigate("/purchases/expenses/new", {
+                        state: {
+                          source: "timeTrackingProjects",
+                          projectId: project.id,
+                          projectName: project.projectName || project.name || "Project",
+                          customerId,
+                          customerName,
+                          currency: project.currency || baseCurrencyCode,
+                        },
+                      });
+                    }}
+                    className="rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 hover:bg-gray-50"
+                  >
+                    Create Expense
+                  </button>
+                </div>
               </div>
             ))}
           </div>
