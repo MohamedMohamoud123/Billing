@@ -4,7 +4,7 @@ import { projectsAPI, timeEntriesAPI } from "../../services/api";
 import { toast } from "react-toastify";
 import { useCurrency } from "../../hooks/useCurrency";
 import NewLogEntryForm from "./NewLogEntryForm";
-import { ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Search, ArrowUpDown, X, MessageSquare, Briefcase, User, Plus, Paperclip, Minus, Check, Trash2, MoreVertical, Edit3 } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Search, ArrowUpDown, X, MessageSquare, Briefcase, User, Plus, Minus, Check, Trash2, MoreVertical, Edit3 } from "lucide-react";
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
@@ -513,6 +513,13 @@ export default function ProjectDetailPage() {
 
   const tabs = ["Overview", "Timesheet", "Expenses", "Sales"];
   const isCompletedProject = String(project?.status || "").toLowerCase() === "completed";
+  const actionBadgeCount = Number(
+    project?.badgeCount ||
+    project?.notificationCount ||
+    project?.alertsCount ||
+    project?.tasks?.length ||
+    0
+  );
 
   const statusOptions = ["All", "Draft", "Sent", "Approved", "Accepted", "Paid", "Void", "Overdue"];
 
@@ -827,9 +834,9 @@ export default function ProjectDetailPage() {
               </div>
               <button
                 onClick={() => setShowAttachmentsModal(true)}
-                className="w-9 h-9 border border-gray-200 rounded bg-white cursor-pointer flex items-center justify-center text-gray-500 hover:bg-gray-50"
+                className="w-8 h-8 border border-gray-200 rounded bg-white cursor-pointer flex items-center justify-center text-sm font-semibold text-gray-700 hover:bg-gray-50"
               >
-                <Paperclip size={18} />
+                {actionBadgeCount}
               </button>
               <div className="relative" ref={moreDropdownRef}>
                 <button
@@ -1053,7 +1060,7 @@ export default function ProjectDetailPage() {
                 gap: "6px",
                 border: "none",
                 background: "transparent",
-                color: "#6b7280",
+                color: "#2563eb",
                 fontSize: "13px",
                 cursor: "pointer"
               }}
@@ -1065,113 +1072,114 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "20px", padding: "20px" }}>
-        {/* Left Sidebar - Project Details */}
-        <div style={{
-          width: "280px",
-          backgroundColor: "#fff",
-          borderRadius: "6px",
-          padding: "24px",
-          height: "fit-content",
-          border: "1px solid #e5e7eb",
-          boxShadow: "none"
-        }}>
-          {/* Project Header */}
-          <div style={{ marginBottom: "20px" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "4px" }}>
-              <div style={{ marginTop: "4px" }}>
-                <Briefcase size={18} style={{ color: "#4b5563" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: "18px", fontWeight: "600", color: "#1f2937", lineHeight: "1.2" }}>
-                  {project.projectName || "Project"}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Customer Link */}
-          <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ width: "24px", display: "flex", justifyContent: "center" }}>
-              <User size={18} style={{ color: "#4b5563" }} />
-            </div>
-            <div>
-              <span style={{ color: "#2563eb", fontWeight: "500", fontSize: "14px", cursor: "pointer" }}>
-                {project.customerName || "Customer"}
-              </span>
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div style={{ height: "1px", backgroundColor: "#e5e7eb", margin: "0 0 16px 0" }}></div>
-
-          {/* Details List */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Billing Method */}
-            <div>
-              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
-                Billing Method
-              </div>
-              <div style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>
-                {billingMethodLabel}
-              </div>
-            </div>
-
-            {/* Total Project Cost */}
-            <div>
-              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
-                Total Project Cost
-              </div>
-              <div style={{ fontSize: "13px", color: "#111827", fontWeight: "600" }}>
-                {formatMoney(totalProjectCost)}
-              </div>
-            </div>
-
-            {/* Watchlist */}
-            <div>
-              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
-                Add to dashboard watchlist.
-              </div>
-              <div style={{ fontSize: "12px" }}>
-                <span style={{ color: "#374151" }}>Enabled</span>
-                <span style={{ color: "#9ca3af", margin: "0 6px" }}>-</span>
-                <span style={{ color: "#2563eb", cursor: "pointer" }}>Disable</span>
-              </div>
-            </div>
-
-            {/* Unbilled/Billed */}
-            <div>
-              <div style={{ fontSize: "12px", color: "#059669", marginBottom: "4px" }}>
-                ● Unbilled Amount
-              </div>
-              <div style={{ fontSize: "13px", color: "#059669", fontWeight: "600" }}>
-                {formatMoney(unbilledAmount)}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: "12px", color: "#ef4444", marginBottom: "4px" }}>
-                ● Billed Amount
-              </div>
-              <div style={{ fontSize: "13px", color: "#ef4444", fontWeight: "600" }}>
-                {formatMoney(billedAmount)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Content Area */}
-        <div style={{ flex: 1 }}>
-          {activeTab === "Overview" && (
-            <>
-              {/* Project Hours & Summary */}
+      <div style={{ padding: "20px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
+        {activeTab === "Overview" && (
+          <>
+            <div style={{ display: "flex", gap: "20px", alignItems: "flex-start" }}>
+              {/* Left Sidebar - Project Details */}
               <div style={{
+                width: "280px",
                 backgroundColor: "#fff",
                 borderRadius: "6px",
                 padding: "24px",
-                marginBottom: "24px",
+                height: "fit-content",
                 border: "1px solid #e5e7eb",
                 boxShadow: "none"
               }}>
+                {/* Project Header */}
+                <div style={{ marginBottom: "20px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "4px" }}>
+                    <div style={{ marginTop: "4px" }}>
+                      <Briefcase size={18} style={{ color: "#4b5563" }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "18px", fontWeight: "600", color: "#1f2937", lineHeight: "1.2" }}>
+                        {project.projectName || "Project"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Customer Link */}
+                <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ width: "24px", display: "flex", justifyContent: "center" }}>
+                    <User size={18} style={{ color: "#4b5563" }} />
+                  </div>
+                  <div>
+                    <span style={{ color: "#2563eb", fontWeight: "500", fontSize: "14px", cursor: "pointer" }}>
+                      {project.customerName || "Customer"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ height: "1px", backgroundColor: "#e5e7eb", margin: "0 0 16px 0" }}></div>
+
+                {/* Details List */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {/* Billing Method */}
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
+                      Billing Method
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>
+                      {billingMethodLabel}
+                    </div>
+                  </div>
+
+                  {/* Total Project Cost */}
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
+                      Total Project Cost
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#111827", fontWeight: "600" }}>
+                      {formatMoney(totalProjectCost)}
+                    </div>
+                  </div>
+
+                  {/* Watchlist */}
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
+                      Add to dashboard watchlist.
+                    </div>
+                    <div style={{ fontSize: "12px" }}>
+                      <span style={{ color: "#374151" }}>Enabled</span>
+                      <span style={{ color: "#9ca3af", margin: "0 6px" }}>-</span>
+                      <span style={{ color: "#2563eb", cursor: "pointer" }}>Disable</span>
+                    </div>
+                  </div>
+
+                  {/* Unbilled/Billed */}
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#059669", marginBottom: "4px" }}>
+                      ● Unbilled Amount
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#059669", fontWeight: "600" }}>
+                      {formatMoney(unbilledAmount)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#ef4444", marginBottom: "4px" }}>
+                      ● Billed Amount
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#ef4444", fontWeight: "600" }}>
+                      {formatMoney(billedAmount)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                {/* Project Hours & Summary */}
+                <div style={{
+                  backgroundColor: "#fff",
+                  borderRadius: "6px",
+                  padding: "24px",
+                  marginBottom: "0",
+                  width: "100%",
+                  border: "1px solid #e5e7eb",
+                  boxShadow: "none"
+                }}>
                 <div style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -1185,12 +1193,12 @@ export default function ProjectDetailPage() {
                         style={{
                           padding: "0 4px 8px 4px",
                           border: "none",
-                          borderBottom: hoursView === "Project Hours" ? "2px solid #156372" : "2px solid transparent",
+                          borderBottom: hoursView === "Project Hours" ? "2px solid #2563eb" : "2px solid transparent",
                           backgroundColor: "transparent",
                           cursor: "pointer",
                           fontSize: "14px",
-                          fontWeight: hoursView === "Project Hours" ? "600" : "400",
-                          color: hoursView === "Project Hours" ? "#156372" : "#6b7280"
+                          fontWeight: hoursView === "Project Hours" ? "600" : "500",
+                          color: hoursView === "Project Hours" ? "#111827" : "#2563eb"
                         }}
                       >
                         Project Hours
@@ -1202,19 +1210,19 @@ export default function ProjectDetailPage() {
                       style={{
                         padding: "0 4px 8px 4px",
                         border: "none",
-                        borderBottom: hoursView === "Profitability Summary" ? "2px solid #156372" : "2px solid transparent",
+                        borderBottom: hoursView === "Profitability Summary" ? "2px solid #2563eb" : "2px solid transparent",
                         backgroundColor: "transparent",
                         cursor: "pointer",
                         fontSize: "14px",
-                        fontWeight: hoursView === "Profitability Summary" ? "600" : "400",
-                        color: hoursView === "Profitability Summary" ? "#156372" : "#6b7280"
+                        fontWeight: hoursView === "Profitability Summary" ? "600" : "500",
+                        color: hoursView === "Profitability Summary" ? "#111827" : "#2563eb"
                       }}
                     >
                       Profitability Summary
                     </button>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-                    <span style={{ fontSize: "13px", color: "#374151", fontWeight: "500" }}>{dateRange}</span>
+                    <span style={{ fontSize: "13px", color: "#2563eb", fontWeight: "500" }}>{dateRange}</span>
                     <ChevronDown size={14} color="#6b7280" />
                   </div>
                 </div>
@@ -1372,6 +1380,16 @@ export default function ProjectDetailPage() {
                         borderBottom: "1px solid #e5e7eb",
                         position: "relative"
                       }}>
+                        <div style={{
+                          position: "absolute",
+                          left: "6px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          fontSize: "11px",
+                          color: "#9ca3af"
+                        }}>
+                          Hours
+                        </div>
                         {/* Y-axis labels */}
                         <div style={{
                           position: "absolute",
@@ -1386,7 +1404,6 @@ export default function ProjectDetailPage() {
                           paddingBottom: "10px",
                           width: "35px"
                         }}>
-                          <span>8h</span>
                           <span>6h</span>
                           <span>4h</span>
                           <span>2h</span>
@@ -1409,8 +1426,8 @@ export default function ProjectDetailPage() {
                             style={{ position: "absolute", top: "10px", left: 0 }}
                           >
                             {/* Grid lines */}
-                            {[0, 1, 2, 3, 4].map(i => {
-                              const y = (i / 4) * 220;
+                            {[0, 1, 2, 3].map(i => {
+                              const y = (i / 3) * 220;
                               return (
                                 <line
                                   key={i}
@@ -1455,7 +1472,7 @@ export default function ProjectDetailPage() {
                         display: "flex",
                         gap: "12px",
                         marginTop: "18px",
-                        paddingLeft: "40px"
+                        justifyContent: "center"
                       }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                           <div style={{ width: "16px", height: "4px", backgroundColor: "#60a5fa", borderRadius: "2px" }}></div>
@@ -1463,6 +1480,8 @@ export default function ProjectDetailPage() {
                         </div>
                       </div>
                     </div>
+
+                    <div style={{ height: "1px", backgroundColor: "#e5e7eb", margin: "0 -24px 16px -24px" }}></div>
 
                     {/* Logged Hours Summary */}
                     <div style={{
@@ -1478,13 +1497,16 @@ export default function ProjectDetailPage() {
                   </>
                 )}
               </div>
+              </div>
+            </div>
 
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "24px" }}>
               {/* Users Section */}
               <div style={{
                 backgroundColor: "#fff",
                 borderRadius: "6px",
                 padding: "24px",
-                marginBottom: "24px",
+                width: "100%",
                 border: "1px solid #e5e7eb",
                 boxShadow: "none"
               }}>
@@ -1520,7 +1542,7 @@ export default function ProjectDetailPage() {
 
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                    <tr style={{ backgroundColor: "transparent", borderBottom: "1px solid #e5e7eb" }}>
                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
                         NAME
                       </th>
@@ -1573,6 +1595,7 @@ export default function ProjectDetailPage() {
                 backgroundColor: "#fff",
                 borderRadius: "6px",
                 padding: "24px",
+                width: "100%",
                 border: "1px solid #e5e7eb",
                 boxShadow: "none"
               }}>
@@ -1609,7 +1632,7 @@ export default function ProjectDetailPage() {
                 {project.tasks && project.tasks.length > 0 ? (
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
-                      <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                      <tr style={{ backgroundColor: "transparent", borderBottom: "1px solid #e5e7eb" }}>
                         <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
                           NAME
                         </th>
@@ -1656,6 +1679,7 @@ export default function ProjectDetailPage() {
                   </p>
                 )}
               </div>
+            </div>
             </>
           )}
 
