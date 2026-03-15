@@ -88,7 +88,14 @@ export default function ProjectDetailPage() {
   const [expensesSearch, setExpensesSearch] = useState("");
   const [showGoToTransactionsDropdown, setShowGoToTransactionsDropdown] = useState(false);
   const [billsSearch, setBillsSearch] = useState("");
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState<Array<{
+    id: string;
+    text: string;
+    createdAt: string;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+  }>>([]);
   const goToTransactionsRef = useRef(null);
   const [commentText, setCommentText] = useState("");
   const [isBold, setIsBold] = useState(false);
@@ -1063,7 +1070,10 @@ export default function ProjectDetailPage() {
               {tabs.map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    setShowCommentsPanel(false);
+                  }}
                   style={{
                     padding: "10px 14px",
                     border: "none",
@@ -1101,8 +1111,8 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={{ padding: "20px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
-        {showCommentsPanel ? (
-          <div style={{ backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #e5e7eb", padding: "20px" }}>
+        {showCommentsPanel && (
+          <div style={{ backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #e5e7eb", padding: "20px", marginBottom: "20px" }}>
             <div style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", marginBottom: "16px" }}>
               <div style={{ display: "flex", gap: "10px", padding: "8px 10px", borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
                 <button
@@ -1213,10 +1223,10 @@ export default function ProjectDetailPage() {
               )}
             </div>
           </div>
-        ) : (
-          <>
-            {activeTab === "Overview" && (
-              <>
+        )}
+        <>
+          {activeTab === "Overview" && (
+            <>
             <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: "20px", alignItems: "stretch" }}>
               {/* Left Sidebar - Project Details */}
               <div style={{
@@ -3051,8 +3061,7 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           )}
-          </>
-        )}
+        </>
       </div>
       {/* Add Users Modal */}
       {showAddUserModal && (
