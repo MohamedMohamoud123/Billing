@@ -94,6 +94,7 @@ export default function ProjectDetailPage() {
   const [isBold, setIsBold] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
   const [isUnderline, setIsUnderline] = useState(false);
+  const [showCommentsPanel, setShowCommentsPanel] = useState(false);
   const [hoursView, setHoursView] = useState("Project Hours"); // "Project Hours" or "Profitability Summary"
   const [dateRange, setDateRange] = useState("This Week");
   const [showConfigureAccountsModal, setShowConfigureAccountsModal] = useState(false);
@@ -499,6 +500,32 @@ export default function ProjectDetailPage() {
   };
 
   const hoursData = calculateHours();
+
+  const handleAddComment = () => {
+    const trimmed = commentText.trim();
+    if (!trimmed || !projectId) return;
+
+    const newComment = {
+      id: `${Date.now()}`,
+      text: trimmed,
+      createdAt: new Date().toISOString(),
+      bold: isBold,
+      italic: isItalic,
+      underline: isUnderline
+    };
+
+    const updatedComments = [newComment, ...comments];
+    setComments(updatedComments);
+
+    const allComments = JSON.parse(localStorage.getItem('projectComments') || '{}');
+    allComments[projectId] = updatedComments;
+    localStorage.setItem('projectComments', JSON.stringify(allComments));
+
+    setCommentText("");
+    setIsBold(false);
+    setIsItalic(false);
+    setIsUnderline(false);
+  };
 
   if (!project) {
     return (
@@ -1054,6 +1081,7 @@ export default function ProjectDetailPage() {
             </div>
             <button
               type="button"
+              onClick={() => setShowCommentsPanel((prev) => !prev)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1073,18 +1101,134 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={{ padding: "20px", width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
-        {activeTab === "Overview" && (
+        {showCommentsPanel ? (
+          <div style={{ backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #e5e7eb", padding: "20px" }}>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", marginBottom: "16px" }}>
+              <div style={{ display: "flex", gap: "10px", padding: "8px 10px", borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsBold((prev) => !prev)}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    fontWeight: "700",
+                    fontSize: "12px",
+                    color: isBold ? "#111827" : "#6b7280",
+                    cursor: "pointer"
+                  }}
+                >
+                  B
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsItalic((prev) => !prev)}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    fontStyle: "italic",
+                    fontSize: "12px",
+                    color: isItalic ? "#111827" : "#6b7280",
+                    cursor: "pointer"
+                  }}
+                >
+                  I
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsUnderline((prev) => !prev)}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    textDecoration: "underline",
+                    fontSize: "12px",
+                    color: isUnderline ? "#111827" : "#6b7280",
+                    cursor: "pointer"
+                  }}
+                >
+                  U
+                </button>
+              </div>
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Add a comment..."
+                style={{
+                  width: "100%",
+                  minHeight: "80px",
+                  padding: "10px",
+                  border: "none",
+                  outline: "none",
+                  resize: "vertical",
+                  fontSize: "13px",
+                  fontWeight: isBold ? "600" : "400",
+                  fontStyle: isItalic ? "italic" : "normal",
+                  textDecoration: isUnderline ? "underline" : "none",
+                  color: "#111827"
+                }}
+              />
+              <div style={{ padding: "8px 10px", borderTop: "1px solid #e5e7eb" }}>
+                <button
+                  type="button"
+                  onClick={handleAddComment}
+                  style={{
+                    padding: "6px 10px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "4px",
+                    backgroundColor: "#fff",
+                    color: "#374151",
+                    fontSize: "12px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Add Comment
+                </button>
+              </div>
+            </div>
+
+            <div style={{ fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "8px" }}>
+              ALL COMMENTS
+            </div>
+            <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "12px" }}>
+              {comments.length === 0 ? (
+                <div style={{ fontSize: "12px", color: "#6b7280", textAlign: "center", padding: "24px 0" }}>
+                  No comments yet.
+                </div>
+              ) : (
+                comments.map((comment) => (
+                  <div key={comment.id} style={{ padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "4px" }}>
+                      {new Date(comment.createdAt).toLocaleString()}
+                    </div>
+                    <div style={{
+                      fontSize: "13px",
+                      color: "#111827",
+                      fontWeight: comment.bold ? "600" : "400",
+                      fontStyle: comment.italic ? "italic" : "normal",
+                      textDecoration: comment.underline ? "underline" : "none"
+                    }}>
+                      {comment.text}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: "20px", alignItems: "start" }}>
+            {activeTab === "Overview" && (
+              <>
+            <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: "20px", alignItems: "stretch" }}>
               {/* Left Sidebar - Project Details */}
               <div style={{
                 width: "280px",
-                backgroundColor: "#fff",
+                backgroundColor: "#f3f4f6",
                 borderRadius: "6px",
                 padding: "24px",
-                height: "fit-content",
+                height: "100%",
                 border: "1px solid #e5e7eb",
-                boxShadow: "none"
+                boxShadow: "none",
+                display: "flex",
+                flexDirection: "column"
               }}>
                 {/* Project Header */}
                 <div style={{ marginBottom: "20px" }}>
@@ -2907,6 +3051,8 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           )}
+          </>
+        )}
       </div>
       {/* Add Users Modal */}
       {showAddUserModal && (
