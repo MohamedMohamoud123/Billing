@@ -115,10 +115,10 @@ export default function ProjectDetailPage() {
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
   const [expandedAccountCategories, setExpandedAccountCategories] = useState({});
 
-  const handleCreateInvoiceFromProject = () => {
+  const resolveProjectContext = () => {
     if (!project) {
       toast.error("Project details are not ready yet.");
-      return;
+      return null;
     }
 
     const customerId =
@@ -143,18 +143,99 @@ export default function ProjectDetailPage() {
       customerId,
       customerName,
       currency: project.currency || baseCurrencyCode,
+      description: project.description || "",
     };
+
+    return {
+      customerId,
+      customerName,
+      payloadProject,
+    };
+  };
+
+  const handleCreateInvoiceFromProject = () => {
+    const context = resolveProjectContext();
+    if (!context) return;
+    const { customerId, customerName, payloadProject } = context;
 
     navigate("/sales/invoices/new", {
       state: {
         source: "timeTrackingProjects",
         customerId,
         customerName,
+        projectId: payloadProject.id,
+        projectName: payloadProject.projectName,
+        currency: payloadProject.currency,
         projects: [payloadProject],
       },
     });
 
     toast.info("Invoice draft created from the project. Review before saving.");
+  };
+
+  const handleCreateQuoteFromProject = () => {
+    const context = resolveProjectContext();
+    if (!context) return;
+    const { customerId, customerName, payloadProject } = context;
+    navigate("/sales/quotes/new", {
+      state: {
+        source: "timeTrackingProjects",
+        customerId,
+        customerName,
+        projectId: payloadProject.id,
+        projectName: payloadProject.projectName,
+        currency: payloadProject.currency,
+        projects: [payloadProject],
+      },
+    });
+  };
+
+  const handleCreateRetainerInvoiceFromProject = () => {
+    const context = resolveProjectContext();
+    if (!context) return;
+    const { customerId, customerName, payloadProject } = context;
+    navigate("/sales/retainer-invoices/new", {
+      state: {
+        source: "timeTrackingProjects",
+        customerId,
+        customerName,
+        projectId: payloadProject.id,
+        projectName: payloadProject.projectName,
+        currency: payloadProject.currency,
+      },
+    });
+  };
+
+  const handleCreateCreditNoteFromProject = () => {
+    const context = resolveProjectContext();
+    if (!context) return;
+    const { customerId, customerName, payloadProject } = context;
+    navigate("/sales/credit-notes/new", {
+      state: {
+        source: "timeTrackingProjects",
+        customerId,
+        customerName,
+        projectId: payloadProject.id,
+        projectName: payloadProject.projectName,
+        currency: payloadProject.currency,
+      },
+    });
+  };
+
+  const handleCreateExpenseFromProject = (recurring = false) => {
+    const context = resolveProjectContext();
+    if (!context) return;
+    const { customerId, customerName, payloadProject } = context;
+    navigate(recurring ? "/purchases/recurring-expenses/new" : "/purchases/expenses/new", {
+      state: {
+        source: "timeTrackingProjects",
+        customerId,
+        customerName,
+        projectId: payloadProject.id,
+        projectName: payloadProject.projectName,
+        currency: payloadProject.currency,
+      },
+    });
   };
 
   // Close dropdowns when modal closes
@@ -269,33 +350,53 @@ export default function ProjectDetailPage() {
         refundsAPI.getAll({ limit: 10000 }).catch(() => null),
       ]);
 
-      const rawInvoices = uniqByKey([
-        ...(Array.isArray(invoiceRes?.data) ? invoiceRes.data : []),
+      const directProjectInvoices = uniqByKey([
         ...readFallbackArray(project?.salesInvoices),
         ...readFallbackArray(project?.invoices),
       ]);
-      const rawQuotes = uniqByKey([
-        ...(Array.isArray(quoteRes?.data) ? quoteRes.data : []),
+      const directProjectRetainers = uniqByKey([
+        ...readFallbackArray(project?.retainerInvoices),
+        ...readFallbackArray(project?.retainers),
+      ]);
+      const directProjectQuotes = uniqByKey([
         ...readFallbackArray(project?.quotes),
         ...readFallbackArray(project?.salesQuotes),
       ]);
-      const rawCreditNotes = uniqByKey([
-        ...(Array.isArray(creditRes?.data) ? creditRes.data : []),
+      const directProjectCreditNotes = uniqByKey([
         ...readFallbackArray(project?.creditNotes),
         ...readFallbackArray(project?.salesCreditNotes),
       ]);
-      const rawRefunds = uniqByKey([
-        ...(Array.isArray(refundRes?.data) ? refundRes.data : []),
+      const directProjectRefunds = uniqByKey([
         ...readFallbackArray(project?.refunds),
         ...readFallbackArray(project?.salesRefunds),
       ]);
 
-      const matchedInvoices = rawInvoices.filter((row) => matchesProject(row, projectKey, projectNameKey));
-      const matchedQuotes = rawQuotes.filter((row) => matchesProject(row, projectKey, projectNameKey));
-      const matchedCreditNotes = rawCreditNotes.filter((row) => matchesProject(row, projectKey, projectNameKey));
-      const matchedRefunds = rawRefunds.filter((row) => matchesProject(row, projectKey, projectNameKey));
+      const apiInvoices = uniqByKey(Array.isArray(invoiceRes?.data) ? invoiceRes.data : []);
+      const apiQuotes = uniqByKey(Array.isArray(quoteRes?.data) ? quoteRes.data : []);
+      const apiCreditNotes = uniqByKey(Array.isArray(creditRes?.data) ? creditRes.data : []);
+      const apiRefunds = uniqByKey(Array.isArray(refundRes?.data) ? refundRes.data : []);
 
-      const retainerInvoices = matchedInvoices.filter((row) => isRetainerInvoice(row));
+      const matchedInvoices = uniqByKey([
+        ...directProjectInvoices,
+        ...apiInvoices.filter((row) => matchesProject(row, projectKey, projectNameKey)),
+      ]);
+      const matchedQuotes = uniqByKey([
+        ...directProjectQuotes,
+        ...apiQuotes.filter((row) => matchesProject(row, projectKey, projectNameKey)),
+      ]);
+      const matchedCreditNotes = uniqByKey([
+        ...directProjectCreditNotes,
+        ...apiCreditNotes.filter((row) => matchesProject(row, projectKey, projectNameKey)),
+      ]);
+      const matchedRefunds = uniqByKey([
+        ...directProjectRefunds,
+        ...apiRefunds.filter((row) => matchesProject(row, projectKey, projectNameKey)),
+      ]);
+
+      const retainerInvoices = uniqByKey([
+        ...directProjectRetainers,
+        ...matchedInvoices.filter((row) => isRetainerInvoice(row)),
+      ]);
       const regularInvoices = matchedInvoices.filter((row) => !isRetainerInvoice(row));
 
       if (cancelled) return;
@@ -953,16 +1054,16 @@ export default function ProjectDetailPage() {
                             // Navigate to the appropriate form page
                             switch (option) {
                               case 'Create Quote':
-                                navigate('/sales/quotes/new');
+                                handleCreateQuoteFromProject();
                                 break;
                               case 'Create Invoice':
                                 handleCreateInvoiceFromProject();
                                 break;
                               case 'Create Retainer Invoice':
-                                navigate('/sales/recurring-invoices/new');
+                                handleCreateRetainerInvoiceFromProject();
                                 break;
                               case 'Create Credit Note':
-                                navigate('/sales/credit-notes/new');
+                                handleCreateCreditNoteFromProject();
                                 break;
                               default:
                                 break;
@@ -1005,10 +1106,10 @@ export default function ProjectDetailPage() {
                             // Navigate to the appropriate form page
                             switch (option) {
                               case 'Create Expense':
-                                navigate('/purchases/expenses/new');
+                                handleCreateExpenseFromProject(false);
                                 break;
                               case 'Create Recurring Expense':
-                                navigate('/purchases/recurring-expenses/new');
+                                handleCreateExpenseFromProject(true);
                                 break;
                               default:
                                 break;

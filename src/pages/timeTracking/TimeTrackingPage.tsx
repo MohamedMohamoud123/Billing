@@ -18,93 +18,7 @@ import TimeTrackingProject from "./TimeTrackingProject";
 import Aptouvals from "./aprovals/aptouvals";
 import CustomerApproval from "./CustomerApproval/CustomerApproval";
 
-function ProjectsTable() {
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchProjects = async () => {
-      setLoading(true);
-      try {
-        const response = await projectsAPI.getAll();
-        // Handle response format: { success: true, data: [...] } or direct array
-        const data = Array.isArray(response)
-          ? response
-          : (response?.data || []);
-
-        // Transform database projects to match frontend format
-        const transformedProjects = data.map(project => ({
-          id: project._id || project.id,
-          projectName: project.name || project.projectName,
-          projectNumber: project.projectNumber || project.id,
-          customerName: project.customer?.name || project.customerName,
-          customerId: project.customer?._id || project.customerId,
-          description: project.description || '',
-          startDate: project.startDate || '',
-          endDate: project.endDate || '',
-          status: project.status || 'planning',
-          budget: project.budget || 0,
-          currency: project.currency || 'USD',
-          billable: project.billable !== undefined ? project.billable : true,
-          billingRate: project.billingRate || 0,
-          assignedTo: project.assignedTo || [],
-          tags: project.tags || [],
-          tasks: project.tasks || [],
-          users: project.assignedTo || [],
-          ...project // Keep all other fields
-        }));
-
-        setProjects(transformedProjects);
-      } catch (error) {
-        console.error("Error loading projects:", error);
-        toast.error("Failed to load projects: " + (error.message || "Unknown error"));
-        setProjects([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProjects();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="bg-white rounded-lg shadow-md overflow-hidden p-8 text-center">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-        <p className="mt-4 text-gray-500">Loading projects...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr>
-            <th>Project Code</th>
-            <th>Project Name</th>
-          </tr>
-        </thead>
-        <tbody>
-          {projects.length === 0 ? (
-            <tr>
-              <td colSpan="2" className="text-center py-8 text-gray-500">
-                No projects found
-              </td>
-            </tr>
-          ) : (
-            projects.map((p) => (
-              <tr key={p.id || p._id}>
-                <td>{p.projectNumber || p.id || p._id}</td>
-                <td>{p.projectName || p.name}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 // Time Entries Page Component
 function TimeEntriesPage() {
@@ -268,12 +182,8 @@ function TimesheetTable() {
   const importSubmenuRef = useRef(null);
   const exportSubmenuRef = useRef(null);
   const preferencesSubmenuRef = useRef(null);
-  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState('All');
-  const [statusSearch, setStatusSearch] = useState('');
-  const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('All');
-  const [periodSearch, setPeriodSearch] = useState('');
+  const [selectedView, setSelectedView] = useState('All');
+  const [showNewDropdown, setShowNewDropdown] = useState(false);
   const [criteria, setCriteria] = useState([{ id: 1, field: '', comparator: '', value: '' }]);
   const [selectedColumns, setSelectedColumns] = useState(['Project']);
   const [visibility, setVisibility] = useState('only-me');
@@ -300,6 +210,11 @@ function TimesheetTable() {
   const projectDropdownRef = useRef(null);
   const newLogEntryDropdownRef = useRef(null);
 
+  const timesheetViews = [
+    { id: 'All', label: 'All' },
+    { id: 'Invoiced', label: 'Invoiced' },
+    { id: 'Unbilled', label: 'Unbilled' }
+  ];
   const availableColumns = ['Date', 'Customer', 'Task', 'User', 'Time', 'Billing Status'];
 
   // Log Entry Form State
@@ -819,109 +734,11 @@ function TimesheetTable() {
   // Filter entries based on selected filters
   const getFilteredEntries = (entries) => {
     let filtered = [...entries];
-
-    // Period filter
-    if (selectedPeriod && selectedPeriod !== 'All') {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      filtered = filtered.filter(entry => {
-        if (!entry.date) return false;
-
-        try {
-          const entryDate = new Date(entry.date);
-          if (isNaN(entryDate.getTime())) return false;
-
-          const entryDateOnly = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate());
-
-          switch (selectedPeriod) {
-            case 'Today':
-              return entryDateOnly.getTime() === today.getTime();
-
-            case 'Yesterday': {
-              const yesterday = new Date(today);
-              yesterday.setDate(today.getDate() - 1);
-              return entryDateOnly.getTime() === yesterday.getTime();
-            }
-
-            case 'This Week': {
-              const weekStart = new Date(today);
-              weekStart.setDate(today.getDate() - today.getDay()); // Sunday
-              const weekEnd = new Date(weekStart);
-              weekEnd.setDate(weekStart.getDate() + 6);
-              return entryDateOnly >= weekStart && entryDateOnly <= weekEnd;
-            }
-
-            case 'This Month':
-              return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
-
-            case 'This Quarter': {
-              const quarter = Math.floor(now.getMonth() / 3);
-              const quarterStart = new Date(now.getFullYear(), quarter * 3, 1);
-              const quarterEnd = new Date(now.getFullYear(), (quarter + 1) * 3, 0);
-              return entryDateOnly >= quarterStart && entryDateOnly <= quarterEnd;
-            }
-
-            case 'This Year':
-              return entryDate.getFullYear() === now.getFullYear();
-
-            case 'Previous Week': {
-              const prevWeekStart = new Date(today);
-              prevWeekStart.setDate(today.getDate() - today.getDay() - 7);
-              const prevWeekEnd = new Date(prevWeekStart);
-              prevWeekEnd.setDate(prevWeekStart.getDate() + 6);
-              return entryDateOnly >= prevWeekStart && entryDateOnly <= prevWeekEnd;
-            }
-
-            case 'Previous Month': {
-              const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-              const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-              return entryDateOnly >= prevMonth && entryDateOnly <= prevMonthEnd;
-            }
-
-            case 'Previous Quarter': {
-              const quarter = Math.floor(now.getMonth() / 3);
-              const prevQuarter = quarter === 0 ? 3 : quarter - 1;
-              const prevQuarterYear = quarter === 0 ? now.getFullYear() - 1 : now.getFullYear();
-              const prevQuarterStart = new Date(prevQuarterYear, prevQuarter * 3, 1);
-              const prevQuarterEnd = new Date(prevQuarterYear, (prevQuarter + 1) * 3, 0);
-              return entryDateOnly >= prevQuarterStart && entryDateOnly <= prevQuarterEnd;
-            }
-
-            case 'Previous Year':
-              return entryDate.getFullYear() === now.getFullYear() - 1;
-
-            default:
-              return true;
-          }
-        } catch (e) {
-          console.error('Date parsing error in filter:', e);
-          return false;
-        }
-      });
+    if (selectedView === 'Invoiced') {
+      filtered = filtered.filter(e => e.billingStatus === 'Invoiced');
+    } else if (selectedView === 'Unbilled') {
+      filtered = filtered.filter(e => e.billingStatus === 'Unbilled' || !e.billingStatus);
     }
-
-    // Customer filter
-    if (selectedCustomer) {
-      filtered = filtered.filter(entry => {
-        const project = projects.find(p => p.projectName === entry.projectName);
-        return project?.customerName === selectedCustomer;
-      });
-    }
-
-    // Project filter
-    if (selectedProjectFilter) {
-      filtered = filtered.filter(entry => entry.projectName === selectedProjectFilter);
-    }
-
-    // User filter
-    if (selectedUserFilter) {
-      filtered = filtered.filter(entry => {
-        const userName = entry.userName || entry.user || '';
-        return userName === selectedUserFilter;
-      });
-    }
-
     return filtered;
   };
 
@@ -929,7 +746,7 @@ function TimesheetTable() {
   const sortedEntries = useMemo(() => {
     const filtered = getFilteredEntries(timeEntries);
     return getSortedEntries(filtered);
-  }, [timeEntries, selectedSort, sortDirection, selectedPeriod, selectedCustomer, selectedProjectFilter, selectedUserFilter, projects]);
+  }, [timeEntries, selectedSort, sortDirection, selectedView]);
 
   // Handle sort selection
   const handleSortSelect = (sortOption) => {
@@ -1010,12 +827,15 @@ function TimesheetTable() {
             </button>
             {showDropdown && (
               <div className="absolute left-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
-                <button
-                  onClick={() => { if(typeof setSelectedView === 'function') setSelectedView("All"); setShowDropdown(false); }}
-                  className={`mx-2 mb-1 flex w-[calc(100%-16px)] items-center justify-between rounded border px-3 py-2 text-left text-sm ${selectedView === "All" ? "border-[#156372] bg-[#156372]/10 text-gray-800" : "border-transparent text-gray-700 hover:bg-gray-50"}`}
-                >
-                  All
-                </button>
+                {timesheetViews.map((view) => (
+                  <button
+                    key={view.id}
+                    onClick={() => { setSelectedView(view.id); setShowDropdown(false); }}
+                    className={`mx-2 mb-1 flex w-[calc(100%-16px)] items-center justify-between rounded border px-3 py-2 text-left text-sm ${selectedView === view.id ? "border-[#156372] bg-[#156372]/10 text-gray-800" : "border-transparent text-gray-700 hover:bg-gray-50"}`}
+                  >
+                    {view.label}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -1098,11 +918,50 @@ function TimesheetTable() {
               >
                 <ChevronDown size={14} />
               </button>
+              {showNewDropdown && (
+                <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
+                  <button
+                    onClick={() => { setShowLogEntryForm(true); setShowNewDropdown(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    New Log Entry
+                  </button>
+                  <button
+                    onClick={() => { navigate('/time-tracking/timesheet/import'); setShowNewDropdown(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                  >
+                    <Upload size={14} />
+                    Import Timesheets
+                  </button>
+                </div>
+              )}
             </div>
 
-            <button className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white p-0 text-gray-500 hover:bg-gray-100 cursor-pointer">
+            <button 
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white p-0 text-gray-500 hover:bg-gray-100 cursor-pointer"
+            >
               <MoreVertical size={16} />
             </button>
+            {showMoreMenu && (
+              <div className="absolute right-0 top-full z-[1200] mt-2 min-w-[210px] rounded-md border border-gray-200 bg-white py-2 shadow-lg">
+                <button
+                  onClick={() => { exportTimesheets('csv', sortedEntries); setShowMoreMenu(false); }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                >
+                  <Download size={14} />
+                  Export as CSV
+                </button>
+                <button
+                  onClick={() => { navigate('/time-tracking/timesheet/import'); setShowMoreMenu(false); }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 border-none bg-transparent cursor-pointer"
+                >
+                  <Upload size={14} />
+                  Import Timesheets
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1274,7 +1133,6 @@ function TimesheetTable() {
       {showLogEntryForm && <NewLogEntryForm onClose={() => setShowLogEntryForm(false)} />}
     </div>
   );
-}
 }
 
 export default function TimeTrackingPage() {
